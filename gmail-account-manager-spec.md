@@ -1688,7 +1688,7 @@ scripts/restore.sh
 - FastAPI 初始化；
 - PostgreSQL 和 Alembic；
 - Docker Compose；
-- 基础 CI；
+- 按需手动执行的代码检查与测试，不配置 GitHub Actions 或推送 CI；
 - OpenAPI TypeScript Client 生成。
 
 ### 阶段 1：认证和安全基础

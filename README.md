@@ -7,10 +7,13 @@
 真实域名、主机、网络、生产验证证据、发布/镜像清单和恢复拓扑由运营者在私有配置库维护。
 公开与私有资料的边界见 [公开仓库发布规范](docs/public-repository.md)，部署步骤见 [部署手册](docs/production-deployment.md)。
 
+GitHub 仓库仅用于代码存储和同步，不启用 GitHub Actions；提交和推送不要求运行测试。
+检查、测试和构建命令保留，按开发需要手动执行。
+
 ## 安装与启动开发环境
 
 工具基线：Python 3.12.13、uv 0.13.4、Node 24.16.0、pnpm 11.25.0。
-构建/CI 使用 uv 0.13.4，包含 CA 信任安全修复（GHSA-hq85-5cpj-mr62）；开发机安装工具也应使用该基线。
+uv 0.13.4 包含 CA 信任安全修复（GHSA-hq85-5cpj-mr62）；开发机和构建环境均应使用该基线。
 后端使用 `uv.lock`，前端使用 `pnpm-lock.yaml`；安装时禁止自动更新锁文件。
 容器环境使用 Docker Compose，数据库固定 PostgreSQL 18.7-bookworm。
 
@@ -217,7 +220,6 @@ TypeScript 固定 6.0.3，保持 Hey API 0.99.0 依赖的经典 Compiler API；�
 - `backend/`：FastAPI、Pydantic Schema、ORM、Alembic 和 pytest。
 - `infra/`：示例 Compose、独立角色、备份/恢复镜像、异地 overlay、Nginx 和 Certbot 续期模板。
 - `scripts/`：契约/Secret 生成、备份/恢复/取回、白名单发布包，以及需在私有库定制的发布/身份准备示例；管理员初始化在 `backend/app/cli.py`。
-- `.github/workflows/ci.yml`：PG18 数据库测试、前端构建/冒烟、生成漂移和 Compose 静态检查。
 - [分阶段计划](docs/implementation-plan.md)、[安全决策](docs/security-decisions.md)、[25 项验收对照](docs/acceptance-matrix.md)。
 
 ## 部署、升级和恢复边界
