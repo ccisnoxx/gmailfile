@@ -1,6 +1,7 @@
-"""发布失败不能越过迁移/健康门禁；只用合成目录和命令替身。"""
+"""发布失败不能越过迁移/健康/溯源门禁；只用合成目录和命令替身。"""
 
 import asyncio
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -8,6 +9,12 @@ from pathlib import Path
 
 import pytest
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+from app.core.release_meta import (
+    APP_VERSION,
+    SCHEMA_VERSION,
+    canonical_source_archive_sha256,
+)
 
 SPEC = importlib.util.spec_from_file_location(
     "gm_deploy", Path(__file__).resolve().parents[3] / "scripts/deploy.py"
@@ -20,14 +27,24 @@ SPEC.loader.exec_module(deploy)
 def release(tmp_path, monkeypatch):
     target = tmp_path / "releases" / "synthetic-release"
     target.mkdir(parents=True)
-    (target / "release.json").write_text(
-        json.dumps(
-            {
-                "release_id": target.name,
-                "schema_version": "0003",
-            }
-        )
-    )
+    (target / "README.md").write_text("synthetic source\n")
+    sbom_path = target / "sbom.cdx.json"
+    sbom_path.write_text('{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}\n')
+    sbom_sha = hashlib.sha256(sbom_path.read_bytes()).hexdigest()
+    source_sha = canonical_source_archive_sha256(target, ["README.md"])
+    manifest = {
+        "release_id": target.name,
+        "app_version": APP_VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "git_commit": "a" * 40,
+        "git_tree": "b" * 40,
+        "git_tag": "v0.1.0",
+        "working_tree_clean": True,
+        "source_archive_sha256": source_sha,
+        "sbom_sha256": sbom_sha,
+        "files": ["README.md"],
+    }
+    (target / "release.json").write_text(json.dumps(manifest))
     (target / "images.json").write_text(
         json.dumps(
             {
@@ -40,12 +57,18 @@ def release(tmp_path, monkeypatch):
     return target
 
 
-def commands(monkeypatch, failure=None, schema="0003"):
+def commands(monkeypatch, release, failure=None, schema=SCHEMA_VERSION, label_override=None):
     calls = []
+    manifest = json.loads((release / "release.json").read_text())
+    labels = deploy.expected_image_labels(manifest)
+    if label_override:
+        labels.update(label_override)
 
     def run(command, *, capture=False):
         calls.append(command)
         if command[:3] == ["docker", "image", "inspect"]:
+            if "{{json .Config.Labels}}" in command:
+                return json.dumps(labels)
             return command[-1].split(":")[1]
         if failure and failure(command):
             raise subprocess.CalledProcessError(1, command)
@@ -59,7 +82,7 @@ def commands(monkeypatch, failure=None, schema="0003"):
 
 
 def test_migration_failure_never_starts_candidate_or_changes_current(release, monkeypatch):
-    calls = commands(monkeypatch, lambda command: command[-1] == "migrate")
+    calls = commands(monkeypatch, release, lambda command: command[-1] == "migrate")
     activated = []
     monkeypatch.setattr(deploy, "activate", activated.append)
     with pytest.raises(subprocess.CalledProcessError):
@@ -70,14 +93,14 @@ def test_migration_failure_never_starts_candidate_or_changes_current(release, mo
 
 
 def test_database_unhealthy_never_runs_migration(release, monkeypatch):
-    calls = commands(monkeypatch, lambda c: "up" in c and c[-1] == "postgres")
+    calls = commands(monkeypatch, release, lambda c: "up" in c and c[-1] == "postgres")
     with pytest.raises(subprocess.CalledProcessError):
         deploy.deploy(["compose"], release)
     assert not any("run" in c for c in calls)
 
 
 def test_unhealthy_candidate_is_stopped_not_left_at_fixed_upstream(release, monkeypatch):
-    calls = commands(monkeypatch, lambda c: "up" in c and c[-1] == "api")
+    calls = commands(monkeypatch, release, lambda c: "up" in c and c[-1] == "api")
     with pytest.raises(subprocess.CalledProcessError):
         deploy.deploy(["compose"], release)
     assert calls[-1] == ["compose", "stop", "api"]
@@ -85,7 +108,7 @@ def test_unhealthy_candidate_is_stopped_not_left_at_fixed_upstream(release, monk
 
 
 def test_healthy_container_without_real_host_port_is_not_activated(release, monkeypatch):
-    calls = commands(monkeypatch)
+    calls = commands(monkeypatch, release)
 
     def unavailable():
         raise OSError("synthetic connection refused")
@@ -98,7 +121,7 @@ def test_healthy_container_without_real_host_port_is_not_activated(release, monk
 
 
 def test_success_reexecutes_migration_and_only_then_publishes(release, monkeypatch):
-    calls = commands(monkeypatch)
+    calls = commands(monkeypatch, release)
     deploy.deploy(["compose"], release)
     assert calls.index(["compose", "run", "--rm", "--no-deps", "migrate"]) < next(
         i for i, c in enumerate(calls) if "up" in c and c[-1] == "api"
@@ -106,17 +129,21 @@ def test_success_reexecutes_migration_and_only_then_publishes(release, monkeypat
     assert (deploy.ROOT / "current").resolve() == release
     assert not any(c[-1] == "backup" and "up" in c for c in calls)
     record = json.loads((deploy.ROOT / "active-release.json").read_text())
-    assert record["schema_version"] == "0003"
+    assert record["schema_version"] == SCHEMA_VERSION
+    assert record["git_commit"] == "a" * 40
+    assert record["git_tree"] == "b" * 40
+    assert record["source_archive_sha256"]
+    assert record["sbom_sha256"]
     assert calls.index(["compose", "stop", "api", "backup"]) < next(
         i for i, c in enumerate(calls) if "up" in c and c[-1] == "postgres"
     )
 
 
-@pytest.mark.parametrize("schema,compatible", [("0004", True), ("0003", False)])
+@pytest.mark.parametrize("schema,compatible", [("0005", True), (SCHEMA_VERSION, False)])
 def test_rollback_never_downgrades_or_starts_incompatible_api(
     release, monkeypatch, schema, compatible
 ):
-    calls = commands(monkeypatch, schema=schema)
+    calls = commands(monkeypatch, release, schema=schema)
     with pytest.raises(ValueError):
         deploy.deploy(["compose"], release, rollback=True, compatible=compatible)
     assert not any("run" in c or "downgrade" in c for c in calls)
@@ -124,13 +151,41 @@ def test_rollback_never_downgrades_or_starts_incompatible_api(
 
 
 def test_image_tag_drift_stops_before_any_service_change(release, monkeypatch):
-    calls = commands(monkeypatch)
+    calls = commands(monkeypatch, release)
     value = json.loads((release / "images.json").read_text())
     value["api"]["id"] = "old-image"
     (release / "images.json").write_text(json.dumps(value))
     with pytest.raises(ValueError, match="漂移"):
         deploy.deploy(["compose"], release)
     assert not any("up" in c or "stop" in c for c in calls)
+
+
+def test_provenance_tampering_and_label_mismatch_stop_before_deploy(release, monkeypatch):
+    calls = commands(
+        monkeypatch,
+        release,
+        label_override={"org.opencontainers.image.revision": "c" * 40},
+    )
+    with pytest.raises(ValueError, match="溯源标签不匹配"):
+        deploy.deploy(["compose"], release)
+    assert not any("up" in c or "stop" in c for c in calls)
+
+    calls = commands(monkeypatch, release)
+    (release / "README.md").write_text("tampered source\n")
+    with pytest.raises(ValueError, match="源码归档摘要校验失败"):
+        deploy.deploy(["compose"], release)
+    assert not any("up" in c or "stop" in c for c in calls)
+
+    (release / "README.md").write_text("synthetic source\n")
+    (release / "sbom.cdx.json").write_text('{"tampered":true}\n')
+    with pytest.raises(ValueError, match="SBOM 摘要校验失败"):
+        deploy.deploy(["compose"], release)
+
+    manifest = json.loads((release / "release.json").read_text())
+    manifest["working_tree_clean"] = False
+    (release / "release.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="工作区不洁净"):
+        deploy.deploy(["compose"], release)
 
 
 @pytest.mark.parametrize(

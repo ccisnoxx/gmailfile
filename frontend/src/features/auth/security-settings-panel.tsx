@@ -20,6 +20,7 @@ export function SecuritySettingsPanel({
   panel,
   epoch,
   busy,
+  stepUpTotpRequired = false,
   onSelectPanel,
   onOpenAccounts,
   onOpenOperations,
@@ -28,6 +29,7 @@ export function SecuritySettingsPanel({
   panel: SecurityPanel;
   epoch: number;
   busy: boolean;
+  stepUpTotpRequired?: boolean;
   onSelectPanel: (panel: SecurityPanel) => void;
   onOpenAccounts: () => void;
   onOpenOperations: () => void;
@@ -85,9 +87,11 @@ export function SecuritySettingsPanel({
       </nav>
       <p className="text-sm leading-7 text-muted-foreground">
         {panel === 'reverify'
-          ? '敏感操作前重新输入密码，验证在 5 分钟内有效。'
+          ? stepUpTotpRequired
+            ? '敏感操作前需输入当前密码和 TOTP 验证码，验证在 5 分钟内有效。'
+            : '敏感操作前重新输入密码，验证在 5 分钟内有效。'
           : panel === 'password'
-            ? '改密后所有会话立即退出。请先完成重新验证。'
+            ? '改密后所有会话立即退出。新密码至少 16 位并建议使用长密码短语，请先完成重新验证。'
             : '请先重新验证，再输入当前密码和现有 TOTP 或恢复码。此操作会撤销其他会话；验证码不能重复使用。'}
       </p>
       <CredentialForm
@@ -100,6 +104,7 @@ export function SecuritySettingsPanel({
               : 'factor'
         }
         busy={busy}
+        requireStepUpTotp={panel === 'reverify' && stepUpTotpRequired}
         onSubmit={onSubmit}
       />
     </div>

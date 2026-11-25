@@ -16,16 +16,19 @@ type FormValues = Credentials &
 export function CredentialForm({
   kind,
   busy,
+  requireStepUpTotp = false,
   onSubmit,
 }: {
   kind: 'login' | 'reverify' | 'factor' | 'password';
   busy: boolean;
+  requireStepUpTotp?: boolean;
   onSubmit: (value: FormValues) => Promise<void>;
 }) {
   const id = useId();
   const [recovery, setRecovery] = useState(false);
   const { register, handleSubmit, reset, setValue } = useForm<FormValues>();
   const hasFactor = kind === 'login' || kind === 'factor';
+  const hasStepUpTotp = kind === 'reverify' && requireStepUpTotp;
   const titles = {
     login: '登录',
     reverify: '重新验证',
@@ -110,6 +113,24 @@ export function CredentialForm({
             )}
           </Field>
         )}
+        {hasStepUpTotp && (
+          <Field>
+            <FieldLabel htmlFor={`${id}-stepup-totp`}>TOTP 验证码</FieldLabel>
+            <Input
+              id={`${id}-stepup-totp`}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              disabled={busy}
+              {...register('totp_code')}
+            />
+            <FieldDescription>
+              高风险敏感操作需提供当前 6 位 TOTP 验证码完成 step-up 验证。
+            </FieldDescription>
+          </Field>
+        )}
         {kind === 'password' && (
           <Field>
             <FieldLabel htmlFor={`${id}-new`}>新密码</FieldLabel>
@@ -117,14 +138,15 @@ export function CredentialForm({
               id={`${id}-new`}
               type="password"
               autoComplete="new-password"
-              minLength={8}
+              minLength={16}
               maxLength={1024}
               required
               disabled={busy}
               {...register('new_password')}
             />
             <FieldDescription>
-              至少 8 个字符，不要与 Gmail 密码复用。
+              至少 16 个字符，建议使用多词长密码短语，避免常见泄露密码且不要与
+              Gmail 密码复用。
             </FieldDescription>
           </Field>
         )}

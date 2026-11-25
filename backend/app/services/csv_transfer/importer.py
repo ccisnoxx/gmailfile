@@ -51,7 +51,9 @@ class CsvService:
         )
 
     def commit(self, content: bytes, receipt_id) -> CsvCommit:
-        receipt = self.db.get(CsvReceipt, receipt_id)
+        receipt = self.db.scalar(
+            select(CsvReceipt).where(CsvReceipt.id == receipt_id).with_for_update()
+        )
         if (
             receipt is None
             or receipt.session_id != self.accounts.session.id

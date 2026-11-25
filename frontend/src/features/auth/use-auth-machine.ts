@@ -191,10 +191,10 @@ export function useAuthMachine({
   );
 
   const reverify = useCallback(
-    (password: string) =>
+    (password: string, totpCode?: string) =>
       run(async (ticket) => {
         const result = await authReverify({
-          body: { password },
+          body: totpCode ? { password, totp_code: totpCode } : { password },
           headers,
           throwOnError: true,
         });

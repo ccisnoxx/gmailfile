@@ -12,10 +12,12 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.system import router
 from app.api.v1.transfers import router as transfers_router
+from app.core.audit_sink import configure_audit_sink
 from app.core.config import Settings
 from app.core.encryption import DecryptionError, EncryptionService
 from app.core.errors import error_response, http_error, validation_error
 from app.core.logging import configure_logging
+from app.core.release_meta import APP_VERSION
 from app.core.upload import CsvUploadLimit
 from app.db.schema import schema_is_current
 from app.db.session import create_database_engine
@@ -34,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.data_key_directory, settings.active_data_key_version
         )
         configure_logging()
+        configure_audit_sink(settings)
         app.state.engine = create_database_engine(settings)
         try:
             if not schema_is_current(app.state.engine):
@@ -44,7 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
+        version=APP_VERSION,
         debug=settings.debug,
         docs_url="/api/docs" if settings.expose_api_docs else None,
         redoc_url=None,

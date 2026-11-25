@@ -51,6 +51,9 @@ import type {
   AccountsRevealPasswordData,
   AccountsRevealPasswordErrors,
   AccountsRevealPasswordResponses,
+  AuditsIntegrityData,
+  AuditsIntegrityErrors,
+  AuditsIntegrityResponses,
   AuditsListData,
   AuditsListErrors,
   AuditsListResponses,
@@ -206,6 +209,22 @@ export const auditsList = <ThrowOnError extends boolean = false>(
     AuditsListErrors,
     ThrowOnError
   >({ url: '/api/v1/audit-events', ...options });
+
+/**
+ * Audit Integrity
+ */
+export const auditsIntegrity = <ThrowOnError extends boolean = false>(
+  options?: Options<AuditsIntegrityData, ThrowOnError>,
+): RequestResult<
+  AuditsIntegrityResponses,
+  AuditsIntegrityErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).get<
+    AuditsIntegrityResponses,
+    AuditsIntegrityErrors,
+    ThrowOnError
+  >({ url: '/api/v1/audit-events/integrity', ...options });
 
 /**
  * Settings

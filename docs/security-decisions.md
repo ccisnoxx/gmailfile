@@ -106,9 +106,12 @@ Nginx 覆盖 XFF 并清除 Forwarded，公开示例中的 PROXY protocol 链路�
 - TypeScript 固定 6.0.3：实测 7.0.2 缺少 Hey API 0.99.0 使用的经典 Compiler API，生成器报 AnyKeyword 错误。
   上游问题：<https://github.com/hey-api/hey-api/issues/4235>；不是通过手写模型绕过生成。
 
-## 阶段5用户修订：管理员密码最少8字符
+## 后续安全加固（溯源、防篡改审计、密码策略与流式导出）
 
-用户在正式初始化前明确要求取消12字符强制；初始化CLI与改密API共用8字符下限，前端新密码约束/说明同步。最大1024、既有登录/重新验证输入不改，不自动重置已存在密码。生产仍强制TOTP、Argon2id、CSRF和双层限流/退避；敏感操作与改密撤销Session不变。8字符选择参照[NIST多因素密码长度说明](https://pages.nist.gov/800-63-4/sp800-63b.html#passwordver)，不引入额外复杂度/轮换要求。
+- **发布溯源与基础镜像摘要固定**：应用版本、迁移 head、镜像坐标与基础镜像摘要集中维护在 `backend/app/core/release_meta.py`；Dockerfile、Compose 与 BuildKit 均固定到 `image@sha256:<digest>`。`scripts/package-release.py` 从真实 Git 仓库读取 `git_commit`、`git_tree`、`git_tag`、`git_tag_signed`、`working_tree_clean`，生成确定性 CycloneDX 1.5 SBOM（`sbom.cdx.json`）与规范化源码归档摘要（`source_archive_sha256`），默认拒绝未提交工作区。`scripts/deploy.py` 在构建和部署前核验洁净标记、源码归档摘要和 SBOM 摘要，并将这些溯源字段写入 OCI 镜像标签，部署前校验镜像 ID 与标签一致，建立源码到镜像的强绑定。
+- **防篡改审计日志**：迁移 `0004` 为 `audit_events` 增加单调无间隙 `seq`、`prev_hash`、`event_hash`（SHA-256 哈希链），由 `SECURITY DEFINER` 的 `BEFORE INSERT` 触发器在事务级锁内计算，并由 `BEFORE UPDATE OR DELETE` / `BEFORE TRUNCATE` 触发器禁止任何篡改、删除或截断。撤销 `gm_app` 在 `audit_events` 上的 `UPDATE/DELETE/TRUNCATE` 权限，同时提供仅含 `INSERT` 权限的独立角色 `gm_audit_writer`（新库由 `init-roles.sh` 创建，既有库由 `upgrade-audit-role.sh` 升级）。事务提交后将白名单审计记录外发至 `gmail_manager.audit` JSON 流与可选远程 Syslog（`AUDIT_SYSLOG_ADDRESS`）；支持 `GET /api/v1/audit-events/integrity`、CLI `verify-audit` / `sign-audit-checkpoint`（HMAC-SHA256 定期检查点）以及恢复演练全链校验。在线审计记录默认至少保留 365 天（`AUDIT_RETENTION_DAYS`），清理必须先离线归档、校验哈希链并留存签名检查点后由 DBA 受控执行。
+- **管理员密码策略与高风险操作 Step-Up**：初始化 CLI 与改密 API 统一将新管理员密码最低长度提升至 **16 位**（上限 1024），鼓励多词长密码短语，并离线拦截常见泄露密码、弱基础词、连续字符/键盘序列及简单重复模式，支持可选离线泄露字典（`PASSWORD_DENYLIST_FILE`，兼容明文与 HIBP SHA-1/SHA-256 哈希）。已有密码的登录校验不受阻断，便于管理员登录后升级密码。生产环境强制启用 `STEP_UP_TOTP_REQUIRED=true`：显示/复制第三方账号密码要求最近 5 分钟内完成「密码 + TOTP」二次验证，数据库恢复切换（`backup_tool.py switch`）同样在确认 `SWITCH` 后要求管理员密码与 TOTP 验证。后续规划将引入 WebAuthn/Passkey 作为抗钓鱼二步验证与高风险 step-up 因子。
+- **分批流式 CSV 导出**：`POST /api/v1/exports/csv` 先在请求事务内完成认证、CSRF 校验与 `csv_exported` 审计落盘，再于独立的 `REPEATABLE READ READ ONLY` 快照事务中使用服务端游标（`stream_results=True`）仅投影非敏感列，按批加载标签、逐批编码并通过 `StreamingResponse` 输出，每批调用 `expunge_all()` 防止内存随数据量线性增长。
 
 ## 公开与私有资料边界
 

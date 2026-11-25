@@ -143,5 +143,8 @@ class TotpManager:
         self.ctx.clear_failures()
         self.ctx.audit("recovery_codes_regenerated", row)
         return RecoveryResponse(
-            session=self.sessions.rotate(row, reauthenticated=True), recovery_codes=codes
+            session=self.sessions.rotate(
+                row, reauthenticated=True, mfa_reauthenticated=bool(code and admin.totp_enabled)
+            ),
+            recovery_codes=codes,
         )

@@ -153,8 +153,8 @@ it('重新验证采用新 CSRF，改密成功回登录页', async () => {
   );
   await screen.findByText('重新验证成功，5 分钟内可进行敏感操作。');
   await userEvent.click(screen.getByRole('button', { name: '修改密码' }));
-  expect(screen.getByLabelText('新密码')).toHaveAttribute('minlength', '8');
-  const newPassword = token().slice(0, 8);
+  expect(screen.getByLabelText('新密码')).toHaveAttribute('minlength', '16');
+  const newPassword = token().slice(0, 16);
   await userEvent.type(screen.getByLabelText('当前管理员密码'), token());
   await userEvent.type(screen.getByLabelText('新密码'), newPassword);
   await userEvent.click(
@@ -478,7 +478,7 @@ it('撤销自身先清空工作区；网络结果未知也不能恢复旧页面�
     const path = new URL(req.url).pathname;
     if (path === '/api/v1/auth/session') return json(current);
     if (path === '/api/v1/system/version')
-      return json({ version: '0.1.0', schema_version: '0003' });
+      return json({ version: '0.1.0', schema_version: '0004' });
     if (path === '/api/v1/system/backup-status')
       return json({ state: 'unconfigured' });
     if (path === '/api/v1/settings') return json({ idle_minutes: 15 });

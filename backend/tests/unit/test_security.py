@@ -1,3 +1,4 @@
+import hashlib
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -8,13 +9,23 @@ import pytest
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 
+from app.core.audit_sink import parse_syslog_target
 from app.core.encryption import DecryptionError, EncryptionService
 from app.core.security import (
+    MIN_ADMIN_PASSWORD_LENGTH,
     accepted_totp_step,
     passwords,
     random_token,
     token_hash,
+    validate_new_admin_password,
     verify_password,
+)
+from app.services.audit_integrity import (
+    GENESIS_HASH,
+    compute_audit_event_hash,
+    sign_audit_checkpoint,
+    verify_audit_checkpoint,
+    verify_audit_records,
 )
 
 
@@ -96,18 +107,144 @@ def test_only_hashes_not_raw_tokens():
     assert len(token_hash(one)) == 32
 
 
-@pytest.mark.parametrize("length,valid", [(7, False), (8, True), (12, True)])
-def test_new_admin_password_accepts_eight_character_minimum(length, valid):
+@pytest.mark.parametrize("length,valid", [(15, False), (16, True), (24, True)])
+def test_new_admin_password_enforces_sixteen_character_minimum(length, valid):
     from pydantic import ValidationError
 
     from app.schemas.auth import ChangePasswordInput
 
+    assert MIN_ADMIN_PASSWORD_LENGTH == 16
     value = random_token()[:length]
     if valid:
         assert ChangePasswordInput(password=random_token(), new_password=value).new_password
     else:
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as exc_info:
             ChangePasswordInput(password=random_token(), new_password=value)
+        assert value not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "weak",
+    [
+        "password12345678",
+        "Correct Horse Battery Staple",
+        "GmailManager2026!",
+        "1234567890123456",
+        "qwertyuiopasdfgh",
+        "aaaaaaaaaaaaaaaa",
+        "abcd1234abcd1234",
+        "short-pass      ",
+    ],
+)
+def test_new_admin_password_rejects_common_leaked_and_weak_patterns(weak):
+    from pydantic import ValidationError
+
+    from app.schemas.auth import ChangePasswordInput
+
+    with pytest.raises(ValidationError) as exc_info:
+        ChangePasswordInput(password=random_token(), new_password=weak)
+    assert weak not in str(exc_info.value)
+
+
+def test_new_admin_password_allows_passphrase_and_checks_offline_denylist(tmp_path):
+    passphrase = "amber falcon velvet bridge 73"
+    assert validate_new_admin_password(passphrase) == passphrase
+
+    denylist = tmp_path / "breached.txt"
+    sha1 = hashlib.sha1(passphrase.encode("utf-8")).hexdigest().upper()
+    denylist.write_text(f"# offline breach sample\n{sha1}:42\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="离线泄露密码黑名单"):
+        validate_new_admin_password(passphrase, denylist_file=denylist)
+
+
+def test_audit_hash_chain_verification_and_checkpoint_signing():
+    now = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
+    id1, id2 = uuid4(), uuid4()
+    h1 = compute_audit_event_hash(
+        seq=1,
+        prev_hash=GENESIS_HASH,
+        event_id=id1,
+        created_at=now,
+        event_type="admin_initialized",
+        account_id=None,
+        session_id=None,
+        ip_addr="192.0.2.10",
+        user_agent=None,
+        metadata={},
+    )
+    h2 = compute_audit_event_hash(
+        seq=2,
+        prev_hash=h1,
+        event_id=id2,
+        created_at=now + timedelta(seconds=5),
+        event_type="login_success",
+        account_id=None,
+        session_id=uuid4(),
+        ip_addr="192.0.2.10",
+        user_agent=None,
+        metadata={"operation": "login"},
+    )
+    rows = [
+        (1, GENESIS_HASH, h1, id1, now, "admin_initialized", None, None, "192.0.2.10", None, {}),
+        (
+            2,
+            h1,
+            h2,
+            id2,
+            now + timedelta(seconds=5),
+            "login_success",
+            None,
+            None,
+            "192.0.2.10",
+            None,
+            {"operation": "login"},
+        ),
+    ]
+    # Note: session_id mismatch on row 2 must be detected immediately.
+    bad = verify_audit_records(rows)
+    assert not bad.valid and bad.broken_seq == 2 and bad.reason == "EVENT_HASH_MISMATCH"
+
+    rows[1] = (
+        2,
+        h1,
+        compute_audit_event_hash(
+            seq=2,
+            prev_hash=h1,
+            event_id=id2,
+            created_at=now + timedelta(seconds=5),
+            event_type="login_success",
+            account_id=None,
+            session_id=None,
+            ip_addr="192.0.2.10",
+            user_agent=None,
+            metadata={"operation": "login"},
+        ),
+        id2,
+        now + timedelta(seconds=5),
+        "login_success",
+        None,
+        None,
+        "192.0.2.10",
+        None,
+        {"operation": "login"},
+    )
+    ok = verify_audit_records(rows)
+    assert ok.valid and ok.total_events == 2 and ok.latest_seq == 2
+
+    key = os.urandom(32)
+    checkpoint = sign_audit_checkpoint(ok, key, now=now)
+    assert verify_audit_checkpoint(checkpoint, key)
+    tampered = {**checkpoint, "total_events": 1}
+    assert not verify_audit_checkpoint(tampered, key)
+    assert not verify_audit_checkpoint(checkpoint, os.urandom(32))
+
+
+def test_syslog_target_parsing():
+    assert parse_syslog_target("/dev/log") == ("/dev/log", None)
+    host_port, socktype = parse_syslog_target("tcp://syslog.internal:6514")
+    assert host_port == ("syslog.internal", 6514) and socktype is not None
+    with pytest.raises(ValueError):
+        parse_syslog_target("http://syslog.internal:80")
 
 
 @pytest.mark.parametrize("arguments", [["create-admin", "--password"], ["unknown-command"]])

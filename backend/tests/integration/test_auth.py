@@ -374,7 +374,7 @@ def test_password_change_requires_recent_and_revokes_all(env):
     client = env["client"]()
     secret, result = enroll(env, client)
     state = result["session"]
-    new = random_token()[:8]
+    new = random_token()[:16]
     body = {"password": env["password"], "new_password": new}
     assert post(client, "password", state, body).status_code == 403
     state = post(client, "reverify", state, {"password": env["password"]}).json()
@@ -383,14 +383,64 @@ def test_password_change_requires_recent_and_revokes_all(env):
     state = post(client, "reverify", state, {"password": env["password"]}).json()
     other = env["client"]()
     assert login(env, other, totp_code=pyotp.TOTP(secret).at(env["clock"][0])).status_code == 200
-    rejected = post(client, "password", state, {**body, "new_password": new[:7]})
-    assert rejected.status_code == 422 and new[:7] not in rejected.text
+    rejected = post(client, "password", state, {**body, "new_password": new[:15]})
+    assert rejected.status_code == 422 and new[:15] not in rejected.text
+    weak = post(client, "password", state, {**body, "new_password": "password12345678"})
+    assert weak.status_code == 422 and "password12345678" not in weak.text
     assert client.get("/protected").status_code == 200
     assert post(client, "password", state, body).status_code == 200
     assert client.get("/protected").status_code == other.get("/protected").status_code == 401
     with Session(env["engine"]) as db:
         assert passwords.verify(new, db.scalar(select(AdminUser)).password_hash)
         assert all(r.revoked_at for r in db.scalars(select(UserSession)))
+
+
+def test_step_up_totp_enforced_for_password_reveal_and_copy(env):
+    env["settings"].step_up_totp_required = True
+    client = env["client"]()
+    secret, result = enroll(env, client)
+    state = result["session"]
+    assert state["step_up_totp_required"] is True
+    created = client.post(
+        "/api/v1/accounts",
+        json={
+            "gmail_email": "stepup@gmail.com",
+            "password": random_token(),
+            "recovery_email_external": "recovery@example.test",
+        },
+        headers={"X-CSRF-Token": state["csrf_token"]},
+    ).json()
+    reveal_path = f"/api/v1/accounts/{created['id']}/reveal-password"
+    copy_path = f"/api/v1/accounts/{created['id']}/copy-password-event"
+
+    # 启用 step_up_totp_required 后，仅传密码的 reverify 必须被拒绝。
+    assert post(client, "reverify", state, {"password": env["password"]}).status_code == 401
+    advance(env)
+    code = pyotp.TOTP(secret).at(env["clock"][0])
+    reverified = post(client, "reverify", state, {"password": env["password"], "totp_code": code})
+    assert reverified.status_code == 200
+    state = reverified.json()
+    assert state["mfa_reauthenticated_until"] is not None
+    # 同一 TOTP 时间步不能重复用于 step-up。
+    assert (
+        post(
+            client, "reverify", state, {"password": env["password"], "totp_code": code}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(reveal_path, json={}, headers={"X-CSRF-Token": state["csrf_token"]}).status_code
+        == 200
+    )
+    assert (
+        client.post(copy_path, json={}, headers={"X-CSRF-Token": state["csrf_token"]}).status_code
+        == 200
+    )
+    # 仅存在密码级 reauthenticated_at 而无 mfa_reauthenticated_at 时，高风险密码查看被拒。
+    with Session(env["engine"]) as db, db.begin():
+        db.execute(update(UserSession).values(mfa_reauthenticated_at=None))
+    denied = client.post(reveal_path, json={}, headers={"X-CSRF-Token": state["csrf_token"]})
+    assert denied.status_code == 403 and denied.json()["error"]["code"] == "REAUTH_REQUIRED"
 
 
 def test_authenticated_rebind_and_regeneration_require_factor(env):
@@ -484,7 +534,7 @@ def test_errors_audit_and_logs_do_not_disclose_secrets(env):
 def test_cli_interactive_single_admin_and_no_password_arguments(db_engine, monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("sys.stderr.isatty", lambda: True)
-    password = random_token()[:8]
+    password = random_token()[:16]
     create_admin(db_engine, lambda prompt: password)
     with pytest.raises(ValueError, match="已存在"):
         create_admin(db_engine, lambda prompt: pytest.fail("不应再次读取密码"))
@@ -495,12 +545,14 @@ def test_cli_interactive_single_admin_and_no_password_arguments(db_engine, monke
         create_admin(db_engine)
 
 
-def test_cli_rejects_seven_character_password_without_creating_admin(db_engine, monkeypatch):
+def test_cli_rejects_short_or_leaked_password_without_creating_admin(db_engine, monkeypatch):
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("sys.stderr.isatty", lambda: True)
-    password = random_token()[:7]
-    with pytest.raises(ValueError, match="密码长度"):
+    password = random_token()[:15]
+    with pytest.raises(ValueError, match="长度"):
         create_admin(db_engine, lambda prompt: password)
+    with pytest.raises(ValueError, match="泄露密码"):
+        create_admin(db_engine, lambda prompt: "password12345678")
     with Session(db_engine) as db:
         assert db.scalar(select(func.count()).select_from(AdminUser)) == 0
 

@@ -92,7 +92,7 @@ it('按路由动态加载账号页、安全设置与运维页，并在路由切�
           unverified_over_30_days: 0,
         });
       if (path === '/api/v1/system/version')
-        return json({ version: '0.1.0', schema_version: '0003' });
+        return json({ version: '0.1.0', schema_version: '0004' });
       if (path === '/api/v1/system/backup-status')
         return json({
           state: 'unconfigured',

@@ -3,8 +3,10 @@ from datetime import timedelta
 
 from sqlalchemy import func, select, update
 
+from app.core.release_meta import APP_VERSION
 from app.models import AuditEvent, UserSession
 from app.schemas.operations import (
+    AuditIntegrityResponse,
     AuditItem,
     AuditPage,
     BackupStatus,
@@ -14,6 +16,7 @@ from app.schemas.operations import (
     VersionState,
 )
 from app.services.accounts import AccountError
+from app.services.audit_integrity import verify_audit_chain
 from app.services.auth import AUDIT_EVENTS, AUDIT_OPERATIONS
 
 
@@ -98,7 +101,7 @@ class OperationsService:
             query = query.where(AuditEvent.created_at < params.created_to)
         total = self.db.scalar(select(func.count()).select_from(query.subquery()))
         rows = self.db.scalars(
-            query.order_by(AuditEvent.created_at.desc(), AuditEvent.id)
+            query.order_by(AuditEvent.seq.desc())
             .offset((params.page - 1) * params.page_size)
             .limit(params.page_size)
         )
@@ -106,6 +109,8 @@ class OperationsService:
             items=[
                 AuditItem(
                     id=r.id,
+                    seq=r.seq,
+                    event_hash=bytes(r.event_hash).hex(),
                     event_type=r.event_type,
                     account_id=r.account_id,
                     session_id=r.session_id,
@@ -121,6 +126,18 @@ class OperationsService:
             page=params.page,
             page_size=params.page_size,
             event_types=sorted(AUDIT_EVENTS),
+        )
+
+    def audit_integrity(self) -> AuditIntegrityResponse:
+        status = verify_audit_chain(self.db)
+        return AuditIntegrityResponse(
+            valid=status.valid,
+            total_events=status.total_events,
+            latest_seq=status.latest_seq,
+            latest_hash=status.latest_hash,
+            broken_seq=status.broken_seq,
+            reason=status.reason,
+            retention_days=self.auth.settings.audit_retention_days,
         )
 
     def settings(self):
@@ -153,7 +170,7 @@ class OperationsService:
         from sqlalchemy import text
 
         return VersionState(
-            version="0.1.0",
+            version=APP_VERSION,
             schema_version=self.db.scalar(text("SELECT version_num FROM alembic_version")),
         )
 

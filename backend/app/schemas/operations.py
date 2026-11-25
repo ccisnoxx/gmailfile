@@ -121,6 +121,8 @@ class AuditQuery(Input):
 
 class AuditItem(BaseModel):
     id: UUID
+    seq: int
+    event_hash: str
     event_type: str
     account_id: UUID | None
     session_id: UUID | None
@@ -135,6 +137,16 @@ class AuditPage(BaseModel):
     page: int
     page_size: int
     event_types: list[str]
+
+
+class AuditIntegrityResponse(BaseModel):
+    valid: bool
+    total_events: int
+    latest_seq: int | None
+    latest_hash: str | None
+    broken_seq: int | None = None
+    reason: str | None = None
+    retention_days: int
 
 
 class IdleSetting(Input):

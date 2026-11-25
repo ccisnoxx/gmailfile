@@ -3,7 +3,7 @@ name: gmail-manager
 x-api: &api
   build:
     context: ../backend
-  image: gmail-manager-api:0.1.0
+  image: gmail-manager-api:${APP_VERSION:-0.1.0}
   user: "10001:10001"
   init: true
   cap_drop: [ALL]
@@ -20,6 +20,7 @@ x-environment: &environment
   APP_BASE_URL: ${APP_BASE_URL:-https://accounts.example.com}
   ALLOWED_HOSTS: ${ALLOWED_HOSTS:-accounts.example.com}
   TOTP_REQUIRED: "true"
+  STEP_UP_TOTP_REQUIRED: "true"
   DEBUG: "false"
   EXPOSE_API_DOCS: "false"
   CORS_ORIGINS: ""
@@ -37,13 +38,13 @@ x-environment: &environment
 
 services:
   postgres:
-    image: postgres:18.7-bookworm
+    image: postgres:18.7-bookworm@sha256:e742a2668255221388004f3a42b6150a2103f5054ab3a4a93ae9e4f01e551c35
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DATABASE_NAME:-gmail_manager}
       POSTGRES_USER: gm_bootstrap
       POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
-    secrets: [db_admin_password, db_migrator_password, db_password, db_backup_password]
+    secrets: [db_admin_password, db_migrator_password, db_password, db_backup_password, db_audit_password]
     volumes:
       - postgres_data:/var/lib/postgresql
       - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
@@ -99,7 +100,7 @@ services:
     profiles: [operations]
     build:
       context: ../backend
-    image: gmail-manager-api:0.1.0
+    image: gmail-manager-api:${APP_VERSION:-0.1.0}
     restart: "no"
     user: "0:0"
     network_mode: none
@@ -118,7 +119,7 @@ services:
     build:
       context: ..
       dockerfile: infra/backup/Dockerfile
-    image: gmail-manager-backup:0.1.0
+    image: gmail-manager-backup:${APP_VERSION:-0.1.0}
     command: [schedule, --database, "${DATABASE_NAME:-gmail_manager}", --directory, /backups, --recipients, /run/secrets/backup_recipients, --at, "02:00"]
     restart: unless-stopped
     user: "10001:10001"
@@ -171,5 +172,7 @@ secrets:
     file: ${SECRETS_DIR:?set SECRETS_DIR}/data_key_v1
   db_backup_password:
     file: ${SECRETS_DIR:?set SECRETS_DIR}/db_backup_password
+  db_audit_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/db_audit_password
   backup_recipients:
     file: ${SECRETS_DIR:?set SECRETS_DIR}/backup_recipients

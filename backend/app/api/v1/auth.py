@@ -58,7 +58,7 @@ def logout(service: Service):
 
 @router.post("/reverify", response_model=SessionResponse, operation_id="authReverify")
 def reverify(body: ReverifyInput, service: Service):
-    return service.reverify(body.password.get_secret_value())
+    return service.reverify(body.password.get_secret_value(), body.totp_code.get_secret_value())
 
 
 @router.post("/totp/setup", response_model=SetupResponse, operation_id="authTotpSetup")

@@ -21,6 +21,7 @@ def settings(tmp_path):
         app_env="test",
         app_base_url="http://testserver",
         allowed_hosts="testserver",
+        step_up_totp_required=False,
         database_password_file=password,
         data_key_directory=tmp_path,
     )

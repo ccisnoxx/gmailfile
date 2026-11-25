@@ -457,6 +457,40 @@ export type ActionResponse = {
 };
 
 /**
+ * AuditIntegrityResponse
+ */
+export type AuditIntegrityResponse = {
+  /**
+   * Valid
+   */
+  valid: boolean;
+  /**
+   * Total Events
+   */
+  total_events: number;
+  /**
+   * Latest Seq
+   */
+  latest_seq: number | null;
+  /**
+   * Latest Hash
+   */
+  latest_hash: string | null;
+  /**
+   * Broken Seq
+   */
+  broken_seq?: number | null;
+  /**
+   * Reason
+   */
+  reason?: string | null;
+  /**
+   * Retention Days
+   */
+  retention_days: number;
+};
+
+/**
  * AuditItem
  */
 export type AuditItem = {
@@ -464,6 +498,14 @@ export type AuditItem = {
    * Id
    */
   id: string;
+  /**
+   * Seq
+   */
+  seq: number;
+  /**
+   * Event Hash
+   */
+  event_hash: string;
   /**
    * Event Type
    */
@@ -1007,6 +1049,10 @@ export type ReverifyInput = {
    * Password
    */
   password: string;
+  /**
+   * Totp Code
+   */
+  totp_code?: string;
 };
 
 /**
@@ -1109,6 +1155,14 @@ export type SessionResponse = {
    * Reauthenticated Until
    */
   reauthenticated_until?: string | null;
+  /**
+   * Mfa Reauthenticated Until
+   */
+  mfa_reauthenticated_until?: string | null;
+  /**
+   * Step Up Totp Required
+   */
+  step_up_totp_required?: boolean;
 };
 
 /**
@@ -1541,6 +1595,41 @@ export type AuditsListResponses = {
 };
 
 export type AuditsListResponse = AuditsListResponses[keyof AuditsListResponses];
+
+export type AuditsIntegrityData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/audit-events/integrity';
+};
+
+export type AuditsIntegrityErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+};
+
+export type AuditsIntegrityError =
+  AuditsIntegrityErrors[keyof AuditsIntegrityErrors];
+
+export type AuditsIntegrityResponses = {
+  /**
+   * Successful Response
+   */
+  200: AuditIntegrityResponse;
+};
+
+export type AuditsIntegrityResponse =
+  AuditsIntegrityResponses[keyof AuditsIntegrityResponses];
 
 export type SettingsGetData = {
   body?: never;

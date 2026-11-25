@@ -44,7 +44,7 @@ function setup(handler?: (req: Request) => Promise<Response>) {
   const fetch = vi.fn(async (req: Request) => {
     const path = new URL(req.url).pathname;
     if (path === '/api/v1/system/version')
-      return json({ version: '0.1.0', schema_version: '0003' });
+      return json({ version: '0.1.0', schema_version: '0004' });
     if (path === '/api/v1/system/backup-status')
       return json({
         state: 'unconfigured',
@@ -289,4 +289,45 @@ it('revokes current session with explicit confirmation and clears caller state',
   );
   const call = env.fetch.mock.calls.find(([r]) => r.method === 'DELETE')![0];
   expect(call.headers.get('X-CSRF-Token')).toBe(session.csrf_token);
+});
+
+it('renders tamper-evident audit hash chain status and sequence numbers', async () => {
+  setup(async (req) => {
+    const path = new URL(req.url).pathname;
+    if (path === '/api/v1/audit-events/integrity')
+      return json({
+        valid: true,
+        total_events: 2,
+        latest_seq: 2,
+        latest_hash: 'a'.repeat(64),
+        broken_seq: null,
+        reason: null,
+        retention_days: 365,
+      });
+    if (path === '/api/v1/audit-events')
+      return json({
+        items: [
+          {
+            id: crypto.randomUUID(),
+            seq: 2,
+            event_hash: 'a'.repeat(64),
+            event_type: 'login_success',
+            account_id: null,
+            session_id: null,
+            ip_address: '192.0.2.10',
+            operation: 'login',
+            created_at: new Date().toISOString(),
+          },
+        ],
+        total: 2,
+        page: 1,
+        page_size: 30,
+        event_types: ['login_success'],
+      });
+    return json({});
+  });
+  await userEvent.click(screen.getByRole('button', { name: '审计日志' }));
+  await screen.findByText('防篡改哈希链校验通过');
+  expect(screen.getByText('#2')).toBeInTheDocument();
+  expect(screen.getByText('在线保留策略：365 天')).toBeInTheDocument();
 });

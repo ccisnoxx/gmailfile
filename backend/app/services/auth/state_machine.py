@@ -3,7 +3,7 @@
 from datetime import timedelta
 from uuid import uuid4
 
-from app.core.security import passwords
+from app.core.security import passwords, validate_new_admin_password
 from app.models import PreAuthSession, UserSession
 from app.schemas.auth import SessionResponse
 from app.services.auth.constants import SecurityError
@@ -61,14 +61,27 @@ class AuthStateMachine:
         self.ctx.audit("logout", row)
         self.sessions.clear_cookie()
 
-    def reverify(self, password: str) -> SessionResponse:
+    def reverify(self, password: str, totp_code: str = "") -> SessionResponse:
         row = self.sessions.require_session()
         self.ctx.check_throttle("reverify")
-        if not self.ctx.check_password(self.ctx.admin(), password):
+        admin = self.ctx.admin()
+        if not self.ctx.check_password(admin, password):
             self.ctx.fail("reverify")
+        mfa_verified = False
+        need_mfa = bool(totp_code) or (
+            self.ctx.settings.step_up_totp_required and admin.totp_enabled
+        )
+        if need_mfa:
+            if (
+                not admin.totp_enabled
+                or not totp_code
+                or not self.totp.verify_factor(admin, totp_code, "")
+            ):
+                self.ctx.fail("reverify", mfa=True)
+            mfa_verified = True
         self.ctx.clear_failures()
-        self.ctx.audit("password_reverified", row)
-        return self.sessions.rotate(row, reauthenticated=True)
+        self.ctx.audit("password_reverified", row, operation="reverify")
+        return self.sessions.rotate(row, reauthenticated=True, mfa_reauthenticated=mfa_verified)
 
     def change_password(self, password: str, new_password: str) -> None:
         row = self.sessions.require_session()
@@ -77,9 +90,17 @@ class AuthStateMachine:
         admin = self.ctx.admin()
         if not self.ctx.check_password(admin, password):
             self.ctx.fail("password_change")
+        try:
+            validate_new_admin_password(
+                new_password, denylist_file=self.ctx.settings.password_denylist_file
+            )
+        except ValueError as exc:
+            raise SecurityError(422, "WEAK_PASSWORD", str(exc)) from None
+        if new_password == password:
+            raise SecurityError(422, "WEAK_PASSWORD", "新密码不能与当前密码相同")
         admin.password_hash = passwords.hash(new_password)
         admin.password_changed_at = self.ctx.now
         self.sessions.revoke_others()
         self.ctx.clear_failures()
-        self.ctx.audit("admin_password_changed", row)
+        self.ctx.audit("admin_password_changed", row, operation="password_change")
         self.sessions.clear_cookie()

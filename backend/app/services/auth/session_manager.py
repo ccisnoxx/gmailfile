@@ -71,6 +71,7 @@ class SessionManager:
         ):
             row.auth_level = "mfa_pending"
             row.reauthenticated_at = None
+            row.mfa_reauthenticated_at = None
         return row
 
     def check_csrf(self, row) -> None:
@@ -108,22 +109,41 @@ class SessionManager:
             .values(last_seen_at=func.greatest(UserSession.last_seen_at, self.ctx.now))
         )
 
-    def require_recent(self, row: UserSession) -> None:
-        if row.reauthenticated_at is None or (
-            row.reauthenticated_at + timedelta(minutes=self.ctx.settings.reauth_window_minutes)
-            <= self.ctx.now
-        ):
+    def require_recent(self, row: UserSession, *, require_mfa: bool = False) -> None:
+        window = timedelta(minutes=self.ctx.settings.reauth_window_minutes)
+        if row.reauthenticated_at is None or row.reauthenticated_at + window <= self.ctx.now:
             raise SecurityError(403, "REAUTH_REQUIRED", "请先重新验证管理员密码")
+        if require_mfa:
+            admin = self.ctx.admin()
+            if (
+                admin is not None
+                and admin.totp_enabled
+                and (
+                    row.mfa_reauthenticated_at is None
+                    or row.mfa_reauthenticated_at + window <= self.ctx.now
+                )
+            ):
+                raise SecurityError(
+                    403, "REAUTH_REQUIRED", "请先使用管理员密码和 TOTP 验证码完成重新验证"
+                )
 
     def state(self, row, csrf: str) -> SessionResponse:
         authenticated = isinstance(row, UserSession)
         idle_minutes = self.ctx.idle_minutes()
+        window = timedelta(minutes=self.ctx.settings.reauth_window_minutes)
         last_seen = (
             max(row.last_seen_at, self.ctx.now)
             if authenticated and self.ctx.touched_session_id == row.id
             else row.last_seen_at
             if authenticated
             else None
+        )
+        admin = self.ctx.admin() if authenticated else None
+        step_up_totp = bool(
+            authenticated
+            and self.ctx.settings.step_up_totp_required
+            and admin is not None
+            and admin.totp_enabled
         )
         return SessionResponse(
             idle_timeout_seconds=idle_minutes * 60,
@@ -137,17 +157,28 @@ class SessionManager:
             )
             if authenticated
             else row.expires_at,
-            reauthenticated_until=row.reauthenticated_at
-            + timedelta(minutes=self.ctx.settings.reauth_window_minutes)
+            reauthenticated_until=row.reauthenticated_at + window
             if authenticated and row.reauthenticated_at
             else None,
+            mfa_reauthenticated_until=row.mfa_reauthenticated_at + window
+            if authenticated and getattr(row, "mfa_reauthenticated_at", None)
+            else None,
+            step_up_totp_required=step_up_totp,
         )
 
-    def rotate(self, row: UserSession, *, reauthenticated: bool = False) -> SessionResponse:
+    def rotate(
+        self,
+        row: UserSession,
+        *,
+        reauthenticated: bool = False,
+        mfa_reauthenticated: bool = False,
+    ) -> SessionResponse:
         secret, csrf = random_token(), random_token()
         row.token_hash, row.csrf_token_hash = token_hash(secret), token_hash(csrf)
         if reauthenticated:
             row.reauthenticated_at = self.ctx.now
+        if mfa_reauthenticated:
+            row.mfa_reauthenticated_at = self.ctx.now
         self.cookie(row, secret)
         return self.state(row, csrf)
 

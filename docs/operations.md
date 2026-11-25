@@ -132,7 +132,7 @@ export DATA_KEY_DIRECTORY=/offline/project-data-keys ACTIVE_DATA_KEY_VERSION=1
 1. 验证完整标记与传输摘要；**完整消费 age 认证流**，检查 dump 目录及部署 tar 可读。
 2. 运营者先停止 API/所有写入客户端；脚本拒绝仍有源库连接，不擅自终止进程。隔离环境也检查该条件。
 3. 目标必须是尚不存在的新临时库，`pg_restore --single-transaction --exit-on-error`，不加 `--clean`/`--create`，不覆盖或删除任何旧库。
-4. 核对快照每表行数、迁移 head、数据库 FK/CHECK/唯一约束、邮箱规范化和辅助关联。
+4. 核对快照每表行数、迁移 head、数据库 FK/CHECK/唯一约束、邮箱规范化、辅助关联以及 `audit_events` 全链 SHA-256 哈希链完整性。
 5. 对每个实际使用的 key_version/敏感字段抽样做 AES-GCM 认证解密（含管理员 TOTP/候选 Secret），只返回样本数量，不输出明文。
 6. 失败保留隔离临时库供检查，绝不切换；修复后选另一个新临时库重做。没有/错误 age 私钥、缺失/错误数据密钥均失败。
 
@@ -153,8 +153,8 @@ export DATA_KEY_DIRECTORY=/offline/project-data-keys ACTIVE_DATA_KEY_VERSION=1
   --writers-stopped
 ```
 
-终端输入 `SWITCH` 后，脚本先禁止源/目标新连接，确认没有其他客户端，再通过保留的验证连接做**最终**一致性/抽样解密。
-同一受控流程恢复对象 owner、应用 DML/序列权限、备份只读权限及未来迁移的默认权限；
+终端输入 `SWITCH` 后，若目标库已初始化管理员，脚本先要求管理员完成密码与 TOTP 二次验证（step-up）；通过后再禁止源/目标新连接，确认没有其他客户端，并通过保留的验证连接做**最终**一致性、审计链完整性与抽样解密校验。
+同一受控流程恢复对象 owner、应用 DML/序列权限（显式撤销 `gm_app` 在 `audit_events` 上的 UPDATE/DELETE/TRUNCATE，可选配置 `--audit-role gm_audit_writer` 仅授 INSERT）、备份只读权限及未来迁移的默认权限；
 撤销全部恢复出来的旧 Session、清除候选 TOTP/预会话/CSV 凭据，写固定恢复审计，避免复活备份后已撤销的 Cookie。
 最后原子替换指定 `.env` 的唯一 `DATABASE_NAME`，原配置保留为 `.env.before-switch-*`。旧库不改名、不删除；不自动启动服务。
 
@@ -165,6 +165,14 @@ export DATA_KEY_DIRECTORY=/offline/project-data-keys ACTIVE_DATA_KEY_VERSION=1
 - 回退：停新库写入，核对切换后新增数据；旧库保留。先撤销旧库历史认证状态（同上 user_sessions/预会话/CSV 清理并审计），再将原配置**原子**恢复，按旧应用/迁移兼容性检查后启动。不要直接复制配置并放开旧 Cookie；切换后的新数据需要显式协调，不宣称零数据损失。
 
 备份恢复不是迁移降级工具。降级只在目标版本明确兼容时执行 Alembic downgrade；否则从升级前备份恢复到新库并走上述验证/切换流程。
+
+## 审计防篡改、签名检查点与保留策略
+
+1. 既有数据库升级到迁移 `0004` 时，先以 `scripts/generate-secrets.sh --directory /absolute/secrets --audit-only` 生成 `db_audit_password`，再在无控制终端环境运行 `infra/postgres/upgrade-audit-role.sh` 创建仅允许 `INSERT` 的 `gm_audit_writer` 并撤销 `gm_app` 在 `audit_events` 上的修改/删除/截断权限。
+2. 迁移 `0004` 自动为存量 `audit_events` 回填单调序号与 SHA-256 哈希链，并启用 `BEFORE INSERT` 链计算触发器与 `BEFORE UPDATE OR DELETE` / `BEFORE TRUNCATE` 保护触发器。
+3. 运维可通过 `python -m app.cli verify-audit` 或前端“迁移与运维 → 审计日志 → 校验哈希链”核对完整性；配置 `AUDIT_SIGNING_KEY_FILE` 后可定期运行 `python -m app.cli sign-audit-checkpoint` 输出 HMAC-SHA256 签名检查点并保存至独立只读存储或日志平台。
+4. 配置 `AUDIT_SYSLOG_ADDRESS`（如 `tcp://syslog.internal:514` 或 `/dev/log`）可将每次已提交的哈希链审计事件实时转发到外部日志平台；即使不配 Syslog，`gmail_manager.audit` 也会输出独立结构化 JSON 流供采集器收集。
+5. **保留与清理策略**：在线数据库默认至少保留 365 天（`AUDIT_RETENTION_DAYS`）审计记录，日常应用与定时任务严禁删改。达到合规清理窗口时，必须先完成全量加密备份、导出离线归档并核验 `verify-audit` 与最新签名检查点，再由 DBA 在变更授权下单独执行受控归档清理并记录新基线。
 
 ## 从阶段 3 升级
 

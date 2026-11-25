@@ -32,8 +32,10 @@ python3 scripts/package-release.py --release-id example-release-1 \
 ```
 
 `example-release-1` 是示例 ID，不代表实际发布。白名单包不含 `.env`、`.local`、Secret、备份、node_modules 或虚拟环境。
+打包脚本自动读取真实 Git `HEAD`（`git_commit`、`git_tree`、`git_tag`、`working_tree_clean`），默认要求工作区干净，并生成 CycloneDX SBOM（`sbom.cdx.json`）与确定性源码归档摘要（`source_archive_sha256`）。
 实例版配置由私有流程单独提供；不要将它放回公开源码目录后重新公开打包。
-源/静态发布与实例配置的最终组合必须通过私有发布器的 `plan` 和精确 Compose 校验。
+源/静态发布与实例配置的最终组合必须通过私有发布器的 `plan`、溯源摘要核验和精确 Compose 校验（含基础镜像 `@sha256:<digest>` 与 `STEP_UP_TOTP_REQUIRED=true`）。
+构建阶段自动将 `git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256` 写入镜像 OCI 标签，部署阶段同时校验镜像 ID 与溯源标签。
 上传时核验发布包传输校验和；发布 ID、实际镜像 ID/RepoDigest、锁文件和 schema 基线只写入私有清单。
 新发布不覆盖旧目录/镜像标签，旧发布与镜像保留以便恢复。
 
@@ -59,7 +61,7 @@ python3 "$R/scripts/deploy.py" deploy --release "$R" --execute
 迁移失败不启动候选 API；健康或回环失败显式停候选，保留 PG、旧发布和配置。发布器不自动恢复数据库或启动调度。
 构建器只管理本项目专属对象，结束即 stop；后续清理须核对身份和无活跃构建，不清理共享 builder/cache。
 
-7. 用户在自己的安全 TTY 运行 `python -m app.cli create-admin`，密码隐藏输入、至少 8 字符；通过真实 HTTPS 绑定 TOTP 并保存恢复码。
+7. 用户在自己的安全 TTY 运行 `python -m app.cli create-admin`，密码隐藏输入、至少 16 字符（建议使用多词长密码短语，系统会拦截常见弱/泄露密码）；通过真实 HTTPS 绑定 TOTP 并保存恢复码。
 8. 完成 [25 项验收标准](acceptance-matrix.md)，匿名边界检查与认证业务检查分开记录，不能用合成环境代替正式证据。
 
 ## 先恢复演练，再启唯一备份

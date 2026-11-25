@@ -2,6 +2,7 @@ from fastapi import Request, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.audit_sink import attach_audit_session_hooks
 from app.services.auth import AUTH_LOCK, AuthService, SecurityError
 
 ACCOUNT_WRITE_LOCK = 720241102
@@ -22,6 +23,7 @@ def account_write_auth(request: Request, response: Response):
 def _auth_service(request: Request, response: Response, *, lock_key: int | None):
     failure = None
     with Session(request.app.state.engine) as db:
+        attach_audit_session_hooks(db)
         with db.begin():
             if lock_key is not None:
                 # 各自先取锁再读状态；认证转换和业务写入不共用一把锁。
@@ -31,6 +33,7 @@ def _auth_service(request: Request, response: Response, *, lock_key: int | None)
             )
             try:
                 yield service
+                service.persist_activity()
             except SecurityError as exc:
                 # 失败记录与锁定也必须提交；其他异常回滚整个事务。
                 failure = exc

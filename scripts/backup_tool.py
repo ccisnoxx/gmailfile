@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import datetime as dt
 import fcntl
+import getpass
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ import tarfile
 import tempfile
 import time
 import uuid
+import warnings
 from pathlib import Path
 
 import psycopg
@@ -25,6 +27,7 @@ from psycopg import sql
 ROOT = Path(__file__).resolve().parents[1]
 # Shared on-wire contract; receiver is stdlib-only and also installed on backup-host.
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "backend"))
 from infra.backup.receiver import (  # noqa: E402
     CONFIG_FILE,
     DB_FILE,
@@ -41,6 +44,8 @@ from infra.backup.receiver import (  # noqa: E402
 from infra.backup.receiver import (  # noqa: E402
     ROOT as OFFSITE_ROOT,
 )
+
+from app.core.release_meta import APP_VERSION, SCHEMA_VERSION  # noqa: E402
 
 MANAGED = re.compile(r"gmail-manager-\d{8}T\d{6}Z-[a-f0-9]{8}")
 
@@ -473,7 +478,7 @@ def backup(args):
                 schema = connection.execute(
                     "SELECT version_num FROM public.alembic_version"
                 ).fetchone()[0]
-                require(schema == "0003", "备份数据库迁移版本与应用不一致")
+                require(schema == SCHEMA_VERSION, "备份数据库迁移版本与应用不一致")
                 encrypted_dump(stage / DB_FILE, args.database, snapshot, Path(args.recipients))
             encrypted_config(stage / CONFIG_FILE, Path(args.recipients), args.config)
             stamp = now()
@@ -481,7 +486,7 @@ def backup(args):
                 "format": MAGIC,
                 "complete": True,
                 "created_at": stamp.isoformat(),
-                "app_version": "0.1.0",
+                "app_version": APP_VERSION,
                 "schema_version": schema,
                 "tools": versions,
                 "counts": table_counts,
@@ -647,6 +652,53 @@ def restore(args):
     )
 
 
+def verify_admin_step_up(connection, keys: Path, *, read_password=getpass.getpass, read_code=input):
+    """高风险切换前要求已初始化的管理员通过密码 + TOTP 二次验证。"""
+    row = connection.execute(
+        "SELECT id, password_hash, totp_enabled, totp_secret_ciphertext, "
+        "totp_secret_nonce, totp_secret_key_version, totp_last_accepted_step "
+        "FROM public.admin_users LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return False
+    from app.core.encryption import EncryptedValue, EncryptionService
+    from app.core.security import accepted_totp_step, verify_password
+
+    (
+        admin_id,
+        password_hash,
+        totp_enabled,
+        totp_ciphertext,
+        totp_nonce,
+        totp_key_version,
+        last_step,
+    ) = row
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            password = read_password("高风险切换二次验证 — 管理员密码：")
+    except getpass.GetPassWarning:
+        raise OperationError("无法安全读取管理员密码，切换已取消") from None
+    valid, _ = verify_password(password, password_hash)
+    require(valid, "管理员身份二次验证失败，切换已取消")
+    if totp_enabled:
+        encryption = EncryptionService(keys, int(os.environ.get("ACTIVE_DATA_KEY_VERSION", "1")))
+        secret = encryption.decrypt(
+            EncryptedValue(totp_ciphertext, totp_nonce, totp_key_version),
+            "admin_user",
+            admin_id,
+            "totp_secret",
+        )
+        code = read_code("高风险切换二次验证 — 当前 6 位 TOTP 验证码：").strip()
+        step = accepted_totp_step(secret, code, now(), last_step)
+        require(step is not None, "管理员 TOTP 二次验证失败，切换已取消")
+        connection.execute(
+            "UPDATE public.admin_users SET totp_last_accepted_step=%s WHERE id=%s",
+            (step, admin_id),
+        )
+    return True
+
+
 def switch(args):
     """Switch the application configuration, never rename/drop either database."""
     require(args.writers_stopped and sys.stdin.isatty(), "切换必须停写并在交互终端确认")
@@ -688,6 +740,22 @@ def switch(args):
                 len({args.migrator_role, args.app_role, args.backup_role}) == 3,
                 "迁移、应用、备份角色必须独立",
             )
+            audit_role = getattr(args, "audit_role", None)
+            if audit_role:
+                require(re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", audit_role), "审计角色名无效")
+                audit_flags = admin.execute(
+                    "SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname=%s",
+                    (audit_role,),
+                ).fetchone()
+                require(
+                    audit_flags is not None and not any(audit_flags),
+                    "审计角色必须是既有的最小权限角色",
+                )
+                require(
+                    audit_role not in {args.migrator_role, args.app_role, args.backup_role},
+                    "审计角色必须与迁移、应用、备份角色独立",
+                )
+            verify_admin_step_up(target, Path(os.environ.get("DATA_KEY_DIRECTORY", "/run/secrets")))
             disabled = []
             try:
                 for name in (args.source_database, args.target_database):
@@ -795,6 +863,36 @@ def prepare_permissions(connection, args):
             sql.Identifier(args.app_role)
         )
     )
+    connection.execute(
+        sql.SQL("REVOKE UPDATE,DELETE,TRUNCATE ON TABLE public.audit_events FROM {}").format(
+            sql.Identifier(args.app_role)
+        )
+    )
+    connection.execute(
+        sql.SQL("GRANT SELECT,INSERT ON TABLE public.audit_events TO {}").format(
+            sql.Identifier(args.app_role)
+        )
+    )
+    audit_role = getattr(args, "audit_role", None)
+    if audit_role:
+        connection.execute(
+            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(args.target_database), sql.Identifier(audit_role)
+            )
+        )
+        connection.execute(
+            sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(sql.Identifier(audit_role))
+        )
+        connection.execute(
+            sql.SQL("REVOKE ALL ON TABLE public.audit_events FROM {}").format(
+                sql.Identifier(audit_role)
+            )
+        )
+        connection.execute(
+            sql.SQL("GRANT INSERT ON TABLE public.audit_events TO {}").format(
+                sql.Identifier(audit_role)
+            )
+        )
     connection.execute(
         sql.SQL("GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO {}").format(
             sql.Identifier(args.app_role)
@@ -912,6 +1010,7 @@ def main():
         "backup-role",
     ):
         p.add_argument("--" + name, required=True)
+    p.add_argument("--audit-role", default=None)
     p.add_argument("--writers-stopped", action="store_true")
     subs.add_parser("offsite-status")
     p = subs.add_parser("health")

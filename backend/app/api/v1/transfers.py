@@ -2,13 +2,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query, Response
+from fastapi.responses import StreamingResponse
 from pydantic import Json
 
 from app.api.dependencies import account_write_auth, auth_service
 from app.schemas.operations import CsvCommit, CsvOptions, CsvPreview, ExportInput
 from app.schemas.system import ErrorResponse
+from app.services.accounts import AccountService
 from app.services.auth import AuthService
-from app.services.csv_transfer import CsvService, export_csv
+from app.services.csv_transfer import CsvService, resolve_export_query, stream_export_csv
 
 router = APIRouter(
     tags=["transfers"],
@@ -48,15 +50,18 @@ def commit(service: WriteService, body: CsvBody, receipt_id: UUID, response: Res
 
 @router.post(
     "/exports/csv",
-    response_class=Response,
+    response_class=StreamingResponse,
     responses={200: {"content": {"text/csv": {"schema": {"type": "string", "format": "binary"}}}}},
     operation_id="csvExport",
 )
 def export(service: Service, body: ExportInput):
-    data = export_csv(service, body)
+    # 在返回流式响应前先于请求事务内完成认证/CSRF 校验与审计落盘。
+    account_service = AccountService(service)
+    params = resolve_export_query(body)
+    account_service.audit("csv_exported", operation="csv")
     name = "gmail-accounts-" + service.now.strftime("%Y-%m-%dT%H%M%SZ") + ".csv"
-    return Response(
-        data,
+    return StreamingResponse(
+        stream_export_csv(service.request.app.state.engine, params),
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )

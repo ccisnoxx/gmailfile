@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     debug: bool = False
     expose_api_docs: bool = False
     totp_required: bool = True
+    step_up_totp_required: bool = True
     session_cookie_secure: bool = True
     session_idle_minutes: int = Field(default=15, ge=1, le=720)
     session_absolute_hours: int = Field(default=12, ge=1, le=168)
@@ -36,6 +37,22 @@ class Settings(BaseSettings):
     max_page_size: int = Field(default=100, ge=1, le=100)
     backup_status_file: Path | None = None
     max_import_size_mb: int = Field(default=10, ge=1, le=10)
+    audit_syslog_address: str = ""
+    audit_syslog_facility: Literal[
+        "auth",
+        "authpriv",
+        "local0",
+        "local1",
+        "local2",
+        "local3",
+        "local4",
+        "local5",
+        "local6",
+        "local7",
+    ] = "authpriv"
+    audit_signing_key_file: Path | None = None
+    audit_retention_days: int = Field(default=365, ge=90, le=3650)
+    password_denylist_file: Path | None = None
 
     @property
     def hosts(self) -> list[str]:
@@ -60,16 +77,28 @@ class Settings(BaseSettings):
             or base.path not in {"", "/"}
         ):
             raise ValueError("APP_BASE_URL 必须是有效站点地址")
+        if self.audit_syslog_address:
+            raw = self.audit_syslog_address.strip()
+            if not raw.startswith("/"):
+                parsed = urlsplit(raw)
+                if parsed.scheme not in {"udp", "tcp"} or not parsed.hostname:
+                    raise ValueError(
+                        "AUDIT_SYSLOG_ADDRESS 必须是 udp://host:port、"
+                        "tcp://host:port 或 Unix 套接字路径"
+                    )
         if self.app_env == "production":
             if base.scheme != "https" or base.hostname not in self.hosts:
                 raise ValueError("生产地址必须使用 HTTPS 且位于 ALLOWED_HOSTS")
             if (
                 not self.totp_required
+                or not self.step_up_totp_required
                 or self.debug
                 or self.expose_api_docs
                 or not self.session_cookie_secure
             ):
-                raise ValueError("生产环境必须启用 TOTP 和安全 Cookie，关闭调试与公开文档")
+                raise ValueError(
+                    "生产环境必须启用 TOTP、高风险操作二步校验和安全 Cookie，关闭调试与公开文档"
+                )
         return self
 
     def validate_secret_files(self) -> None:
@@ -78,3 +107,6 @@ class Settings(BaseSettings):
         active_key = self.data_key_directory / f"data_key_v{self.active_data_key_version}"
         if len(active_key.read_bytes()) != 32:
             raise ValueError("数据密钥必须是 32 字节原始随机值")
+        if self.audit_signing_key_file is not None:
+            if len(self.audit_signing_key_file.read_bytes()) < 32:
+                raise ValueError("审计签名密钥必须至少 32 字节")

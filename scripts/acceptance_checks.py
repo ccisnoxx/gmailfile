@@ -39,6 +39,7 @@ def migrations():
     from sqlalchemy.orm import Session
 
     from alembic import command
+    from app.core.release_meta import SCHEMA_VERSION
     from app.models import GmailAccount
 
     engine = database()
@@ -80,7 +81,11 @@ def migrations():
         )
         db.delete(row)  # Remove only this probe before seeding decryptable fixture data.
     engine.dispose()
-    return {"empty_upgrade": "0002", "upgrade_to": "0003", "existing_values_preserved": True}
+    return {
+        "empty_upgrade": "0002",
+        "upgrade_to": SCHEMA_VERSION,
+        "existing_values_preserved": True,
+    }
 
 
 def seed():

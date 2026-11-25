@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.dependencies import auth_service, auth_state_service
 from app.schemas.auth import ActionResponse
 from app.schemas.operations import (
+    AuditIntegrityResponse,
     AuditPage,
     AuditQuery,
     BackupStatus,
@@ -53,6 +54,15 @@ def revoke(service: StateService, session_id: UUID):
 @router.get("/audit-events", response_model=AuditPage, operation_id="auditsList")
 def audits(service: Service, params: Annotated[AuditQuery, Query()]):
     return OperationsService(service).audits(params)
+
+
+@router.get(
+    "/audit-events/integrity",
+    response_model=AuditIntegrityResponse,
+    operation_id="auditsIntegrity",
+)
+def audit_integrity(service: Service):
+    return OperationsService(service).audit_integrity()
 
 
 @router.get("/settings", response_model=SettingsState, operation_id="settingsGet")

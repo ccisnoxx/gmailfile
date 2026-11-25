@@ -8,6 +8,7 @@ from app.core.config import Settings
     "overrides",
     [
         {"totp_required": False},
+        {"step_up_totp_required": False},
         {"debug": True},
         {"expose_api_docs": True},
         {"app_base_url": "http://accounts.example.com"},
@@ -15,6 +16,7 @@ from app.core.config import Settings
         {"cors_origins": "*"},
         {"reauth_window_minutes": 6},
         {"default_page_size": 50, "max_page_size": 30},
+        {"audit_syslog_address": "http://invalid-scheme"},
     ],
 )
 def test_production_rejects_unsafe_config(overrides):
@@ -25,7 +27,8 @@ def test_production_rejects_unsafe_config(overrides):
 def test_safe_production_defaults():
     settings = Settings(_env_file=None)
     assert settings.app_env == "production"
-    assert settings.totp_required
+    assert settings.totp_required and settings.step_up_totp_required
+    assert settings.audit_retention_days == 365
     assert not settings.debug and not settings.expose_api_docs
 
 

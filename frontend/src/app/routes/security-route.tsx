@@ -16,6 +16,7 @@ export default function SecurityRoute() {
         panel={workspace.panel}
         epoch={workspace.epoch}
         busy={workspace.busy}
+        stepUpTotpRequired={Boolean(workspace.session.step_up_totp_required)}
         onSelectPanel={workspace.onSelectPanel}
         onOpenAccounts={() => workspace.onNavigate('accounts')}
         onOpenOperations={() => workspace.onNavigate('operations')}

@@ -55,6 +55,7 @@ def make_settings(**overrides):
         "session_absolute_hours": 12,
         "reauth_window_minutes": 5,
         "totp_required": True,
+        "step_up_totp_required": False,
         "default_page_size": 30,
         "max_page_size": 100,
     }

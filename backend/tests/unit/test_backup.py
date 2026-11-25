@@ -113,7 +113,7 @@ def test_failed_attempt_not_published_as_success(tmp_path, monkeypatch, failure)
             return self
 
         def fetchone(self):
-            return ["0003"]
+            return [ops.SCHEMA_VERSION]
 
         def __enter__(self):
             return self
@@ -224,3 +224,103 @@ def test_cli_argument_errors_never_echo_mistaken_credential(monkeypatch, capsys)
         ops.main()
     assert exc.value.code == 2
     assert "never-echo-argument" not in capsys.readouterr().err
+
+
+def test_restore_verify_rejects_broken_audit_chain(tmp_path, monkeypatch):
+    import os
+    from uuid import uuid4
+
+    from app.ops.verify_restore import verify
+
+    (tmp_path / "data_key_v1").write_bytes(os.urandom(32))
+    monkeypatch.setenv("ACTIVE_DATA_KEY_VERSION", "1")
+
+    class Connection:
+        def execute(self, query):
+            if query.startswith("SELECT count(*)"):
+                return self
+            if "FROM public.audit_events" in query:
+                return [
+                    (
+                        1,
+                        b"\x00" * 32,
+                        b"\xff" * 32,
+                        uuid4(),
+                        datetime.now(UTC),
+                        "login_success",
+                        None,
+                        None,
+                        None,
+                        None,
+                        {},
+                    )
+                ]
+            return []
+
+        def fetchone(self):
+            return (0,)
+
+    with pytest.raises(ValueError, match="审计日志哈希链"):
+        verify(Connection(), tmp_path)
+
+
+def test_switch_step_up_verifies_admin_password_and_totp(tmp_path, monkeypatch):
+    import os
+    from uuid import uuid4
+
+    import pyotp
+
+    from app.core.encryption import EncryptionService
+    from app.core.security import passwords
+
+    (tmp_path / "data_key_v1").write_bytes(os.urandom(32))
+    monkeypatch.setenv("ACTIVE_DATA_KEY_VERSION", "1")
+    enc = EncryptionService(tmp_path, 1)
+    admin_id = uuid4()
+    admin_password = "amber falcon velvet bridge 73"
+    totp_secret = pyotp.random_base32()
+    enc_totp = enc.encrypt(totp_secret, "admin_user", admin_id, "totp_secret")
+    fixed_now = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(ops, "now", lambda: fixed_now)
+
+    class Connection:
+        def __init__(self):
+            self.last_step = None
+
+        def execute(self, query, params=None):
+            if "FROM public.admin_users" in query:
+                self._row = (
+                    admin_id,
+                    passwords.hash(admin_password),
+                    True,
+                    enc_totp.ciphertext,
+                    enc_totp.nonce,
+                    enc_totp.key_version,
+                    self.last_step,
+                )
+                return self
+            if "UPDATE public.admin_users SET totp_last_accepted_step" in query:
+                self.last_step = params[0]
+            return self
+
+        def fetchone(self):
+            return self._row
+
+    conn = Connection()
+    code = pyotp.TOTP(totp_secret).at(fixed_now)
+    with pytest.raises(ops.OperationError, match="二次验证失败"):
+        ops.verify_admin_step_up(
+            conn, tmp_path, read_password=lambda _: "wrong", read_code=lambda _: code
+        )
+    with pytest.raises(ops.OperationError, match="TOTP"):
+        ops.verify_admin_step_up(
+            conn, tmp_path, read_password=lambda _: admin_password, read_code=lambda _: "000000"
+        )
+    assert ops.verify_admin_step_up(
+        conn, tmp_path, read_password=lambda _: admin_password, read_code=lambda _: code
+    )
+    # 同一时间步 TOTP 不得在切换中重放。
+    with pytest.raises(ops.OperationError, match="TOTP"):
+        ops.verify_admin_step_up(
+            conn, tmp_path, read_password=lambda _: admin_password, read_code=lambda _: code
+        )

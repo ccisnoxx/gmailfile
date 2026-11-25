@@ -79,7 +79,8 @@ function AuthWorkspace({
 
   const handleSecuritySubmit = useCallback(
     (body: CredentialValues) => {
-      if (panel === 'reverify') return auth.reverify(body.password);
+      if (panel === 'reverify')
+        return auth.reverify(body.password, body.totp_code);
       if (panel === 'password')
         return auth.changePassword(body.password, body.new_password!);
       if (panel === 'rebind') return totp.startRebind(body as Credentials);
@@ -162,6 +163,7 @@ function AuthWorkspace({
           panel={panel}
           epoch={auth.epoch}
           busy={auth.busy}
+          stepUpTotpRequired={Boolean(auth.session.step_up_totp_required)}
           onSelectPanel={selectPanel}
           onOpenAccounts={() => switchView('accounts')}
           onOpenOperations={() => switchView('operations')}

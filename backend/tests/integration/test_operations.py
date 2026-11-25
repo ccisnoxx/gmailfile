@@ -347,6 +347,8 @@ def test_audit_paging_filter_and_status_redaction(env, signed, tmp_path):
     assert result["total"] > 1 and len(result["items"]) == 1
     assert set(result["items"][0]) == {
         "id",
+        "seq",
+        "event_hash",
         "event_type",
         "account_id",
         "session_id",
@@ -354,6 +356,15 @@ def test_audit_paging_filter_and_status_redaction(env, signed, tmp_path):
         "operation",
         "created_at",
     }
+    assert len(result["items"][0]["event_hash"]) == 64
+    integrity = client.get("/api/v1/audit-events/integrity")
+    assert integrity.status_code == 200
+    integrity_data = integrity.json()
+    assert integrity_data["valid"] is True
+    assert integrity_data["total_events"] == result["total"]
+    assert integrity_data["latest_seq"] == result["items"][0]["seq"]
+    assert integrity_data["latest_hash"] == result["items"][0]["event_hash"]
+    assert integrity_data["retention_days"] == 365
     assert (
         client.get("/api/v1/audit-events", params={"event_type": "account_created"}).json()["total"]
         == 1
@@ -361,7 +372,7 @@ def test_audit_paging_filter_and_status_redaction(env, signed, tmp_path):
     assert (
         client.get("/api/v1/audit-events", params={"event_type": "not-allowed"}).status_code == 422
     )
-    assert client.get("/api/v1/system/version").json()["schema_version"] == "0003"
+    assert client.get("/api/v1/system/version").json()["schema_version"] == "0004"
     assert client.get("/api/v1/system/backup-status").json()["state"] == "unconfigured"
     status = tmp_path / "status.json"
     env["settings"].backup_status_file = status
@@ -386,6 +397,7 @@ def test_audit_paging_filter_and_status_redaction(env, signed, tmp_path):
     [
         ("GET", "/auth/sessions", None),
         ("GET", "/audit-events", None),
+        ("GET", "/audit-events/integrity", None),
         ("GET", "/system/version", None),
         ("GET", "/system/backup-status", None),
         ("GET", "/settings", None),
@@ -538,3 +550,73 @@ def test_csv_preview_default_options_can_be_omitted(env, signed):
     )
     assert result.status_code == 200
     assert result.json()["strategy"] == "skip" and result.json()["receipt_id"]
+
+
+def test_streaming_csv_export_batches_cursor_and_tags_without_ciphertexts(env, signed, monkeypatch):
+    from sqlalchemy import event
+
+    from app.schemas.accounts import AccountQuery
+    from app.services.csv_transfer import stream_export_csv
+
+    client, state = signed
+    headers = {"X-CSRF-Token": state["csrf_token"]}
+    t1 = client.post("/api/v1/tags", json={"name": "甲"}, headers=headers).json()["id"]
+    t2 = client.post("/api/v1/tags", json={"name": "乙"}, headers=headers).json()["id"]
+    base = create(signed, gmail_email="base-recovery@example.test", tag_ids=[t1])
+    for i in range(14):
+        create(
+            signed,
+            gmail_email=f"stream{i}@example.test",
+            recovery_account_id=base["id"] if i % 3 == 0 else None,
+            recovery_email_external=None if i % 3 == 0 else f"ext{i}@example.test",
+            tag_ids=[t1, t2] if i % 2 == 0 else [t2],
+        )
+
+    executed_sql: list[str] = []
+
+    def capture_sql(connection, cursor, statement, parameters, context, executemany):
+        executed_sql.append(statement)
+
+    event.listen(env["engine"], "before_cursor_execute", capture_sql)
+    try:
+        chunks = list(stream_export_csv(env["engine"], AccountQuery(), batch_size=4))
+    finally:
+        event.remove(env["engine"], "before_cursor_execute", capture_sql)
+
+    # 表头 1 块 + 15 条记录按每批 4 条拆分为 4 批 = 5 个流式块。
+    assert len(chunks) == 5
+    rows = list(csv.DictReader(io.StringIO(b"".join(chunks).decode("utf-8-sig"))))
+    assert len(rows) == 15
+    assert any(r["tags"] == "乙|甲" or r["tags"] == "甲|乙" for r in rows)
+    assert any(r["recovery_email"] == "base-recovery@example.test" for r in rows)
+    # 导出查询绝不加载任何敏感密文字段。
+    account_selects = [s for s in executed_sql if "FROM gmail_accounts" in s]
+    assert account_selects
+    assert all(
+        col not in sql_text
+        for sql_text in account_selects
+        for col in ("password_ciphertext", "phone_ciphertext", "notes_ciphertext")
+    )
+    # 标签按批查询（4 批），而非全表一次拉取。
+    tag_selects = [s for s in executed_sql if "FROM gmail_account_tags" in s]
+    assert len(tag_selects) == 4
+
+
+def test_audit_integrity_endpoint_detects_offline_tampering(env, signed):
+    from sqlalchemy import text
+
+    client, _ = signed
+    assert client.get("/api/v1/audit-events/integrity").json()["valid"] is True
+    # 模拟离线/特权绕过触发器直接篡改单条审计记录。
+    with env["engine"].begin() as conn:
+        conn.execute(
+            text("ALTER TABLE audit_events DISABLE TRIGGER trg_audit_events_prevent_mutation")
+        )
+        try:
+            conn.execute(text("UPDATE audit_events SET event_type='logout' WHERE seq=1"))
+        finally:
+            conn.execute(
+                text("ALTER TABLE audit_events ENABLE TRIGGER trg_audit_events_prevent_mutation")
+            )
+    broken = client.get("/api/v1/audit-events/integrity").json()
+    assert broken["valid"] is False and broken["broken_seq"] == 1

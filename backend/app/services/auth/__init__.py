@@ -73,8 +73,8 @@ class AuthService:
     def persist_activity(self) -> None:
         self.sessions.persist_activity()
 
-    def require_recent(self, row: UserSession) -> None:
-        self.sessions.require_recent(row)
+    def require_recent(self, row: UserSession, *, require_mfa: bool = False) -> None:
+        self.sessions.require_recent(row, require_mfa=require_mfa)
 
     def audit(
         self,
@@ -113,8 +113,16 @@ class AuthService:
     def state(self, row, csrf: str) -> SessionResponse:
         return self.sessions.state(row, csrf)
 
-    def rotate(self, row: UserSession, *, reauthenticated: bool = False) -> SessionResponse:
-        return self.sessions.rotate(row, reauthenticated=reauthenticated)
+    def rotate(
+        self,
+        row: UserSession,
+        *,
+        reauthenticated: bool = False,
+        mfa_reauthenticated: bool = False,
+    ) -> SessionResponse:
+        return self.sessions.rotate(
+            row, reauthenticated=reauthenticated, mfa_reauthenticated=mfa_reauthenticated
+        )
 
     def session(self) -> SessionResponse:
         return self.sessions.bootstrap()
@@ -128,8 +136,8 @@ class AuthService:
     def logout(self) -> None:
         self.machine.logout()
 
-    def reverify(self, password: str) -> SessionResponse:
-        return self.machine.reverify(password)
+    def reverify(self, password: str, totp_code: str = "") -> SessionResponse:
+        return self.machine.reverify(password, totp_code)
 
     def setup(self, password: str, code: str, recovery: str) -> SetupResponse:
         return self.totp.setup(password, code, recovery)

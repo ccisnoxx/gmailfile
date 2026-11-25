@@ -595,3 +595,35 @@ it('剪贴板拒绝时给出权限与焦点提示，不伪装成服务故障或�
   expect(failure).not.toHaveBeenCalled();
   expect(mock.mock.calls).toHaveLength(1);
 });
+
+it('启用 step_up_totp_required 时密码查看重新验证须提交 TOTP 验证码', async () => {
+  const first: SessionResponse = { ...session(), step_up_totp_required: true };
+  const next: SessionResponse = {
+    ...session(),
+    step_up_totp_required: true,
+    mfa_reauthenticated_until: new Date(Date.now() + 300000).toISOString(),
+  };
+  let reverifyBody: Record<string, unknown> | null = null;
+  const mock = vi.fn(async (req: Request) => {
+    if (req.url.endsWith('reverify')) {
+      reverifyBody = await req.json();
+      return json(next);
+    }
+    return error('REAUTH_REQUIRED', 403);
+  });
+  vi.stubGlobal('fetch', mock);
+  const passwordValue = id();
+  passwordPanel({ session: first });
+  await userEvent.click(screen.getByRole('button', { name: '显示密码' }));
+  await userEvent.type(
+    await screen.findByLabelText('当前管理员密码'),
+    passwordValue,
+  );
+  await userEvent.type(screen.getByLabelText('TOTP 验证码'), '654321');
+  await userEvent.click(screen.getByRole('button', { name: '重新验证' }));
+  await screen.findByText('重新验证成功，请再次选择显示或复制。');
+  expect(reverifyBody).toEqual({
+    password: passwordValue,
+    totp_code: '654321',
+  });
+});

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { auditsList } from '@/api/generated';
+import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import { auditsIntegrity, auditsList } from '@/api/generated';
 import type { AuditsListData } from '@/api/generated';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,14 +31,74 @@ export function AuditPanel(props: OperationsPanelProps) {
     queryFn: async ({ signal }) =>
       (await auditsList({ query: params, signal, throwOnError: true })).data,
   });
+  const integrity = useQuery({
+    queryKey: ['audits-integrity'],
+    queryFn: async ({ signal }) =>
+      (await auditsIntegrity({ signal, throwOnError: true })).data,
+  });
 
   useEffect(() => {
     if (query.error) props.onFailure(query.error);
   }, [query.error, props.onFailure]);
 
+  useEffect(() => {
+    if (integrity.error) props.onFailure(integrity.error);
+  }, [integrity.error, props.onFailure]);
+
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold">审计日志</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">审计日志</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={integrity.isFetching}
+          onClick={() => void integrity.refetch()}
+        >
+          {integrity.isFetching ? '正在校验…' : '校验哈希链'}
+        </Button>
+      </div>
+      {integrity.data && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm"
+        >
+          <div className="flex items-center gap-2 font-medium">
+            {integrity.data.valid ? (
+              <>
+                <ShieldCheck className="size-4 text-primary" />
+                <span>防篡改哈希链校验通过</span>
+              </>
+            ) : (
+              <>
+                <ShieldAlert className="size-4 text-destructive" />
+                <span>
+                  检测到审计链异常
+                  {integrity.data.broken_seq != null
+                    ? `（序号 #${integrity.data.broken_seq}）`
+                    : ''}
+                </span>
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+            <span>共 {integrity.data.total_events} 条</span>
+            <span>
+              最新序号：
+              {integrity.data.latest_seq != null
+                ? `#${integrity.data.latest_seq}`
+                : '—'}
+            </span>
+            <span className="font-mono">
+              链尾摘要：
+              {integrity.data.latest_hash
+                ? integrity.data.latest_hash.slice(0, 16)
+                : '—'}
+            </span>
+            <span>在线保留策略：{integrity.data.retention_days} 天</span>
+          </div>
+        </div>
+      )}
       <form
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
         onSubmit={(e) => {
@@ -90,16 +151,19 @@ export function AuditPanel(props: OperationsPanelProps) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>序号</TableHead>
                 <TableHead>时间</TableHead>
                 <TableHead>事件 / 操作</TableHead>
                 <TableHead>账号 ID</TableHead>
                 <TableHead>Session ID</TableHead>
                 <TableHead>来源 IP</TableHead>
+                <TableHead>链哈希</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {query.data.items.map((e) => (
                 <TableRow key={e.id}>
+                  <TableCell className="font-mono text-xs">#{e.seq}</TableCell>
                   <TableCell>{localDate(e.created_at)}</TableCell>
                   <TableCell>
                     {e.event_type}
@@ -115,6 +179,9 @@ export function AuditPanel(props: OperationsPanelProps) {
                     {e.session_id || '—'}
                   </TableCell>
                   <TableCell>{e.ip_address || '—'}</TableCell>
+                  <TableCell className="font-mono text-xs" title={e.event_hash}>
+                    {e.event_hash.slice(0, 12)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

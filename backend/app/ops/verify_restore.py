@@ -1,10 +1,11 @@
-"""Restore acceptance: business invariants and one authenticated sample per key/field."""
+"""Restore acceptance: business invariants, audit chain integrity and authenticated decryption."""
 
 import os
 from pathlib import Path
 
 from app.core.encryption import EncryptedValue, EncryptionService
 from app.schemas.accounts import normalize_email
+from app.services.audit_integrity import verify_audit_records
 
 
 def verify(connection, keys: Path):
@@ -22,6 +23,14 @@ def verify(connection, keys: Path):
     ).fetchone()[0]
     if invalid:
         raise ValueError("恢复数据辅助关联不一致")
+    audit_rows = connection.execute(
+        "SELECT seq, prev_hash, event_hash, id, created_at, event_type, "
+        "account_id, session_id, ip_address, user_agent, metadata "
+        "FROM public.audit_events ORDER BY seq ASC"
+    )
+    audit_status = verify_audit_records(audit_rows)
+    if not audit_status.valid:
+        raise ValueError("恢复数据审计日志哈希链校验失败")
     checked = 0
     for table, entity, fields in [
         ("gmail_accounts", "gmail_account", ("password", "phone", "notes")),

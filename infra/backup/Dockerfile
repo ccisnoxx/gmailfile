@@ -1,6 +1,6 @@
 # Restore needs the locked application runtime for authenticated business-field checks.
 # This stage is not part of the ordinary backup target.
-FROM python:3.12.13-slim-bookworm AS restore-python
+FROM python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2 AS restore-python
 WORKDIR /app
 ENV UV_PYTHON_DOWNLOADS=never
 RUN pip install --no-cache-dir uv==0.13.4
@@ -8,7 +8,7 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 
 # Official PostgreSQL client/server version matches the deployed database.
-FROM postgres:18.7-bookworm AS backup-base
+FROM postgres:18.7-bookworm@sha256:e742a2668255221388004f3a42b6150a2103f5054ab3a4a93ae9e4f01e551c35 AS backup-base
 # CVE-2026-109518 requires retries; disable them while obtaining signed Debian packages.
 RUN apt-get -o Acquire::Retries=0 update && apt-get -o Acquire::Retries=0 install -y --no-install-recommends curl python3 python3-psycopg openssh-client ca-certificates \
     && rm -rf /var/lib/apt/lists/* \

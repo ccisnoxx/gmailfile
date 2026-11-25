@@ -1,7 +1,7 @@
 # 合成PG18应用回归；独立于正式Compose，不连接正式网络或异地身份。
 services:
   postgres:
-    image: postgres:18.7-bookworm
+    image: postgres:18.7-bookworm@sha256:e742a2668255221388004f3a42b6150a2103f5054ab3a4a93ae9e4f01e551c35
     restart: "no"
     environment:
       POSTGRES_DB: gm_test_phase5

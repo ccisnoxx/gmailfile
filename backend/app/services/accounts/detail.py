@@ -224,7 +224,7 @@ class AccountDetailService:
         return BatchResult(updated_ids=[item.id for item in body.accounts])
 
     def reveal(self, account_id: UUID) -> PasswordResponse:
-        self.auth.require_recent(self.session)
+        self.auth.require_recent(self.session, require_mfa=self.auth.settings.step_up_totp_required)
         row = self.record(account_id)
         if row.deleted_at is not None:
             raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再查看密码")
@@ -238,7 +238,7 @@ class AccountDetailService:
         return PasswordResponse(password=password)
 
     def copied(self, account_id: UUID) -> None:
-        self.auth.require_recent(self.session)
+        self.auth.require_recent(self.session, require_mfa=self.auth.settings.step_up_totp_required)
         row = self.record(account_id)
         if row.deleted_at is not None:
             raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再操作")

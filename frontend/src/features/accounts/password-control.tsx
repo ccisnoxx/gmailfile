@@ -207,18 +207,23 @@ export function PasswordControl({
         <>
           <Alert>
             <AlertDescription>
-              需要最近 5 分钟内的管理员重新验证。
+              {session.step_up_totp_required
+                ? '需要最近 5 分钟内的管理员密码与 TOTP 二次验证。'
+                : '需要最近 5 分钟内的管理员重新验证。'}
             </AlertDescription>
           </Alert>
           <CredentialForm
             kind="reverify"
             busy={verifying}
+            requireStepUpTotp={Boolean(session.step_up_totp_required)}
             onSubmit={async (body) => {
               const ticket = generation.current;
               setVerifying(true);
               try {
                 const { data } = await authReverify({
-                  body: { password: body.password },
+                  body: body.totp_code
+                    ? { password: body.password, totp_code: body.totp_code }
+                    : { password: body.password },
                   headers: { 'X-CSRF-Token': session.csrf_token },
                   throwOnError: true,
                 });
