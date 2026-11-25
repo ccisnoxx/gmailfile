@@ -1,0 +1,45 @@
+# 公开部署示例：域名/路径/网段与发布器检查须在私有库同步定制。
+# 必须与基础文件及 offsite overlay 一起使用。不得混入 dev/acceptance。
+services:
+  migrate:
+    image: gmail-manager-api:${RELEASE_ID:?set release ID}
+    read_only: true
+    tmpfs: ["/tmp:mode=0700,uid=10001,gid=10001"]
+  api:
+    image: gmail-manager-api:${RELEASE_ID:?set release ID}
+    # Docker29不为仅有internal网络的容器发布端口；只有API加入独立入口网络。
+    command: [uvicorn, "app.main:create_app", --factory, --host, 0.0.0.0, --port, "8000", --no-access-log, --proxy-headers, --forwarded-allow-ips, "10.203.1.1"]
+    networks:
+      app_internal: {}
+      api_ingress: {gw_priority: 1}
+    read_only: true
+    tmpfs: ["/tmp:mode=0700,uid=10001,gid=10001"]
+    environment:
+      APP_ENV: production
+      SESSION_COOKIE_SECURE: "true"
+  backup-init:
+    image: gmail-manager-api:${RELEASE_ID:?set release ID}
+  backup:
+    image: gmail-manager-backup:${RELEASE_ID:?set release ID}
+    environment:
+      TZ: UTC
+    command: [schedule, --database, "${DATABASE_NAME:-gmail_manager}", --directory, /backups, --recipients, /run/secrets/backup_recipients, --at, "02:00", --config, /deployment/production.env, --config, /deployment/release.json, --config, /deployment/images.json, --config, /deployment/site.conf, --config, /deployment/proxy.conf, --config, /deployment/cert-renew.service, --config, /deployment/cert-renew.timer]
+    volumes:
+      - ${DEPLOYMENT_ROOT:-/opt/example/gmail-manager}/production.env:/deployment/production.env:ro
+      - ${RELEASE_DIRECTORY:?set release directory}/release.json:/deployment/release.json:ro
+      - ${RELEASE_DIRECTORY:?set release directory}/images.json:/deployment/images.json:ro
+      - /etc/nginx/sites-available/accounts.example.com.conf:/deployment/site.conf:ro
+      - /etc/nginx/gmail-manager/proxy.conf:/deployment/proxy.conf:ro
+      - /etc/systemd/system/gmail-manager-cert-renew.service:/deployment/cert-renew.service:ro
+      - /etc/systemd/system/gmail-manager-cert-renew.timer:/deployment/cert-renew.timer:ro
+networks:
+  api_ingress:
+    ipam:
+      config:
+        - subnet: 10.203.1.0/28
+          gateway: 10.203.1.1
+  app_internal:
+    ipam:
+      config:
+        - subnet: 10.203.0.0/28
+          gateway: 10.203.0.1

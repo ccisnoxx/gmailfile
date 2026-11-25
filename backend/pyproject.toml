@@ -1,0 +1,45 @@
+[project]
+name = "gmail-account-manager-api"
+version = "0.1.0"
+description = "单管理员 Gmail 资料管理 API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic==1.20.1",
+    "cryptography==50.0.2",
+    "email-validator==2.3.0",
+    "fastapi==0.165.0",
+    "psycopg[binary]==3.3.9",
+    "pwdlib[argon2]==0.4.2",
+    "pydantic==2.14.4",
+    "pydantic-settings==2.16.3",
+    "pyotp==2.12.1",
+    "qrcode==8.2",
+    "sqlalchemy==2.1.9",
+    "uvicorn[standard]==0.54.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["integration: 需要独立 PostgreSQL 测试数据库"]
+filterwarnings = ["error"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*.py" = ["E501"]
+
+[dependency-groups]
+dev = [
+    "httpx2==2.16.2",
+    "pytest==9.2.0",
+    "ruff==0.17.6",
+]

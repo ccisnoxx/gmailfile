@@ -1,0 +1,79 @@
+# Isolated Linux acceptance only: use an explicit gmail-manager-accept-* project.
+# No host ports, automatic restart, shared volumes, or production database names.
+services:
+  postgres:
+    restart: "no"
+  migrate:
+    image: gmail-manager-api:accept-${ACCEPTANCE_ID:?set ACCEPTANCE_ID}
+    environment:
+      APP_ENV: test
+      APP_BASE_URL: http://testserver
+      ALLOWED_HOSTS: testserver
+  api:
+    image: gmail-manager-api:accept-${ACCEPTANCE_ID:?set ACCEPTANCE_ID}
+    restart: "no"
+    ports: !reset []
+    environment:
+      APP_ENV: test
+      APP_BASE_URL: http://testserver
+      ALLOWED_HOSTS: testserver
+    secrets: !override [db_password, data_key_v1, data_key_v2]
+  backup-init:
+    image: gmail-manager-api:accept-${ACCEPTANCE_ID:?set ACCEPTANCE_ID}
+    command: [python, -c, "import os; [(os.chown(p,10001,10001),os.chmod(p,0o700)) for p in ('/backups','/retrieved')]"]
+    volumes: [retrieved_data:/retrieved]
+  backup:
+    image: gmail-manager-backup:accept-${ACCEPTANCE_ID:?set ACCEPTANCE_ID}
+    build:
+      target: backup
+    restart: "no"
+    command: [schedule, --database, "${DATABASE_NAME:?set DATABASE_NAME}", --directory, /backups, --recipients, /run/secrets/backup_recipients, --at, "${ACCEPTANCE_AT_UTC:-02:00}", --config, /acceptance-config/acceptance.env, --config, /acceptance-config/effective-compose.json]
+    volumes:
+      - ${ACCEPTANCE_DIR:?set ACCEPTANCE_DIR}/acceptance.env:/acceptance-config/acceptance.env:ro
+      - ${ACCEPTANCE_DIR:?set ACCEPTANCE_DIR}/evidence/effective-compose.json:/acceptance-config/effective-compose.json:ro
+  restore:
+    profiles: [acceptance]
+    image: gmail-manager-restore:accept-${ACCEPTANCE_ID:?set ACCEPTANCE_ID}
+    build:
+      context: ..
+      dockerfile: infra/backup/Dockerfile
+      target: restore
+    restart: "no"
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:mode=0700,uid=10001,gid=10001"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: gm_bootstrap
+      BACKUP_DB_PASSWORD_FILE: /run/secrets/db_admin_password
+      DATA_KEY_DIRECTORY: /run/secrets
+      ACTIVE_DATA_KEY_VERSION: ${ACTIVE_DATA_KEY_VERSION:-2}
+    secrets: [db_admin_password, data_key_v1, data_key_v2, backup_identity, wrong_backup_identity]
+    volumes: [backup_data:/backups:ro, retrieved_data:/retrieved:ro]
+    networks: [app_internal]
+    mem_limit: 384m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+volumes:
+  retrieved_data:
+
+secrets:
+  data_key_v2:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/data_key_v2
+  backup_identity:
+    file: ${RECOVERY_SECRETS_DIR:?set RECOVERY_SECRETS_DIR}/backup_identity
+  wrong_backup_identity:
+    file: ${RECOVERY_SECRETS_DIR:?set RECOVERY_SECRETS_DIR}/wrong_backup_identity
+  backup_ssh_config:
+    file: ${OFFSITE_SECRETS_DIR:?set OFFSITE_SECRETS_DIR}/backup_ssh_config
+  backup_ssh_identity:
+    file: ${OFFSITE_SECRETS_DIR:?set OFFSITE_SECRETS_DIR}/backup_ssh_identity
+  backup_known_hosts:
+    file: ${OFFSITE_SECRETS_DIR:?set OFFSITE_SECRETS_DIR}/backup_known_hosts

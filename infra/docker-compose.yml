@@ -1,0 +1,175 @@
+name: gmail-manager
+
+x-api: &api
+  build:
+    context: ../backend
+  image: gmail-manager-api:0.1.0
+  user: "10001:10001"
+  init: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [app_internal]
+  mem_limit: 384m
+  cpus: 1.0
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+
+x-environment: &environment
+  APP_ENV: ${APP_ENV:-production}
+  APP_BASE_URL: ${APP_BASE_URL:-https://accounts.example.com}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-accounts.example.com}
+  TOTP_REQUIRED: "true"
+  DEBUG: "false"
+  EXPOSE_API_DOCS: "false"
+  CORS_ORIGINS: ""
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: ${DATABASE_NAME:-gmail_manager}
+  ACTIVE_DATA_KEY_VERSION: ${ACTIVE_DATA_KEY_VERSION:-1}
+  DATA_KEY_DIRECTORY: /run/secrets
+  SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES:-15}
+  SESSION_ABSOLUTE_HOURS: ${SESSION_ABSOLUTE_HOURS:-12}
+  REAUTH_WINDOW_MINUTES: ${REAUTH_WINDOW_MINUTES:-5}
+  DEFAULT_PAGE_SIZE: ${DEFAULT_PAGE_SIZE:-30}
+  MAX_PAGE_SIZE: ${MAX_PAGE_SIZE:-100}
+  MAX_IMPORT_SIZE_MB: ${MAX_IMPORT_SIZE_MB:-10}
+
+services:
+  postgres:
+    image: postgres:18.7-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-gmail_manager}
+      POSTGRES_USER: gm_bootstrap
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_admin_password
+    secrets: [db_admin_password, db_migrator_password, db_password, db_backup_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U gm_bootstrap -d ${DATABASE_NAME:-gmail_manager}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [app_internal]
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  migrate:
+    <<: *api
+    restart: "no"
+    command: [alembic, upgrade, head]
+    environment:
+      <<: *environment
+      DATABASE_USER: gm_migrator
+      DATABASE_PASSWORD_FILE: /run/secrets/db_migrator_password
+    secrets: [db_migrator_password]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      <<: *environment
+      BACKUP_STATUS_FILE: /backups/status.json
+      DATABASE_USER: gm_app
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password, data_key_v1]
+    volumes: [backup_data:/backups:ro]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, urllib.request; host=os.environ['ALLOWED_HOSTS'].split(',')[0].strip(); urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/v1/health/ready', headers={'Host':host}), timeout=4)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  backup-init:
+    profiles: [operations]
+    build:
+      context: ../backend
+    image: gmail-manager-api:0.1.0
+    restart: "no"
+    user: "0:0"
+    network_mode: none
+    mem_limit: 64m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+    command: [python, -c, "import os; os.chown('/backups',10001,10001); os.chmod('/backups',0o700)"]
+    volumes: [backup_data:/backups]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+
+  backup:
+    profiles: [operations]
+    build:
+      context: ..
+      dockerfile: infra/backup/Dockerfile
+    image: gmail-manager-backup:0.1.0
+    command: [schedule, --database, "${DATABASE_NAME:-gmail_manager}", --directory, /backups, --recipients, /run/secrets/backup_recipients, --at, "02:00"]
+    restart: unless-stopped
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs: ["/tmp:mode=0700,uid=10001,gid=10001"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: gm_backup
+      BACKUP_DB_PASSWORD_FILE: /run/secrets/db_backup_password
+    secrets: [db_backup_password, backup_recipients]
+    volumes: [backup_data:/backups]
+    networks: [app_internal, backup_egress]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+      backup-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python3, /source/scripts/backup_tool.py, health, --directory, /backups]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 26h
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+networks:
+  backup_egress: {}
+  app_internal:
+    internal: true
+
+volumes:
+  postgres_data:
+  backup_data:
+
+secrets:
+  db_admin_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/db_admin_password
+  db_migrator_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/db_migrator_password
+  db_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/db_password
+  data_key_v1:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/data_key_v1
+  db_backup_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/db_backup_password
+  backup_recipients:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/backup_recipients

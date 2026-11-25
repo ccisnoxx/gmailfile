@@ -1,0 +1,16 @@
+# Public example: customize receiver identity/path together with the private receiver.
+# Only enable after dedicated identity/remote directory/host key have been provisioned and approved.
+services:
+  backup:
+    environment:
+      OFFSITE_HOST: backup-receiver
+      OFFSITE_DIRECTORY: /srv/example/gmail-manager-backups
+      OFFSITE_SSH_CONFIG: /run/secrets/backup_ssh_config
+    secrets: [backup_ssh_config, backup_ssh_identity, backup_known_hosts]
+secrets:
+  backup_ssh_config:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/offsite/backup_ssh_config
+  backup_ssh_identity:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/offsite/backup_ssh_identity
+  backup_known_hosts:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/offsite/backup_known_hosts

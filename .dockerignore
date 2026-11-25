@@ -1,0 +1,14 @@
+.git
+.idea
+.env*
+!.env.example
+**/.venv
+**/__pycache__
+**/node_modules
+**/dist
+.local
+secrets
+**/*.csv
+**/*.dump
+**/*.age
+**/*.log

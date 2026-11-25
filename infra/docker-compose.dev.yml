@@ -1,0 +1,13 @@
+services:
+  api:
+    environment:
+      APP_ENV: development
+      SESSION_COOKIE_SECURE: "false"
+      APP_BASE_URL: http://127.0.0.1:5173
+      ALLOWED_HOSTS: localhost,127.0.0.1
+  migrate:
+    environment:
+      APP_ENV: development
+      SESSION_COOKIE_SECURE: "false"
+      APP_BASE_URL: http://127.0.0.1:5173
+      ALLOWED_HOSTS: localhost,127.0.0.1

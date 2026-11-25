@@ -1,0 +1,8 @@
+import type { CreateClientConfig } from './generated/client.gen';
+
+export const createClientConfig: CreateClientConfig = (config) => ({
+  ...config,
+  baseUrl: window.location.origin,
+  credentials: 'same-origin',
+  cache: 'no-store',
+});

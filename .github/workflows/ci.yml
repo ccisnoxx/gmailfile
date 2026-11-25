@@ -1,0 +1,73 @@
+name: foundation
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18.7-bookworm
+        env:
+          POSTGRES_DB: gm_test_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-nonproduction
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gm_test_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:ci-only-nonproduction@127.0.0.1:5432/gm_test_ci
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: "0.13.4", python-version: "3.12.13"}
+      - run: uv sync --locked
+        working-directory: backend
+      - run: uv run --locked ruff check . ../scripts ../infra/backup && uv run --locked ruff format --check . ../scripts ../infra/backup
+        working-directory: backend
+      - run: uv run --locked pytest
+        working-directory: backend
+
+  frontend-and-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: "0.13.4", python-version: "3.12.13"}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+      - uses: pnpm/action-setup@v4
+        with: {version: "11.25.0"}
+      - run: make install generate-api
+      - name: Check generated contract
+        run: |
+          git diff --exit-code -- docs/openapi.json frontend/src/api/generated
+          test -z "$(git ls-files --others --exclude-standard -- docs/openapi.json frontend/src/api/generated)"
+      - run: pnpm typecheck && pnpm format:check && pnpm test && pnpm build
+        working-directory: frontend
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend
+      - run: pnpm test:e2e
+        working-directory: frontend
+
+  compose-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Validate configuration without secrets or deployment
+        run: |
+          cp .env.example .env
+          make compose-check
+          docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.offsite.yml --profile operations config --quiet
+          docker compose --env-file .env -f infra/docker-compose.yml --profile operations config --format json > /tmp/gmail-compose-contract.json
+          python3 -c 'import json; value=json.load(open("/tmp/gmail-compose-contract.json")); assert value["services"]["backup"]["tmpfs"] == ["/tmp:mode=0700,uid=10001,gid=10001"]'
+          RELEASE_ID=ci-production-contract RELEASE_DIRECTORY=/opt/example/gmail-manager/releases/ci-production-contract docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.production.yml -f infra/docker-compose.offsite.yml --profile operations config --format json > /tmp/gmail-production-contract.json
+          python3 -c 'import importlib.util,json; spec=importlib.util.spec_from_file_location("deploy","scripts/deploy.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.validate_config(json.load(open("/tmp/gmail-production-contract.json")),"ci-production-contract")'
+          bash -n infra/postgres/init-roles.sh
+          sh -n scripts/generate-secrets.sh

@@ -1,0 +1,50 @@
+# 合成PG18应用回归；独立于正式Compose，不连接正式网络或异地身份。
+services:
+  postgres:
+    image: postgres:18.7-bookworm
+    restart: "no"
+    environment:
+      POSTGRES_DB: gm_test_phase5
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/test_db_password
+    secrets: [test_db_password]
+    volumes: [test_postgres_data:/var/lib/postgresql]
+    networks: [test_internal]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d gm_test_phase5"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  test:
+    image: gmail-manager-test:${RELEASE_ID:?set release ID}
+    restart: "no"
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp:mode=0700,uid=10001,gid=10001"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    secrets: [test_db_password]
+    # URL仅在进程环境内生成，不写日志或Compose；测试凭据不是生产Secret。
+    entrypoint: [/source/backend/.venv/bin/python, -c]
+    command:
+      - "import os,subprocess; from pathlib import Path; from sqlalchemy.engine import URL; os.environ['TEST_DATABASE_URL']=URL.create('postgresql+psycopg',username='postgres',password=Path('/run/secrets/test_db_password').read_text().strip(),host='postgres',database='gm_test_phase5').render_as_string(hide_password=False); raise SystemExit(subprocess.call(['/source/backend/.venv/bin/python','-m','pytest','-m','integration','-q','-p','no:cacheprovider']))"
+    networks: [test_internal]
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 384m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  test_internal: {internal: true}
+volumes:
+  test_postgres_data:
+secrets:
+  test_db_password:
+    file: ${REGRESSION_SECRETS_DIR:?set independent test Secret path}/db_password

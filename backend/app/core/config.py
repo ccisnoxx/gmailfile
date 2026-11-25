@@ -1,0 +1,80 @@
+from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
+
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=ROOT / ".env", extra="ignore", hide_input_in_errors=True
+    )
+
+    app_env: Literal["development", "test", "production"] = "production"
+    app_name: str = "Gmail Account Manager"
+    app_base_url: str = "https://accounts.example.com"
+    allowed_hosts: str = "accounts.example.com"
+    cors_origins: str = ""
+    debug: bool = False
+    expose_api_docs: bool = False
+    totp_required: bool = True
+    session_cookie_secure: bool = True
+    session_idle_minutes: int = Field(default=15, ge=1, le=720)
+    session_absolute_hours: int = Field(default=12, ge=1, le=168)
+    reauth_window_minutes: int = Field(default=5, ge=1, le=5)
+    active_data_key_version: int = Field(default=1, ge=1, le=32767)
+    data_key_directory: Path = Path("/run/secrets")
+    database_host: str = "postgres"
+    database_port: int = Field(default=5432, ge=1, le=65535)
+    database_name: str = "gmail_manager"
+    database_user: str = "gm_app"
+    database_password_file: Path = Path("/run/secrets/db_password")
+    default_page_size: int = Field(default=30, ge=1, le=100)
+    max_page_size: int = Field(default=100, ge=1, le=100)
+    backup_status_file: Path | None = None
+    max_import_size_mb: int = Field(default=10, ge=1, le=10)
+
+    @property
+    def hosts(self) -> list[str]:
+        return [host.strip() for host in self.allowed_hosts.split(",") if host.strip()]
+
+    @model_validator(mode="after")
+    def secure_configuration(self) -> "Settings":
+        if not self.hosts or any("*" in host for host in self.hosts):
+            raise ValueError("ALLOWED_HOSTS 必须指定精确主机名")
+        if self.default_page_size > self.max_page_size:
+            raise ValueError("默认分页大小不能超过最大值")
+        if self.cors_origins:
+            raise ValueError("本系统采用同源部署，不开放跨域 API")
+        base = urlsplit(self.app_base_url)
+        if (
+            base.scheme not in {"https", "http"}
+            or not base.hostname
+            or base.username
+            or base.password
+            or base.query
+            or base.fragment
+            or base.path not in {"", "/"}
+        ):
+            raise ValueError("APP_BASE_URL 必须是有效站点地址")
+        if self.app_env == "production":
+            if base.scheme != "https" or base.hostname not in self.hosts:
+                raise ValueError("生产地址必须使用 HTTPS 且位于 ALLOWED_HOSTS")
+            if (
+                not self.totp_required
+                or self.debug
+                or self.expose_api_docs
+                or not self.session_cookie_secure
+            ):
+                raise ValueError("生产环境必须启用 TOTP 和安全 Cookie，关闭调试与公开文档")
+        return self
+
+    def validate_secret_files(self) -> None:
+        if not self.database_password_file.read_bytes().strip():
+            raise ValueError("数据库密码文件不能为空")
+        active_key = self.data_key_directory / f"data_key_v{self.active_data_key_version}"
+        if len(active_key.read_bytes()) != 32:
+            raise ValueError("数据密钥必须是 32 字节原始随机值")

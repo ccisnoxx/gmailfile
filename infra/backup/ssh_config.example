@@ -1,0 +1,16 @@
+# Example only: customize the documented endpoint in private configuration.
+# Provision a NEW least-privilege identity; never copy a personal root key.
+Host backup-receiver
+    HostName 192.0.2.10
+    Port 22
+    User gmail-backup
+    IdentityFile /run/secrets/backup_ssh_identity
+    UserKnownHostsFile /run/secrets/backup_known_hosts
+    StrictHostKeyChecking yes
+    BatchMode yes
+    IdentitiesOnly yes
+    ForwardAgent no
+    ClearAllForwardings yes
+    RequestTTY no
+    ServerAliveInterval 30
+    ServerAliveCountMax 3

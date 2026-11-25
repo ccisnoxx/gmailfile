@@ -1,0 +1,43 @@
+import pytest
+from pydantic import ValidationError
+
+from app.core.config import Settings
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"totp_required": False},
+        {"debug": True},
+        {"expose_api_docs": True},
+        {"app_base_url": "http://accounts.example.com"},
+        {"allowed_hosts": "*"},
+        {"cors_origins": "*"},
+        {"reauth_window_minutes": 6},
+        {"default_page_size": 50, "max_page_size": 30},
+    ],
+)
+def test_production_rejects_unsafe_config(overrides):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **overrides)
+
+
+def test_safe_production_defaults():
+    settings = Settings(_env_file=None)
+    assert settings.app_env == "production"
+    assert settings.totp_required
+    assert not settings.debug and not settings.expose_api_docs
+
+
+def test_instance_domain_overrides_public_example(monkeypatch):
+    monkeypatch.setenv("APP_BASE_URL", "https://vault.example.net")
+    monkeypatch.setenv("ALLOWED_HOSTS", "vault.example.net")
+    settings = Settings(_env_file=None)
+    assert settings.app_base_url == "https://vault.example.net"
+    assert settings.hosts == ["vault.example.net"]
+
+
+def test_invalid_data_key_rejected(settings):
+    (settings.data_key_directory / "data_key_v1").write_bytes(b"invalid")
+    with pytest.raises(ValueError, match="32"):
+        settings.validate_secret_files()
