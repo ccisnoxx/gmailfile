@@ -1,0 +1,17 @@
+import { AccountDetailPage } from '@/features/accounts/detail';
+import { useWorkspaceContext } from '@/features/auth/workspace-context';
+
+export default function AccountDetailRoute() {
+  const workspace = useWorkspaceContext();
+  return (
+    <AccountDetailPage
+      key={workspace.epoch}
+      session={workspace.session}
+      onSession={workspace.onSession}
+      onFailure={workspace.onAccountFailure}
+      onSecurity={() => workspace.onNavigate('security')}
+      onOperations={(tab) => workspace.onNavigate('operations', tab)}
+      onLogout={() => workspace.onLogout(true)}
+    />
+  );
+}

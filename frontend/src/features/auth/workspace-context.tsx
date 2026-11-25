@@ -5,6 +5,8 @@ import type { SecurityPanel } from './security-settings-panel';
 import type { Credentials, ChangePasswordInput } from '@/api/generated';
 
 export type WorkspaceView = 'accounts' | 'security' | 'operations';
+export type OperationsTabKey =
+  'status' | 'import' | 'export' | 'sessions' | 'audit';
 
 type CredentialValues = Credentials &
   Partial<Pick<ChangePasswordInput, 'new_password'>>;
@@ -16,7 +18,7 @@ export type WorkspaceContextValue = {
   notice: AuthNotice;
   panel: SecurityPanel;
   onSession: (value: SessionResponse) => void;
-  onNavigate: (view: WorkspaceView) => void;
+  onNavigate: (view: WorkspaceView, tab?: OperationsTabKey) => void;
   onLogout: (clearSessionImmediately?: boolean) => void;
   onAccountFailure: (error: unknown) => void;
   onOperationsFailure: (error: unknown) => void;

@@ -48,10 +48,10 @@ export function AccountFormDialog({
     >
       <DialogContent
         onCloseAutoFocus={onRestoreFocus}
-        className="flex max-h-[90vh] min-h-0 flex-col overflow-hidden sm:max-w-2xl"
+        className="macos-glass-modal flex max-h-[90vh] min-h-0 flex-col overflow-hidden rounded-[22px] sm:max-w-2xl"
       >
         <DialogHeader>
-          <DialogTitle>{form === 'edit' ? '编辑账号' : '新增账号'}</DialogTitle>
+          <DialogTitle>{form === 'edit' ? '编辑账号' : '新建账号'}</DialogTitle>
           <DialogDescription>
             {form === 'edit'
               ? `${detail?.account_no} · 版本 ${detail?.row_version}`

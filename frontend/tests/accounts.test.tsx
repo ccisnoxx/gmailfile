@@ -139,7 +139,7 @@ it('列表与详情来自 API，邮箱和辅助邮箱可复制，键盘可打开
     }),
   );
   expect(await navigator.clipboard.readText()).toBe(record.recovery_email);
-  screen.getByRole('button', { name: '详情' }).focus();
+  screen.getByRole('button', { name: record.gmail_email }).focus();
   await user.keyboard('{Enter}');
   const drawer = await screen.findByRole('dialog', { name: '账号详情' });
   expect(within(drawer).getByText(record.account_no)).toBeInTheDocument();
@@ -157,7 +157,12 @@ it('新增与编辑共用表单，编辑密码为空且保存时省略，不读�
     return json({ ...record, purpose: '新用途', row_version: 2 });
   });
   page();
-  await userEvent.click(await screen.findByRole('button', { name: '编辑' }));
+  await userEvent.click(
+    await screen.findByRole('button', {
+      name: `更多操作 ${record.gmail_email}`,
+    }),
+  );
+  await userEvent.click(await screen.findByRole('menuitem', { name: '编辑' }));
   const form = await screen.findByRole('dialog', { name: '编辑账号' });
   expect(within(form).getByLabelText(/Gmail 登录密码/)).toHaveValue('');
   await userEvent.clear(within(form).getByLabelText('账号用途'));
@@ -170,7 +175,7 @@ it('新增与编辑共用表单，编辑密码为空且保存时省略，不读�
   expect(
     mock.mock.calls.some(([req]) => req.url.includes('reveal-password')),
   ).toBe(false);
-  await userEvent.click(screen.getByRole('button', { name: '新增账号' }));
+  await userEvent.click(screen.getByRole('button', { name: '新建账号' }));
   expect(await screen.findByLabelText('Gmail 地址')).toHaveValue('');
   expect(screen.getByLabelText('Gmail 登录密码')).toBeRequired();
 });
@@ -184,7 +189,7 @@ it('新增提交真实字段和UTC，关联切换不会同时提交两种辅助�
   });
   page();
   await userEvent.click(
-    await screen.findByRole('button', { name: '新增账号' }),
+    await screen.findByRole('button', { name: '新建账号' }),
   );
   await userEvent.type(
     await screen.findByLabelText('Gmail 地址'),
@@ -215,7 +220,7 @@ it('表单阻止辅助邮箱与主邮箱同一规范化地址', async () => {
   const mock = stubRows(record);
   page();
   await userEvent.click(
-    await screen.findByRole('button', { name: '新增账号' }),
+    await screen.findByRole('button', { name: '新建账号' }),
   );
   await userEvent.type(
     await screen.findByLabelText('Gmail 地址'),
@@ -223,7 +228,7 @@ it('表单阻止辅助邮箱与主邮箱同一规范化地址', async () => {
   );
   await userEvent.type(screen.getByLabelText('Gmail 登录密码'), id());
   await userEvent.type(
-    within(screen.getByRole('dialog', { name: '新增账号' })).getByLabelText(
+    within(screen.getByRole('dialog', { name: '新建账号' })).getByLabelText(
       '辅助邮箱',
     ),
     'username@gmail.com',
@@ -241,7 +246,12 @@ it('版本冲突保留表单，禁用保存，明确加载最新版本且不自�
   const record = row();
   const mock = stubRows(record, async () => error('ROW_VERSION_CONFLICT'));
   page();
-  await userEvent.click(await screen.findByRole('button', { name: '编辑' }));
+  await userEvent.click(
+    await screen.findByRole('button', {
+      name: `更多操作 ${record.gmail_email}`,
+    }),
+  );
+  await userEvent.click(await screen.findByRole('menuitem', { name: '编辑' }));
   await screen.findByRole('dialog', { name: '编辑账号' });
   await userEvent.click(screen.getByRole('button', { name: '保存账号' }));
   expect(
@@ -270,7 +280,9 @@ it.each(['归档', '删除'])(
     const record = row();
     const mock = stubRows(record);
     page();
-    await userEvent.click(await screen.findByRole('button', { name: '详情' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: record.gmail_email }),
+    );
     await screen.findByRole('dialog', { name: '账号详情' });
     await userEvent.click(screen.getByRole('button', { name: action }));
     await userEvent.click(screen.getByRole('button', { name: '取消' }));
@@ -294,11 +306,11 @@ it('已删除记录入口提供单条恢复并携带版本', async () => {
   record.deleted_at = new Date().toISOString();
   const mock = stubRows(record);
   page();
-  await userEvent.click(
-    await screen.findByRole('button', { name: '已删除记录' }),
-  );
+  await userEvent.click(await screen.findByRole('button', { name: /回收站/ }));
   await screen.findByRole('table', { name: '已删除账号列表' });
-  await userEvent.click(screen.getByRole('button', { name: '详情' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: record.gmail_email }),
+  );
   await userEvent.click(
     await screen.findByRole('button', { name: '恢复账号' }),
   );
@@ -539,7 +551,7 @@ it('管理标签新增、重命名及删除确认不删除账号', async () => {
   vi.stubGlobal('fetch', mock);
   page();
   await userEvent.click(
-    await screen.findByRole('button', { name: '管理标签' }),
+    await screen.findByRole('button', { name: '标签管理' }),
   );
   await userEvent.click(await screen.findByRole('button', { name: '重命名' }));
   await userEvent.clear(screen.getByLabelText('标签名称'));

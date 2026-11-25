@@ -28,7 +28,15 @@ const tabItems: readonly [OperationsTab, string][] = [
 ];
 
 export function OperationsPage(props: OperationsPanelProps) {
-  const [tab, setTab] = useState<OperationsTab>('status');
+  const initialTab = new URLSearchParams(window.location.search).get('tab');
+  const [tab, setTab] = useState<OperationsTab>(
+    initialTab &&
+      (
+        ['status', 'import', 'export', 'sessions', 'audit'] as string[]
+      ).includes(initialTab)
+      ? (initialTab as OperationsTab)
+      : 'status',
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground">

@@ -55,7 +55,10 @@ export function TagManagerDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent onCloseAutoFocus={onRestoreFocus}>
+        <DialogContent
+          onCloseAutoFocus={onRestoreFocus}
+          className="macos-glass-modal rounded-[22px]"
+        >
           <DialogHeader>
             <DialogTitle>管理标签</DialogTitle>
             <DialogDescription>

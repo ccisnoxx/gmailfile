@@ -10,6 +10,7 @@ export default function AccountsRoute() {
       onSession={workspace.onSession}
       onFailure={workspace.onAccountFailure}
       onSecurity={() => workspace.onNavigate('security')}
+      onOperations={(tab) => workspace.onNavigate('operations', tab)}
       onLogout={() => workspace.onLogout(true)}
     />
   );

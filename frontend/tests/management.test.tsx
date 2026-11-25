@@ -146,6 +146,7 @@ it('URL恢复查询，条件变化回第一页，前进/后退恢复并清空选
       ([req]) => new URL(req.url).searchParams.get('page') === '2',
     ),
   ).toBe(true);
+  await userEvent.click(screen.getByRole('button', { name: /筛选/ }));
   await userEvent.selectOptions(
     screen.getByLabelText('筛选二步验证'),
     'enabled',
@@ -160,7 +161,12 @@ it('URL恢复查询，条件变化回第一页，前进/后退恢复并清空选
   });
   await waitFor(() => expect(location.search).toContain('page=2'));
   await screen.findByText('共 35 条 · 第 2 / 2 页');
-  expect(screen.getByText('已选当前页 0 条（不跨页）')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('region', { name: '批量操作' }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: '分页' })).toHaveTextContent(
+    '已选择 0 项，共 35 项',
+  );
   await act(async () => {
     window.history.forward();
   });
@@ -174,6 +180,7 @@ it('分页改变URL且选择不跨页，列显示可用，重置保留删除入�
   expect(
     screen.queryByRole('columnheader', { name: '更新时间' }),
   ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /筛选/ }));
   await userEvent.click(screen.getByText('显示列'));
   await userEvent.click(screen.getByLabelText('更新时间'));
   expect(
@@ -182,8 +189,15 @@ it('分页改变URL且选择不跨页，列显示可用，重置保留删除入�
   await userEvent.click(screen.getByLabelText('选择当前页全部账号'));
   await userEvent.click(screen.getByRole('button', { name: '下一页' }));
   expect(location.search).toContain('page=2');
-  await screen.findByText('已选当前页 0 条（不跨页）');
-  await userEvent.click(screen.getByRole('button', { name: '已删除记录' }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('region', { name: '批量操作' }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole('navigation', { name: '分页' })).toHaveTextContent(
+    '已选择 0 项，共 35 项',
+  );
+  await userEvent.click(screen.getByRole('button', { name: /回收站/ }));
   await userEvent.selectOptions(screen.getByLabelText('筛选状态'), 'normal');
   await userEvent.click(screen.getByRole('button', { name: '重置筛选' }));
   expect(location.search).toBe('?deleted=true');
@@ -233,11 +247,19 @@ it('批量冲突定位记录，禁止重放，刷新后重新选择', async () =
   expect(mock.mock.calls.filter(([r]) => r.method === 'POST')).toHaveLength(1);
   await userEvent.click(screen.getByRole('button', { name: '取消批量操作' }));
   await userEvent.click(screen.getByRole('button', { name: '刷新列表' }));
-  await screen.findByText('已选当前页 0 条（不跨页）');
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('region', { name: '批量操作' }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole('navigation', { name: '分页' })).toHaveTextContent(
+    '已选择 0 项，共 35 项',
+  );
 });
 it('辅助邮箱页面跳转为精确关联条件，保留分页API而非下载全量', async () => {
   const mock = stub([row()]);
   page();
+  await userEvent.click(await screen.findByRole('button', { name: /筛选/ }));
   await userEvent.click(
     await screen.findByRole('button', { name: '辅助邮箱使用情况' }),
   );

@@ -15,6 +15,7 @@ import { useTotpManager, useTotpState } from './use-totp-manager';
 import {
   WorkspaceContext,
   WorkspaceFallback,
+  type OperationsTabKey,
   type WorkspaceContextValue,
   type WorkspaceView,
 } from './workspace-context';
@@ -46,7 +47,7 @@ function AuthWorkspace({
 }: {
   inRouter: boolean;
   view: WorkspaceView;
-  onNavigateView: (next: WorkspaceView) => void;
+  onNavigateView: (next: WorkspaceView, tab?: OperationsTabKey) => void;
 }) {
   const [panel, setPanel] = useState<SecurityPanel>('reverify');
   const totpState = useTotpState();
@@ -70,9 +71,9 @@ function AuthWorkspace({
   );
 
   const switchView = useCallback(
-    (next: WorkspaceView) => {
+    (next: WorkspaceView, tab?: OperationsTabKey) => {
       auth.clearSecrets();
-      onNavigateView(next);
+      onNavigateView(next, tab);
     },
     [auth, onNavigateView],
   );
@@ -145,6 +146,7 @@ function AuthWorkspace({
             onSession={auth.setSession}
             onFailure={auth.handleAccountFailure}
             onSecurity={() => switchView('security')}
+            onOperations={(tab) => switchView('operations', tab)}
             onLogout={() => auth.logout(true)}
           />
         </Suspense>
@@ -237,10 +239,14 @@ function AuthWorkspace({
 function RoutedAuthWorkspace() {
   const navigate = useNavigate();
   const handleNavigate = useCallback(
-    (next: WorkspaceView) => {
+    (next: WorkspaceView, tab?: OperationsTabKey) => {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (next === 'operations' && tab) searchParams.set('tab', tab);
+      else searchParams.delete('tab');
+      const search = searchParams.toString();
       void navigate({
         pathname: routePaths[next],
-        search: window.location.search,
+        search: search ? `?${search}` : '',
       });
     },
     [navigate],

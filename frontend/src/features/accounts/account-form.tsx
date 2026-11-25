@@ -309,7 +309,7 @@ export function AccountForm({
           </FieldDescription>
         </Field>
       </FieldGroup>
-      <div className="flex shrink-0 justify-end gap-3 border-t bg-background pt-4">
+      <div className="flex shrink-0 justify-end gap-3 border-t border-[var(--table-divider)] bg-transparent pt-4">
         <Button type="button" variant="outline" onClick={onCancel}>
           取消
         </Button>

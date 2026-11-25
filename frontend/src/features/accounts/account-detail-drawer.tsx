@@ -62,7 +62,7 @@ export function AccountDetailDrawer({
     >
       <SheetContent
         onCloseAutoFocus={onRestoreFocus}
-        className="w-full overflow-y-auto sm:max-w-xl"
+        className="macos-glass-modal w-full overflow-y-auto border-l border-white/80 sm:max-w-xl"
       >
         <SheetHeader>
           <SheetTitle>账号详情</SheetTitle>

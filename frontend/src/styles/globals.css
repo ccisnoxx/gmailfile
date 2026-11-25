@@ -11,33 +11,99 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--accent);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--border);
-  --color-ring: var(--primary);
-  --radius-md: 0.5rem;
+  --color-ring: var(--accent);
+  --radius-md: 0.625rem;
 }
 
 :root {
   font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Microsoft YaHei', sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', Inter,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   color-scheme: light;
-  --background: #fafbfc;
-  --foreground: #17252b;
-  --card: #ffffff;
-  --primary: #126a61;
+
+  /* 共享 macOS 淡蓝桌面与语义色板 */
+  --desktop-start: #dceeff;
+  --desktop-mid: #c9e3ff;
+  --desktop-end: #afcfff;
+  --accent: #1677ff;
+  --accent-hover: #0e66e8;
+  --accent-soft: #eaf3ff;
+  --text-primary: #172033;
+  --text-secondary: #667085;
+  --success: #2fbf71;
+  --success-soft: rgba(47, 191, 113, 0.14);
+  --success-text: #1b8a4e;
+  --warning: #f5a623;
+  --warning-soft: rgba(245, 166, 35, 0.16);
+  --warning-text: #b76e08;
+  --danger: #e45d5d;
+  --danger-soft: rgba(228, 93, 93, 0.14);
+  --purple: #8468f5;
+  --purple-soft: rgba(132, 104, 245, 0.14);
+  --purple-text: #6246d6;
+
+  /* 亚克力玻璃、导航透明度、圆角、阴影与动效变量 */
+  --nav-alpha: 0.6;
+  --nav-blur: 24px;
+  --nav-saturate: 145%;
+  --nav-bg: rgba(248, 252, 255, var(--nav-alpha));
+  --nav-border: rgba(255, 255, 255, 0.72);
+  --nav-divider: rgba(148, 178, 214, 0.24);
+  --nav-text-secondary: #475467;
+
+  --window-bg: rgba(248, 252, 255, 0.58);
+  --window-blur: 28px;
+  --window-saturate: 135%;
+  --window-border: rgba(255, 255, 255, 0.72);
+  --window-shadow:
+    0 24px 80px rgba(50, 90, 140, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --window-radius: 26px;
+
+  --panel-bg: rgba(255, 255, 255, 0.5);
+  --panel-bg-strong: rgba(255, 255, 255, 0.68);
+  --panel-bg-hover: rgba(255, 255, 255, 0.72);
+  --panel-blur: 18px;
+  --panel-saturate: 135%;
+  --panel-border: rgba(255, 255, 255, 0.78);
+  --panel-shadow:
+    0 8px 28px rgba(45, 86, 138, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --panel-shadow-hover:
+    0 12px 32px rgba(45, 86, 138, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --panel-radius: 18px;
+
+  --modal-bg: rgba(250, 253, 255, 0.84);
+  --modal-blur: 28px;
+  --modal-border: rgba(255, 255, 255, 0.86);
+  --modal-shadow:
+    0 28px 80px rgba(32, 64, 110, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+
+  --table-divider: rgba(148, 178, 214, 0.22);
+  --table-row-hover: rgba(255, 255, 255, 0.52);
+  --table-row-selected: rgba(22, 119, 255, 0.09);
+
+  --motion-duration: 180ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --detail-pad: 20px;
+  --detail-gap: 16px;
+
+  /* 与现有 shadcn/ui 组件兼容的映射变量 */
+  --background: #f4f8fd;
+  --foreground: var(--text-primary);
+  --card: rgba(255, 255, 255, 0.76);
+  --primary: var(--accent);
   --primary-foreground: #ffffff;
-  --secondary: #edf1f3;
-  --secondary-foreground: #273a42;
-  --muted: #edf1f3;
-  --muted-foreground: #536570;
-  --accent: #e8f1ef;
-  --accent-foreground: #14554e;
-  --destructive: #b42318;
-  --border: #dce3e7;
+  --secondary: rgba(234, 243, 255, 0.85);
+  --secondary-foreground: #174ea6;
+  --muted: rgba(226, 238, 252, 0.65);
+  --muted-foreground: var(--text-secondary);
+  --destructive: var(--danger);
+  --border: rgba(173, 200, 232, 0.48);
 }
 
 @layer base {
@@ -47,9 +113,280 @@
   body {
     margin: 0;
     min-width: 320px;
+    color: var(--text-primary);
+    background: linear-gradient(
+      135deg,
+      var(--desktop-start) 0%,
+      var(--desktop-mid) 48%,
+      var(--desktop-end) 100%
+    );
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   button,
   a {
     -webkit-tap-highlight-color: transparent;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/* macOS 亚克力表面与交互类 */
+.macos-desktop-bg {
+  background:
+    radial-gradient(
+      62% 55% at 14% 10%,
+      rgba(255, 255, 255, 0.82) 0%,
+      rgba(255, 255, 255, 0) 68%
+    ),
+    radial-gradient(
+      52% 50% at 88% 18%,
+      rgba(128, 184, 255, 0.45) 0%,
+      rgba(128, 184, 255, 0) 72%
+    ),
+    radial-gradient(
+      55% 48% at 72% 92%,
+      rgba(155, 202, 255, 0.48) 0%,
+      rgba(155, 202, 255, 0) 70%
+    ),
+    linear-gradient(
+      135deg,
+      var(--desktop-start) 0%,
+      var(--desktop-mid) 50%,
+      var(--desktop-end) 100%
+    );
+}
+
+.macos-window {
+  background: var(--window-bg);
+  backdrop-filter: blur(var(--window-blur)) saturate(var(--window-saturate));
+  -webkit-backdrop-filter: blur(var(--window-blur))
+    saturate(var(--window-saturate));
+  border: 1px solid var(--window-border);
+  border-radius: var(--window-radius);
+  box-shadow: var(--window-shadow);
+}
+
+.macos-nav-surface {
+  background: var(--nav-bg);
+  backdrop-filter: blur(var(--nav-blur)) saturate(var(--nav-saturate));
+  -webkit-backdrop-filter: blur(var(--nav-blur)) saturate(var(--nav-saturate));
+  /* 在 35% 最低毛玻璃透明度下确保次级文字仍满足 WCAG AA (≥4.5:1) 对比度 */
+  --text-secondary: var(--nav-text-secondary);
+  transition:
+    background-color var(--motion-duration) var(--motion-ease),
+    box-shadow var(--motion-duration) var(--motion-ease);
+}
+
+.macos-glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(var(--panel-blur)) saturate(var(--panel-saturate));
+  -webkit-backdrop-filter: blur(var(--panel-blur))
+    saturate(var(--panel-saturate));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+  transition:
+    transform var(--motion-duration) var(--motion-ease),
+    background-color var(--motion-duration) var(--motion-ease),
+    box-shadow var(--motion-duration) var(--motion-ease),
+    border-color var(--motion-duration) var(--motion-ease);
+}
+
+.macos-glass-panel-strong {
+  background: var(--panel-bg-strong);
+}
+
+.macos-glass-interactive:hover {
+  transform: translateY(-1px);
+  background: var(--panel-bg-hover);
+  box-shadow: var(--panel-shadow-hover);
+}
+
+.macos-glass-modal {
+  background: var(--modal-bg);
+  backdrop-filter: blur(var(--modal-blur)) saturate(145%);
+  -webkit-backdrop-filter: blur(var(--modal-blur)) saturate(145%);
+  border: 1px solid var(--modal-border);
+  box-shadow: var(--modal-shadow);
+}
+
+/* macOS 细滑块 */
+.macos-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 9999px;
+  cursor: pointer;
+  outline: none;
+}
+
+.macos-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid rgba(22, 119, 255, 0.24);
+  box-shadow:
+    0 1px 4px rgba(23, 32, 51, 0.22),
+    0 0 0 0.5px rgba(255, 255, 255, 0.9);
+  transition:
+    transform var(--motion-duration) var(--motion-ease),
+    box-shadow var(--motion-duration) var(--motion-ease);
+}
+
+.macos-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.06);
+  box-shadow:
+    0 2px 6px rgba(22, 119, 255, 0.28),
+    0 0 0 1px rgba(22, 119, 255, 0.25);
+}
+
+.macos-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 3px rgba(22, 119, 255, 0.32),
+    0 1px 4px rgba(23, 32, 51, 0.22);
+}
+
+.macos-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid rgba(22, 119, 255, 0.24);
+  box-shadow: 0 1px 4px rgba(23, 32, 51, 0.22);
+  transition:
+    transform var(--motion-duration) var(--motion-ease),
+    box-shadow var(--motion-duration) var(--motion-ease);
+}
+
+/* macOS 加载旋转动画 */
+@keyframes macos-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.macos-spinner {
+  animation: macos-spin 0.9s linear infinite;
+}
+
+/* 流动桌面背景轻缓波动 */
+@keyframes macos-wave-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-1.5%, 1%, 0) scale(1.025);
+  }
+}
+
+.macos-flowing-bg {
+  animation: macos-wave-drift 18s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* 细窄 macOS 风格滚动条 */
+.macos-thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(118, 152, 194, 0.42) transparent;
+}
+
+/* 去除原生 select 箭头，避免与自定义 ChevronDown 重复 */
+.macos-select {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+}
+
+.macos-select::picker-icon {
+  display: none;
+}
+
+/* 详情页主体响应式栅格：避免任意断点与默认断点级联冲突 */
+.macos-detail-body-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: var(--detail-gap, 16px);
+}
+
+.macos-detail-side-cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--detail-gap, 16px);
+}
+
+@media (min-width: 768px) {
+  .macos-detail-side-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1360px) {
+  .macos-detail-body-grid {
+    grid-template-columns: minmax(0, 1.6fr) 304px;
+  }
+  .macos-detail-side-cards {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.macos-thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.macos-thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.macos-thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(118, 152, 194, 0.38);
+  border-radius: 9999px;
+}
+
+.macos-thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(88, 128, 178, 0.58);
+}
+
+/* 界面动画效果关闭开关 */
+[data-animations='false'] *,
+[data-animations='false'] *::before,
+[data-animations='false'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+[data-animations='false'] .macos-glass-interactive:hover {
+  transform: none;
+}
+
+/* 紧凑模式密度变量 */
+[data-compact='true'] {
+  --detail-pad: 14px;
+  --detail-gap: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .macos-glass-interactive:hover {
+    transform: none;
   }
 }

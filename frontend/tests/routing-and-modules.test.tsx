@@ -108,7 +108,7 @@ it('按路由动态加载账号页、安全设置与运维页，并在路由切�
   const { memoryRouter } = renderRoutes(['/?status=normal']);
   await screen.findByRole('heading', { name: '账号管理' });
 
-  await userEvent.click(screen.getByRole('button', { name: '安全设置' }));
+  await userEvent.click(screen.getByRole('button', { name: '系统设置' }));
   await screen.findByRole('heading', { name: '安全设置' });
   expect(memoryRouter.state.location.pathname).toBe('/security');
   expect(memoryRouter.state.location.search).toBe('?status=normal');
