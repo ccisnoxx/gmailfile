@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  accountsList,
   auditsIntegrity,
   auditsList,
   authChangePassword,
@@ -18,7 +19,6 @@ import type { ErrorResponse, SessionResponse } from '@/api/generated';
 import {
   createMockActiveSessions,
   createMockAuditLogs,
-  createMockBackupArchives,
   createMockBackupRestore,
   createMockRetentionPolicy,
   createMockSystemRuntime,
@@ -156,18 +156,20 @@ export function useSettingsData({
   );
   const [backupRunning, setBackupRunning] = useState(false);
 
-  // Live 模式下仅覆盖服务端契约尚未提供的扩展展示字段（如最近演练结果、本地备份触发状态）
-  const [liveBackupOverride, setLiveBackupOverride] = useState<
-    Partial<BackupRestoreInfo>
-  >({});
-  const [liveRetentionOverride, setLiveRetentionOverride] = useState<
-    Partial<RetentionPolicyInfo>
-  >({});
-  const [liveTotpRemaining, setLiveTotpRemaining] = useState<number>(10);
+  const [liveTotpRemaining, setLiveTotpRemaining] = useState<number | null>(
+    null,
+  );
 
-  const csrfHeaders = useMemo(
-    () => (session ? { 'X-CSRF-Token': session.csrf_token } : undefined),
-    [session],
+  const latestCsrfRef = useRef<string | undefined>(session?.csrf_token);
+  latestCsrfRef.current = session?.csrf_token ?? latestCsrfRef.current;
+
+  const headersWithCsrf = useCallback(
+    (csrfOverride?: string) => {
+      const token =
+        csrfOverride ?? latestCsrfRef.current ?? session?.csrf_token;
+      return token ? { 'X-CSRF-Token': token } : undefined;
+    },
+    [session?.csrf_token],
   );
 
   // Live API queries (仅包含非敏感只读元数据)
@@ -228,6 +230,20 @@ export function useSettingsData({
     },
   });
 
+  const trashQuery = useQuery({
+    queryKey: ['settings-trash-count'],
+    enabled: isLive,
+    retry: false,
+    queryFn: async ({ signal }) =>
+      (
+        await accountsList({
+          query: { deleted: true, page: 1, page_size: 1 },
+          signal,
+          throwOnError: true,
+        })
+      ).data.total,
+  });
+
   const prependMockAudit = useCallback(
     (
       eventType: string,
@@ -267,7 +283,7 @@ export function useSettingsData({
     async (
       password: string,
       totpCode?: string,
-    ): Promise<SettingsActionResult> => {
+    ): Promise<SettingsActionResult & { csrfToken?: string }> => {
       if (!password.trim()) {
         return { ok: false, error: '请输入当前管理员密码。' };
       }
@@ -282,15 +298,21 @@ export function useSettingsData({
         return { ok: false, error: '身份验证服务暂时不可用，操作未执行。' };
       }
 
-      if (isLive && session && csrfHeaders) {
+      const activeHeaders = headersWithCsrf();
+      if (isLive && session && activeHeaders) {
         try {
           const result = await authReverify({
             body: totpCode ? { password, totp_code: totpCode } : { password },
-            headers: csrfHeaders,
+            headers: activeHeaders,
             throwOnError: true,
           });
+          latestCsrfRef.current = result.data.csrf_token;
           onSession?.(result.data);
-          return { ok: true, message: '身份重新验证成功，5 分钟内有效。' };
+          return {
+            ok: true,
+            message: '身份重新验证成功，5 分钟内有效。',
+            csrfToken: result.data.csrf_token,
+          };
         } catch (error) {
           const info = extractErrorInfo(error);
           if (
@@ -316,11 +338,20 @@ export function useSettingsData({
       }));
       return { ok: true, message: '身份重新验证成功，5 分钟内有效。' };
     },
-    [csrfHeaders, isLive, onFailure, onSession, session, simulateActionFailure],
+    [
+      headersWithCsrf,
+      isLive,
+      onFailure,
+      onSession,
+      session,
+      simulateActionFailure,
+    ],
   );
 
   const ensureReverifiedIfNeeded = useCallback(
-    async (verify?: SensitiveVerifyPayload): Promise<SettingsActionResult> => {
+    async (
+      verify?: SensitiveVerifyPayload,
+    ): Promise<SettingsActionResult & { csrfToken?: string }> => {
       const currentUntil = isLive
         ? session?.step_up_totp_required
           ? session.mfa_reauthenticated_until
@@ -328,7 +359,10 @@ export function useSettingsData({
         : mockAdmin.reverifiedUntil;
 
       if (isReauthActive(currentUntil)) {
-        return { ok: true };
+        return {
+          ok: true,
+          csrfToken: latestCsrfRef.current ?? session?.csrf_token,
+        };
       }
       if (!verify?.password) {
         return {
@@ -375,10 +409,11 @@ export function useSettingsData({
         });
         if (!reauth.ok) return reauth;
 
-        if (isLive && csrfHeaders) {
+        const nextHeaders = headersWithCsrf(reauth.csrfToken);
+        if (isLive && nextHeaders) {
           await authChangePassword({
             body: { password: currentPassword, new_password: newPassword },
-            headers: csrfHeaders,
+            headers: nextHeaders,
             throwOnError: true,
           });
           onRefreshSession?.();
@@ -424,8 +459,8 @@ export function useSettingsData({
       }
     },
     [
-      csrfHeaders,
       ensureReverifiedIfNeeded,
+      headersWithCsrf,
       isLive,
       onFailure,
       onRefreshSession,
@@ -460,25 +495,43 @@ export function useSettingsData({
 
       busyRef.current = true;
       try {
-        const reauth = await ensureReverifiedIfNeeded({
-          password: currentPassword,
-          totpCode: totpCode.trim(),
-        });
-        if (!reauth.ok) return reauth;
-
-        if (isLive && csrfHeaders) {
-          const result = await authRegenerateRecoveryCodes({
-            body: { password: currentPassword, totp_code: totpCode.trim() },
-            headers: csrfHeaders,
-            throwOnError: true,
+        let freshCsrf = latestCsrfRef.current ?? session?.csrf_token;
+        if (isLive && session) {
+          if (!isReauthActive(session.reauthenticated_until)) {
+            if (session.step_up_totp_required) {
+              return {
+                ok: false,
+                requireReauth: true,
+                error:
+                  '当前环境已启用高风险操作 TOTP 二次验证，请先完成重新验证并待验证码刷新后再重新生成恢复码。',
+              };
+            }
+            const reauth = await reverify(currentPassword);
+            if (!reauth.ok) return reauth;
+            freshCsrf = reauth.csrfToken ?? freshCsrf;
+          }
+          const nextHeaders = headersWithCsrf(freshCsrf);
+          if (nextHeaders) {
+            const result = await authRegenerateRecoveryCodes({
+              body: { password: currentPassword, totp_code: totpCode.trim() },
+              headers: nextHeaders,
+              throwOnError: true,
+            });
+            latestCsrfRef.current = result.data.session.csrf_token;
+            onSession?.(result.data.session);
+            setLiveTotpRemaining(result.data.recovery_codes.length);
+            return {
+              ok: true,
+              codes: result.data.recovery_codes,
+              message: '已生成新的备用恢复码，旧恢复码已立即失效。',
+            };
+          }
+        } else {
+          const reauth = await ensureReverifiedIfNeeded({
+            password: currentPassword,
+            totpCode: totpCode.trim(),
           });
-          onSession?.(result.data.session);
-          setLiveTotpRemaining(result.data.recovery_codes.length);
-          return {
-            ok: true,
-            codes: result.data.recovery_codes,
-            message: '已生成新的备用恢复码，旧恢复码已立即失效。',
-          };
+          if (!reauth.ok) return reauth;
         }
 
         if (totpCode.trim() === '000000') {
@@ -523,12 +576,14 @@ export function useSettingsData({
       }
     },
     [
-      csrfHeaders,
       ensureReverifiedIfNeeded,
+      headersWithCsrf,
       isLive,
       onFailure,
       onSession,
       prependMockAudit,
+      reverify,
+      session,
       simulateActionFailure,
     ],
   );
@@ -552,7 +607,8 @@ export function useSettingsData({
         const reauth = await ensureReverifiedIfNeeded(verify);
         if (!reauth.ok) return reauth;
 
-        if (isLive && csrfHeaders) {
+        const nextHeaders = headersWithCsrf(reauth.csrfToken);
+        if (isLive && nextHeaders) {
           const isCurrent = sessionsQuery.data?.items.some(
             (s) => s.id === sessionId && s.current,
           );
@@ -560,7 +616,7 @@ export function useSettingsData({
             onSignedOut(
               sessionsRevoke({
                 path: { session_id: sessionId },
-                headers: csrfHeaders,
+                headers: nextHeaders,
                 throwOnError: true,
               }),
             );
@@ -568,7 +624,7 @@ export function useSettingsData({
           }
           await sessionsRevoke({
             path: { session_id: sessionId },
-            headers: csrfHeaders,
+            headers: nextHeaders,
             throwOnError: true,
           });
           await queryClient.invalidateQueries({
@@ -610,8 +666,8 @@ export function useSettingsData({
       }
     },
     [
-      csrfHeaders,
       ensureReverifiedIfNeeded,
+      headersWithCsrf,
       isLive,
       mockSessions,
       onFailure,
@@ -639,9 +695,10 @@ export function useSettingsData({
         const reauth = await ensureReverifiedIfNeeded(verify);
         if (!reauth.ok) return reauth;
 
-        if (isLive && csrfHeaders) {
+        const nextHeaders = headersWithCsrf(reauth.csrfToken);
+        if (isLive && nextHeaders) {
           await sessionsRevokeOthers({
-            headers: csrfHeaders,
+            headers: nextHeaders,
             throwOnError: true,
           });
           await queryClient.invalidateQueries({
@@ -677,8 +734,8 @@ export function useSettingsData({
       }
     },
     [
-      csrfHeaders,
       ensureReverifiedIfNeeded,
+      headersWithCsrf,
       isLive,
       onFailure,
       prependMockAudit,
@@ -689,6 +746,13 @@ export function useSettingsData({
 
   const runImmediateBackup =
     useCallback(async (): Promise<SettingsActionResult> => {
+      if (isLive) {
+        return {
+          ok: false,
+          error:
+            '在线 Web 控制台不支持直接触发服务器备份，请通过部署主机备份脚本或定时任务执行 pg_dump + age 加密备份。',
+        };
+      }
       if (backupRunning) {
         return { ok: false, error: '已有备份任务正在执行，请等待完成。' };
       }
@@ -696,26 +760,18 @@ export function useSettingsData({
       try {
         await new Promise((resolve) => window.setTimeout(resolve, 420));
         if (simulateActionFailure) {
-          if (isLive) {
-            setLiveBackupOverride((prev) => ({
-              ...prev,
-              state: 'failed',
-              statusLabel: '备份失败',
-            }));
-          } else {
-            setMockBackup((prev) => ({
-              ...prev,
-              state: 'failed',
-              statusLabel: '备份失败',
-            }));
-            prependMockAudit(
-              'backup_failed',
-              '手动备份',
-              'backup',
-              'pg_dump + age 归档',
-              'failed',
-            );
-          }
+          setMockBackup((prev) => ({
+            ...prev,
+            state: 'failed',
+            statusLabel: '备份失败',
+          }));
+          prependMockAudit(
+            'backup_failed',
+            '手动备份',
+            'backup',
+            'pg_dump + age 归档',
+            'failed',
+          );
           return {
             ok: false,
             error:
@@ -735,32 +791,19 @@ export function useSettingsData({
           checksumShort: 'sha256:c18b…4e20',
         };
 
-        if (isLive) {
-          setLiveBackupOverride((prev) => ({
-            ...prev,
-            state: 'success',
-            statusLabel: '备份正常',
-            lastBackupAt: formatted,
-            archives: [
-              newArchive,
-              ...(prev.archives ?? createMockBackupArchives()),
-            ],
-          }));
-        } else {
-          setMockBackup((prev) => ({
-            ...prev,
-            state: 'success',
-            statusLabel: '备份正常',
-            lastBackupAt: formatted,
-            archives: [newArchive, ...prev.archives],
-          }));
-          prependMockAudit(
-            'backup_completed',
-            '立即备份',
-            'backup',
-            newArchive.filename,
-          );
-        }
+        setMockBackup((prev) => ({
+          ...prev,
+          state: 'success',
+          statusLabel: '备份正常',
+          lastBackupAt: formatted,
+          archives: [newArchive, ...prev.archives],
+        }));
+        prependMockAudit(
+          'backup_completed',
+          '立即备份',
+          'backup',
+          newArchive.filename,
+        );
 
         return {
           ok: true,
@@ -773,9 +816,26 @@ export function useSettingsData({
 
   const runRestoreVerification = useCallback(
     async (archive: BackupArchiveItem): Promise<RestoreVerifyReport> => {
+      const verifiedAt = formatSettingsDateTime(new Date().toISOString());
+      if (isLive) {
+        return {
+          archive,
+          passed: false,
+          verifiedAt,
+          durationMs: 0,
+          sampledRows: 0,
+          checks: RESTORE_VERIFICATION_CHECKLIST.map((item) => ({
+            ...item,
+            status: 'pending',
+            detail: '需通过部署主机离线恢复脚本执行',
+          })),
+          errorMessage:
+            '在线 Web 控制台不支持直接执行沙箱恢复演练，请通过部署主机离线恢复脚本验证归档完整性。',
+        };
+      }
+
       const started = performance.now();
       await new Promise((resolve) => window.setTimeout(resolve, 360));
-      const verifiedAt = formatSettingsDateTime(new Date().toISOString());
 
       if (simulateActionFailure) {
         const failedChecks: RestoreCheckItem[] =
@@ -815,25 +875,17 @@ export function useSettingsData({
                   : '抽样 24 条加密记录完成内存认证解密',
         }));
 
-      if (isLive) {
-        setLiveBackupOverride((prev) => ({
-          ...prev,
-          lastRestoreVerifiedAt: verifiedAt,
-          restoreVerifySummary: '结构、约束与抽样解密',
-        }));
-      } else {
-        setMockBackup((prev) => ({
-          ...prev,
-          lastRestoreVerifiedAt: verifiedAt,
-          restoreVerifySummary: '结构、约束与抽样解密',
-        }));
-        prependMockAudit(
-          'restore_verified',
-          '恢复验证',
-          'backup',
-          archive.filename,
-        );
-      }
+      setMockBackup((prev) => ({
+        ...prev,
+        lastRestoreVerifiedAt: verifiedAt,
+        restoreVerifySummary: '结构、约束与抽样解密',
+      }));
+      prependMockAudit(
+        'restore_verified',
+        '恢复验证',
+        'backup',
+        archive.filename,
+      );
 
       return {
         archive,
@@ -857,10 +909,11 @@ export function useSettingsData({
       verify?: SensitiveVerifyPayload,
     ): Promise<SettingsActionResult> => {
       if (
-        next.auditRetentionDays < 30 ||
-        next.auditRetentionDays > 3650 ||
-        next.backupRetentionDays < 7 ||
-        next.backupRetentionDays > 1095
+        !isLive &&
+        (next.auditRetentionDays < 30 ||
+          next.auditRetentionDays > 3650 ||
+          next.backupRetentionDays < 7 ||
+          next.backupRetentionDays > 1095)
       ) {
         return {
           ok: false,
@@ -875,30 +928,34 @@ export function useSettingsData({
         };
       }
 
+      if (
+        isLive &&
+        (typeof next.idleMinutes !== 'number' ||
+          next.idleMinutes === systemQuery.data?.settings.idle_minutes)
+      ) {
+        return {
+          ok: false,
+          error:
+            '当前服务端仅支持在线修改会话空闲自动锁定时间；审计与备份保留天数请通过部署环境变量调整。',
+        };
+      }
+
       const reauth = await ensureReverifiedIfNeeded(verify);
       if (!reauth.ok) return reauth;
 
-      if (isLive && csrfHeaders) {
+      const nextHeaders = headersWithCsrf(reauth.csrfToken);
+      if (isLive && nextHeaders) {
         try {
-          if (
-            typeof next.idleMinutes === 'number' &&
-            next.idleMinutes !== systemQuery.data?.settings.idle_minutes
-          ) {
-            await settingsIdle({
-              body: { idle_minutes: next.idleMinutes },
-              headers: csrfHeaders,
-              throwOnError: true,
-            });
-            await queryClient.invalidateQueries({
-              queryKey: ['settings-system-meta'],
-            });
-            onRefreshSession?.();
-          }
-          setLiveRetentionOverride({
-            auditRetentionDays: next.auditRetentionDays,
-            backupRetentionDays: next.backupRetentionDays,
+          await settingsIdle({
+            body: { idle_minutes: next.idleMinutes! },
+            headers: nextHeaders,
+            throwOnError: true,
           });
-          return { ok: true, message: '日志保留与数据生命周期策略已更新。' };
+          await queryClient.invalidateQueries({
+            queryKey: ['settings-system-meta'],
+          });
+          onRefreshSession?.();
+          return { ok: true, message: '会话空闲自动锁定策略已更新。' };
         } catch (error) {
           const info = extractErrorInfo(error);
           if (
@@ -936,8 +993,8 @@ export function useSettingsData({
       return { ok: true, message: '日志保留与数据生命周期策略已保存。' };
     },
     [
-      csrfHeaders,
       ensureReverifiedIfNeeded,
+      headersWithCsrf,
       isLive,
       onFailure,
       onRefreshSession,
@@ -956,6 +1013,7 @@ export function useSettingsData({
       integrityQuery.refetch(),
       backupQuery.refetch(),
       systemQuery.refetch(),
+      trashQuery.refetch(),
     ]);
   }, [
     auditsQuery,
@@ -964,13 +1022,19 @@ export function useSettingsData({
     isLive,
     sessionsQuery,
     systemQuery,
+    trashQuery,
   ]);
 
   // 聚合各区域展示模型与加载/错误/空状态
   const adminSecurity: AdminSecurityInfo = useMemo(() => {
     if (!isLive || !session) return mockAdmin;
     return {
-      ...MOCK_ADMIN_SECURITY,
+      username: 'admin',
+      statusLabel: '会话认证有效',
+      healthy: true,
+      passwordStrengthLabel: '强口令策略（≥16 位）',
+      passwordChangedAt: '由服务端安全存储维护',
+      policies: ['最小长度 16 位', '检查泄露密码', '建议使用密码短语'],
       reverifiedUntil: session.reauthenticated_until ?? null,
       mfaReverifiedUntil: session.mfa_reauthenticated_until ?? null,
       stepUpTotpRequired: Boolean(session.step_up_totp_required),
@@ -980,8 +1044,12 @@ export function useSettingsData({
   const totpSecurity: TotpSecurityInfo = useMemo(() => {
     if (!isLive) return mockTotp;
     return {
-      ...MOCK_TOTP_SECURITY,
+      enabled: true,
+      bound: true,
+      authenticatorApps: 'Google Authenticator / Microsoft Authenticator 等',
+      recoveryCodesTotal: 10,
       recoveryCodesRemaining: liveTotpRemaining,
+      demoCode: '••••••',
     };
   }, [isLive, liveTotpRemaining, mockTotp]);
 
@@ -1011,14 +1079,27 @@ export function useSettingsData({
         ? { ...mockBackup, state: 'running', statusLabel: '正在备份' }
         : mockBackup;
     }
-    const base = backupQuery.data
-      ? mapApiBackupStatus(backupQuery.data)
-      : createMockBackupRestore();
-    const merged = { ...base, ...liveBackupOverride };
-    return backupRunning
-      ? { ...merged, state: 'running', statusLabel: '正在备份' }
-      : merged;
-  }, [backupQuery.data, backupRunning, isLive, liveBackupOverride, mockBackup]);
+    if (!backupQuery.data) {
+      return {
+        state: 'unconfigured',
+        statusLabel: backupQuery.isPending ? '读取中' : '状态未知',
+        lastBackupAt: null,
+        method: 'pg_dump + age 加密',
+        scope: '数据库、标签、配置、审计日志',
+        lastRestoreVerifiedAt: null,
+        restoreVerifySummary: '请通过服务器端恢复演练脚本验证',
+        offsiteState: 'unconfigured',
+        archives: [],
+      };
+    }
+    return mapApiBackupStatus(backupQuery.data);
+  }, [
+    backupQuery.data,
+    backupQuery.isPending,
+    backupRunning,
+    isLive,
+    mockBackup,
+  ]);
 
   const backupState: CardStateMode = useMemo(() => {
     if (uiStateOverride) return uiStateOverride;
@@ -1092,23 +1173,18 @@ export function useSettingsData({
 
   const retention: RetentionPolicyInfo = useMemo(() => {
     if (!isLive) return mockRetention;
-    const base = createMockRetentionPolicy();
     return {
-      ...base,
-      auditRetentionDays:
-        liveRetentionOverride.auditRetentionDays ??
-        integrityQuery.data?.retention_days ??
-        base.auditRetentionDays,
-      backupRetentionDays:
-        liveRetentionOverride.backupRetentionDays ?? base.backupRetentionDays,
+      auditRetentionDays: integrityQuery.data?.retention_days ?? 365,
+      auditUsedGb: 0,
+      auditUsedPercent: 0,
+      auditQuotaGb: 0,
+      backupRetentionDays: null,
+      backupUsedGb: 0,
+      backupUsedPercent: 0,
+      backupQuotaGb: 0,
+      storageMetricsAvailable: false,
     };
-  }, [
-    integrityQuery.data?.retention_days,
-    isLive,
-    liveRetentionOverride.auditRetentionDays,
-    liveRetentionOverride.backupRetentionDays,
-    mockRetention,
-  ]);
+  }, [integrityQuery.data?.retention_days, isLive, mockRetention]);
 
   const retentionState: CardStateMode = useMemo(() => {
     if (uiStateOverride) return uiStateOverride;
@@ -1143,11 +1219,11 @@ export function useSettingsData({
       statusText: backupBad ? '存在待处理告警' : '系统正常运行',
       appVersion: systemQuery.data?.version.version
         ? `v${systemQuery.data.version.version}`
-        : 'v1.2.0',
-      schemaVersion: systemQuery.data?.version.schema_version ?? '0004',
+        : '—',
+      schemaVersion: systemQuery.data?.version.schema_version ?? '—',
       idleMinutes: systemQuery.data?.settings.idle_minutes ?? 15,
       maxIdleMinutes: systemQuery.data?.settings.max_idle_minutes ?? 720,
-      trashCount: 3,
+      trashCount: typeof trashQuery.data === 'number' ? trashQuery.data : 0,
     };
   }, [
     auditIntegrity?.valid,
@@ -1157,6 +1233,7 @@ export function useSettingsData({
     mockBackup.state,
     mockRuntime,
     systemQuery.data,
+    trashQuery.data,
   ]);
 
   const isRecentlyVerified = useMemo(() => {

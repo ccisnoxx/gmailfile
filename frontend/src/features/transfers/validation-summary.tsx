@@ -45,7 +45,7 @@ export function ValidationSummary({
       count: counts.valid,
       dotClass: 'bg-[var(--success)]',
       activeClass:
-        'border-[#2fbf71]/30 bg-[#e7f8ef] text-[#1b8a4e] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+        'border-[#2fbf71]/30 bg-[#e7f8ef] text-[#116b3b] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
     },
     {
       key: 'warning',
@@ -53,7 +53,7 @@ export function ValidationSummary({
       count: counts.warning,
       dotClass: 'bg-[var(--warning)]',
       activeClass:
-        'border-[#f5a623]/34 bg-[#fef6df] text-[#a36207] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+        'border-[#f5a623]/34 bg-[#fef6df] text-[#8a5000] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
     },
     {
       key: 'error',

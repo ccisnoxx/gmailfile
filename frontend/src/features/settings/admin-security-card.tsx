@@ -73,7 +73,10 @@ export function AdminSecurityCard({
             <dt className="text-[12px] text-[var(--text-secondary)]">
               上次修改时间
             </dt>
-            <dd className="mt-0.5 text-[13px] tabular-nums text-[var(--text-primary)]">
+            <dd
+              data-dynamic="timestamp"
+              className="mt-0.5 text-[13px] tabular-nums text-[var(--text-primary)]"
+            >
               {info.passwordChangedAt}
             </dd>
           </div>

@@ -46,6 +46,7 @@ export function AppearanceCard({
 
         {/* 右侧：小型玻璃效果实时预览块 */}
         <div
+          role="img"
           data-slot="glass-opacity-preview"
           aria-label={`毛玻璃效果预览 ${navAlpha}%`}
           className="relative h-[96px] overflow-hidden rounded-2xl border border-white/80 p-2.5 shadow-[0_8px_22px_rgba(45,86,138,0.09)]"

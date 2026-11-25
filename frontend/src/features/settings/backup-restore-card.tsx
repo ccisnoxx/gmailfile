@@ -15,6 +15,7 @@ export function BackupRestoreCard({
   running,
   state = 'ready',
   errorText,
+  webActionsSupported = true,
   onRunBackup,
   onOpenRestoreVerify,
   onRetry,
@@ -23,6 +24,7 @@ export function BackupRestoreCard({
   running: boolean;
   state?: CardStateMode;
   errorText?: string | null;
+  webActionsSupported?: boolean;
   onRunBackup: () => void;
   onOpenRestoreVerify: () => void;
   onRetry?: () => void;
@@ -97,7 +99,10 @@ export function BackupRestoreCard({
           <dt className="text-[12px] text-[var(--text-secondary)]">
             最近备份时间
           </dt>
-          <dd className="mt-0.5 font-medium tabular-nums text-[var(--text-primary)]">
+          <dd
+            data-dynamic="timestamp"
+            className="mt-0.5 font-medium tabular-nums text-[var(--text-primary)]"
+          >
             {info.lastBackupAt ?? '尚未运行'}
           </dd>
         </div>
@@ -115,7 +120,10 @@ export function BackupRestoreCard({
           <dt className="text-[12px] text-[var(--text-secondary)]">
             最近恢复验证时间
           </dt>
-          <dd className="mt-0.5 tabular-nums text-[var(--text-primary)]">
+          <dd
+            data-dynamic="timestamp"
+            className="mt-0.5 tabular-nums text-[var(--text-primary)]"
+          >
             {info.lastRestoreVerifiedAt ?? '尚未验证'}
           </dd>
         </div>
@@ -140,7 +148,7 @@ export function BackupRestoreCard({
       <div className="flex flex-wrap items-center gap-2.5">
         <button
           type="button"
-          disabled={isRunning}
+          disabled={isRunning || !webActionsSupported}
           onClick={onRunBackup}
           className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.25)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-65"
         >
@@ -154,9 +162,9 @@ export function BackupRestoreCard({
 
         <button
           type="button"
-          disabled={isRunning}
+          disabled={isRunning || !webActionsSupported}
           onClick={onOpenRestoreVerify}
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/85 bg-white/72 px-3.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/92 disabled:opacity-55"
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/85 bg-white/72 px-3.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/92 disabled:cursor-not-allowed disabled:opacity-55"
         >
           <ShieldCheck
             className="size-3.5 text-[var(--accent)]"
@@ -165,6 +173,12 @@ export function BackupRestoreCard({
           <span>恢复验证…</span>
         </button>
       </div>
+      {!webActionsSupported && (
+        <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
+          当前部署仅通过主机备份脚本与离线恢复演练脚本执行加密备份与校验，Web
+          控制台只读展示最新状态文件。
+        </p>
+      )}
     </SettingsCardShell>
   );
 }

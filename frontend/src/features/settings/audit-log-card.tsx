@@ -242,7 +242,10 @@ export function AuditLogCard({
                   key={item.id}
                   className="transition-colors hover:bg-[var(--table-row-hover)]"
                 >
-                  <td className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[#475467]">
+                  <td
+                    data-dynamic="timestamp"
+                    className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[#475467]"
+                  >
                     {item.createdAt}
                   </td>
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap text-[var(--text-primary)]">

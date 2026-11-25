@@ -29,6 +29,7 @@ export function AccountHeaderCard({
   onDelete,
   onRestore,
   onViewAudit,
+  onMarkLoggedIn,
   onMarkVerified,
   onAddTag,
   onCreateAndAttachTag,
@@ -43,6 +44,7 @@ export function AccountHeaderCard({
   onDelete: () => void;
   onRestore: () => void;
   onViewAudit: () => void;
+  onMarkLoggedIn?: () => void;
   onMarkVerified?: () => void;
   onAddTag?: (tag: TagResponse) => void;
   onCreateAndAttachTag?: (tagName: string) => void;
@@ -50,6 +52,7 @@ export function AccountHeaderCard({
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const tagPickerRef = useRef<HTMLDivElement>(null);
+  const addTagBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!tagMenuOpen) return;
@@ -65,6 +68,7 @@ export function AccountHeaderCard({
       if (event.key === 'Escape') {
         event.stopPropagation();
         setTagMenuOpen(false);
+        addTagBtnRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -125,13 +129,13 @@ export function AccountHeaderCard({
             <span aria-hidden="true" className="text-[#b8cbe2]">
               |
             </span>
-            <span className="tabular-nums">
+            <span data-dynamic="timestamp" className="tabular-nums">
               创建时间：{formatDetailDateTime(account.created_at, false)}
             </span>
             <span aria-hidden="true" className="text-[#b8cbe2]">
               |
             </span>
-            <span className="tabular-nums">
+            <span data-dynamic="timestamp" className="tabular-nums">
               最后更新：{formatDetailDateTime(account.updated_at, false)}
             </span>
           </div>
@@ -163,6 +167,7 @@ export function AccountHeaderCard({
           {/* 添加标签按钮与弹出选择器 */}
           <div ref={tagPickerRef} className="relative">
             <button
+              ref={addTagBtnRef}
               type="button"
               disabled={busy || Boolean(account.deleted_at)}
               aria-expanded={tagMenuOpen}
@@ -308,6 +313,15 @@ export function AccountHeaderCard({
                   <FileText className="size-4 text-[var(--accent)]" />
                   <span>查看完整审计</span>
                 </DropdownMenuPrimitive.Item>
+                {onMarkLoggedIn && !account.deleted_at && (
+                  <DropdownMenuPrimitive.Item
+                    onSelect={onMarkLoggedIn}
+                    className={menuItemClass}
+                  >
+                    <CheckCircle2 className="size-4 text-[var(--accent)]" />
+                    <span>标记今天已登录</span>
+                  </DropdownMenuPrimitive.Item>
+                )}
                 {onMarkVerified && !account.deleted_at && (
                   <DropdownMenuPrimitive.Item
                     onSelect={onMarkVerified}

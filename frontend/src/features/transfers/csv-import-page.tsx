@@ -25,6 +25,7 @@ import { Providers } from '@/app/providers';
 import {
   DEFAULT_NAV_ALPHA,
   GlassPanel,
+  LoadingState,
   persistNavAlpha,
   readDisplaySettings,
   readStoredNavAlpha,
@@ -297,6 +298,7 @@ function CsvImportPageBody({
   const mappingSectionRef = useRef<HTMLDivElement>(null);
   const previewSectionRef = useRef<HTMLDivElement>(null);
   const commitSectionRef = useRef<HTMLDivElement>(null);
+  const subTabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const showToast = useCallback((text: string) => {
     setToastMessage(text);
@@ -442,6 +444,7 @@ function CsvImportPageBody({
         setCompletedSteps([1]);
       } catch (error) {
         if (ticket !== generationRef.current) return;
+        setReceiptId(null);
         const msg =
           error &&
           typeof error === 'object' &&
@@ -904,13 +907,14 @@ function CsvImportPageBody({
     if (
       submittingRef.current ||
       !fileMeta ||
+      !receiptId ||
       activeSummary.error > 0 ||
       !confirmed ||
       needsRepreview
     ) {
       return;
     }
-    const activeReceipt = receiptId ?? `rcpt_${Date.now().toString(36)}`;
+    const activeReceipt = receiptId;
     const ticket = generationRef.current;
 
     submittingRef.current = true;
@@ -1064,11 +1068,17 @@ function CsvImportPageBody({
   );
 
   const notifications = useMemo(
-    () => [
-      '最近一次 CSV 导入（1,248 条）已完成防篡改哈希链记录。',
-      '上传限制：≤10 MB、≤10,000 行、≤256 列，所有敏感字段自动掩码。',
-    ],
-    [],
+    () =>
+      isMock
+        ? [
+            '最近一次 CSV 导入（1,248 条）已完成防篡改哈希链记录。',
+            '上传限制：≤10 MB、≤10,000 行、≤256 列，所有敏感字段自动掩码。',
+          ]
+        : [
+            '所有 CSV 导入提交均写入防篡改哈希链审计日志，支持单事务原子回滚。',
+            '上传限制：≤10 MB、≤10,000 行、≤256 列，所有敏感字段自动掩码。',
+          ],
+    [isMock],
   );
 
   return (
@@ -1147,19 +1157,34 @@ function CsvImportPageBody({
               { key: 'import', label: 'CSV 导入', icon: Upload },
               { key: 'batch', label: '批量操作', icon: Layers },
             ] as const
-          ).map(({ key, label, icon: Icon }) => {
+          ).map(({ key, label, icon: Icon }, idx) => {
             const selected = subTab === key;
             return (
               <button
                 key={key}
+                ref={(el) => {
+                  subTabRefs.current[idx] = el;
+                }}
                 type="button"
                 role="tab"
                 aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
                 onClick={() => setSubTab(key)}
                 onKeyDown={(event) => {
                   if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                     event.preventDefault();
-                    setSubTab(subTab === 'import' ? 'batch' : 'import');
+                    const nextIdx = idx === 0 ? 1 : 0;
+                    const nextKey = nextIdx === 0 ? 'import' : 'batch';
+                    setSubTab(nextKey);
+                    subTabRefs.current[nextIdx]?.focus();
+                  } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    setSubTab('import');
+                    subTabRefs.current[0]?.focus();
+                  } else if (event.key === 'End') {
+                    event.preventDefault();
+                    setSubTab('batch');
+                    subTabRefs.current[1]?.focus();
                   }
                 }}
                 className={cn(
@@ -1359,7 +1384,13 @@ function CsvImportPageBody({
               exportDisabled={!fileMeta}
             />
 
-            {fileMeta ? (
+            {previewBusy ? (
+              <LoadingState
+                title="正在校验 CSV 文件…"
+                description="正在上传并执行服务端表头映射与逐行校验，请稍候…"
+                className="border-white/75 bg-white/40 py-8 shadow-none"
+              />
+            ) : fileMeta ? (
               <CsvPreviewTable
                 rows={pageRows}
                 totalFiltered={totalFiltered}
@@ -1385,6 +1416,7 @@ function CsvImportPageBody({
           <div ref={commitSectionRef}>
             <AtomicCommitPanel
               hasFile={Boolean(fileMeta)}
+              hasReceipt={Boolean(receiptId)}
               summary={activeSummary}
               confirmed={confirmed}
               submitting={submitting}

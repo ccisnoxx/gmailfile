@@ -82,10 +82,16 @@ export function ActiveSessionsCard({
                 <td className="px-3 py-2.5 font-mono text-[12px] whitespace-nowrap tabular-nums text-[#475467]">
                   {item.ipAddress}
                 </td>
-                <td className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[#475467]">
+                <td
+                  data-dynamic="timestamp"
+                  className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[#475467]"
+                >
                   {item.loginAt}
                 </td>
-                <td className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[var(--text-primary)]">
+                <td
+                  data-dynamic="timestamp"
+                  className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[var(--text-primary)]"
+                >
                   {item.lastActiveAt}
                 </td>
                 <td className="px-3 py-2.5 text-right">

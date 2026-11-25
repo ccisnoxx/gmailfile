@@ -58,7 +58,7 @@ export type TotpSecurityInfo = {
   bound: boolean;
   authenticatorApps: string;
   recoveryCodesTotal: number;
-  recoveryCodesRemaining: number;
+  recoveryCodesRemaining: number | null;
   /** 仅用于右侧视觉展示的抽象演示验证码，绝非真实 TOTP Secret 或真实口令 */
   demoCode: string;
 };
@@ -129,10 +129,11 @@ export type RetentionPolicyInfo = {
   auditUsedGb: number;
   auditUsedPercent: number;
   auditQuotaGb: number;
-  backupRetentionDays: number;
+  backupRetentionDays: number | null;
   backupUsedGb: number;
   backupUsedPercent: number;
   backupQuotaGb: number;
+  storageMetricsAvailable?: boolean;
 };
 
 export type SystemRuntimeInfo = {
@@ -169,7 +170,7 @@ export type SensitiveVerifyPayload = {
 };
 
 export type SettingsActionResult =
-  | { ok: true; message?: string }
+  | { ok: true; message?: string; csrfToken?: string }
   | { ok: false; error: string; requireReauth?: boolean };
 
 export type SettingsMutationHandlers = {

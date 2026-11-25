@@ -139,7 +139,7 @@ export function SecurityCredentialsTabPanel({
           <dl className="mt-3 space-y-2 text-xs">
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--text-secondary)]">二步验证状态</dt>
-              <dd className="font-medium text-[#1b8a4e]">
+              <dd className="font-medium text-[#116b3b]">
                 {account.two_factor_status === 'enabled'
                   ? '已启用（TOTP）'
                   : account.two_factor_status === 'disabled'
@@ -368,7 +368,7 @@ export function BackupsTabPanel({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#2fbf71]/25 bg-[#e7f8ef]/70 px-4 py-3 text-xs text-[#1b8a4e]">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#2fbf71]/25 bg-[#e7f8ef]/70 px-4 py-3 text-xs text-[#116b3b]">
         <span className="inline-flex items-center gap-2 font-medium">
           <CheckCircle2 className="size-4" aria-hidden="true" />
           <span>AES-256-GCM 密文快照已同步</span>
@@ -383,7 +383,7 @@ export function BackupsTabPanel({
             className="flex items-center justify-between gap-3 py-2.5"
           >
             <div className="flex items-center gap-2.5">
-              <span className="inline-flex items-center rounded-full border border-[#14b8a6]/28 bg-[#e6f7f2] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#0f8a6c]">
+              <span className="inline-flex items-center rounded-full border border-[#14b8a6]/28 bg-[#e6f7f2] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#0b6e56]">
                 v{ver}
               </span>
               <span className="font-medium text-[var(--text-primary)]">

@@ -16,6 +16,7 @@ import {
   accountsDelete,
   accountsDetail,
   accountsList,
+  accountsMarkLoggedIn,
   accountsMarkVerified,
   accountsPatch,
   accountsRestore,
@@ -102,18 +103,29 @@ const auditEventLabels: Record<string, string> = {
   account_archived: '归档账号',
   account_deleted: '删除账号',
   account_restored: '恢复账号',
-  account_verified: '标记已验证',
-  account_logged_in: '标记已登录',
+  account_batch_status: '批量修改状态',
+  account_batch_tags: '批量管理标签',
   password_revealed: '查看凭据（密码）',
   password_copied: '复制凭据（密码）',
-  totp_enabled: '启用二步验证（TOTP）',
+  totp_bound: '绑定二步验证（TOTP）',
+  csv_imported: 'CSV 批量导入',
+};
+
+const auditOperationLabels: Record<string, string> = {
+  'mark-verified': '标记今天已验证',
+  'mark-logged-in': '标记今天已登录',
+  'reveal-password': '查看凭据（密码）',
+  'copy-password-event': '复制凭据（密码）',
 };
 
 function mapAuditToTimeline(items: AuditItem[]): ActivityTimelineItem[] {
   return items.map((item) => ({
     id: item.id,
     title:
-      auditEventLabels[item.event_type] ?? item.operation ?? item.event_type,
+      (item.operation && auditOperationLabels[item.operation]) ||
+      auditEventLabels[item.event_type] ||
+      item.operation ||
+      item.event_type,
     timestamp: formatDetailDateTime(item.created_at, true),
     source: item.ip_address
       ? `管理员（${item.ip_address}）`
@@ -561,12 +573,21 @@ function AccountDetailLiveBody({
       setConflictMessage('');
 
       try {
+        const trimmedRecovery = nextDraft.recovery_email_external.trim();
+        const keepLinkedRecovery =
+          Boolean(account.recovery_account_id) &&
+          (!trimmedRecovery ||
+            trimmedRecovery === (account.recovery_email ?? ''));
         const patch: AccountPatchWritable = {
           row_version: account.row_version,
           gmail_email: nextDraft.gmail_email,
           phone: nextDraft.phone || null,
-          recovery_account_id: account.recovery_account_id,
-          recovery_email_external: nextDraft.recovery_email_external || null,
+          recovery_account_id: keepLinkedRecovery
+            ? account.recovery_account_id
+            : null,
+          recovery_email_external: keepLinkedRecovery
+            ? null
+            : trimmedRecovery || null,
           status: nextDraft.status,
           two_factor_status: nextDraft.two_factor_status,
           purpose: nextDraft.purpose || null,
@@ -663,7 +684,7 @@ function AccountDetailLiveBody({
           delete: accountsDelete,
           restore: accountsRestore,
           verified: accountsMarkVerified,
-          'logged-in': accountsMarkVerified,
+          'logged-in': accountsMarkLoggedIn,
         }[action];
         const { data } = await fn({
           path: { account_id: account.id },
@@ -683,7 +704,9 @@ function AccountDetailLiveBody({
               ? '删除账号'
               : action === 'restore'
                 ? '恢复账号'
-                : '标记今天已验证';
+                : action === 'logged-in'
+                  ? '标记今天已登录'
+                  : '标记今天已验证';
         prependLocalTimeline(data.id, label);
         showToast(`${label}成功（v${data.row_version}）`);
         await Promise.all([
@@ -919,13 +942,25 @@ function AccountDetailLiveBody({
             onSelectAccount={requestSwitchAccount}
             onCreateAccount={() => setCreateDialogOpen(true)}
             isLoading={accountsQuery.isPending}
+            isError={accountsQuery.isError}
+            onRetry={() => void accountsQuery.refetch()}
           />
         }
         detailContent={
-          detailQuery.isPending ? (
+          detailQuery.isLoading ? (
             <LoadingState
               title="正在加载账号详情…"
               description="正在获取加密资料与活动时间线…"
+            />
+          ) : detailQuery.isError &&
+            (detailQuery.error as Partial<ErrorResponse> | null)?.error
+              ?.code !== 'ACCOUNT_NOT_FOUND' ? (
+            <EmptyState
+              role="alert"
+              title="账号详情加载失败"
+              description="无法从服务器获取账号资料，请检查网络连接与服务状态后重试。"
+              createLabel="重试加载"
+              onCreate={() => void detailQuery.refetch()}
             />
           ) : !account || !effectiveDraft ? (
             <EmptyState
@@ -951,6 +986,7 @@ function AccountDetailLiveBody({
                 onDelete={() => setConfirmAction('delete')}
                 onRestore={() => setConfirmAction('restore')}
                 onViewAudit={() => setActiveTab('audit')}
+                onMarkLoggedIn={() => void handleLifecycleAction('logged-in')}
                 onMarkVerified={() => void handleLifecycleAction('verified')}
                 onAddTag={(tag) => void attachTag(tag)}
                 onCreateAndAttachTag={(name) => void createAndAttachTag(name)}

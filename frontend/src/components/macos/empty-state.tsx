@@ -7,6 +7,7 @@ export function EmptyState({
   onCreate,
   onImportCsv,
   createLabel = '新建账号',
+  role,
   className,
 }: {
   title?: string;
@@ -14,11 +15,13 @@ export function EmptyState({
   onCreate?: () => void;
   onImportCsv?: () => void;
   createLabel?: string;
+  role?: 'alert' | 'status';
   className?: string;
 }) {
   return (
     <div
       data-slot="empty-state"
+      role={role}
       className={cn(
         'macos-glass-panel flex flex-col items-center justify-center px-6 py-9 text-center',
         className,

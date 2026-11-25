@@ -15,6 +15,7 @@ import type { CommitOutcome, CommitSummaryCounts } from './types';
 
 export function AtomicCommitPanel({
   hasFile,
+  hasReceipt = true,
   summary,
   confirmed,
   submitting,
@@ -29,6 +30,7 @@ export function AtomicCommitPanel({
   className,
 }: {
   hasFile: boolean;
+  hasReceipt?: boolean;
   summary: CommitSummaryCounts;
   confirmed: boolean;
   submitting: boolean;
@@ -46,6 +48,7 @@ export function AtomicCommitPanel({
   const hasErrors = summary.error > 0;
   const startDisabled =
     !hasFile ||
+    !hasReceipt ||
     hasErrors ||
     !confirmed ||
     submitting ||
@@ -92,7 +95,7 @@ export function AtomicCommitPanel({
             <span className="rounded-full border border-[#1677ff]/20 bg-[#eaf3ff]/80 px-3 py-1 text-[#1158c7]">
               新增 {summary.create.toLocaleString('en-US')} 条
             </span>
-            <span className="rounded-full border border-[#2fbf71]/25 bg-[#e7f8ef]/85 px-3 py-1 text-[#1b8a4e]">
+            <span className="rounded-full border border-[#2fbf71]/25 bg-[#e7f8ef]/85 px-3 py-1 text-[#116b3b]">
               更新 {summary.update.toLocaleString('en-US')} 条
             </span>
             <span className="rounded-full border border-[#b9d0ec]/65 bg-white/75 px-3 py-1 text-[var(--text-secondary)]">
@@ -324,7 +327,7 @@ export function AtomicCommitPanel({
             <button
               type="button"
               onClick={onOpenAuditLog}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--accent)] hover:underline"
+              className="inline-flex min-h-6 items-center gap-1 rounded-md px-1 py-0.5 text-[12px] font-medium text-[var(--accent)] hover:underline"
             >
               <FileText className="size-3.5" aria-hidden="true" />
               审计日志入口

@@ -21,6 +21,7 @@ export function ActivityTimeline({
   return (
     <GlassPanel
       variant="strong"
+      role="region"
       data-slot="activity-timeline"
       aria-label="活动时间线"
       className={cn(
@@ -39,7 +40,7 @@ export function ActivityTimeline({
           <button
             type="button"
             onClick={onViewFullLog}
-            className="inline-flex items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--accent-soft)]"
+            className="inline-flex min-h-6 items-center gap-0.5 rounded-lg px-2 py-0.5 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-[var(--accent-soft)]"
           >
             <span>查看完整日志</span>
             <ArrowUpRight className="size-3.5" aria-hidden="true" />
@@ -82,7 +83,10 @@ export function ActivityTimeline({
                 >
                   {item.title}
                 </span>
-                <time className="shrink-0 text-[11.5px] tabular-nums text-[var(--text-secondary)]">
+                <time
+                  data-dynamic="timestamp"
+                  className="shrink-0 text-[11.5px] tabular-nums text-[var(--text-secondary)]"
+                >
                   {item.timestamp}
                 </time>
               </li>

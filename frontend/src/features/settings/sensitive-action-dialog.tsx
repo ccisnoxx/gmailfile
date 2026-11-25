@@ -241,7 +241,7 @@ export function SensitiveActionDialog({
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.08] px-3 py-2 text-[12.5px] text-[#1b8a4e]">
+            <div className="flex items-center gap-2 rounded-xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.08] px-3 py-2 text-[12.5px] text-[#116b3b]">
               <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
               <span>
                 最近已完成管理员重新验证（5 分钟有效期内），可直接确认。
@@ -273,7 +273,7 @@ export function SensitiveActionDialog({
               className={cn(
                 'inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-4 text-[13px] font-medium transition-all duration-[180ms] ease-out disabled:opacity-60',
                 tone === 'danger'
-                  ? 'border border-[#e45d5d]/35 bg-[#d94f4f] text-white shadow-[0_6px_16px_rgba(217,79,79,0.22)] hover:bg-[#c54141]'
+                  ? 'border border-[#c53030]/35 bg-[#c53030] text-white shadow-[0_6px_16px_rgba(197,48,48,0.22)] hover:bg-[#a62626]'
                   : 'bg-[var(--accent)] text-white shadow-[0_6px_16px_rgba(22,119,255,0.25)] hover:bg-[var(--accent-hover)]',
               )}
             >

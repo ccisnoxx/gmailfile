@@ -325,14 +325,15 @@ function SettingsPageBody({
     [onSectionChange],
   );
 
-  // URL ?ui_state=loading|error|empty 便于演示与端到端校验三种非正常状态
+  // URL ?ui_state=loading|error|empty 仅在演示或本地开发模式启用，生产实时页面禁止通过 URL 覆盖状态
   const resolvedUiState = useMemo<CardStateMode | undefined>(() => {
     if (uiStateOverride) return uiStateOverride;
+    if (mode !== 'mock' && !import.meta.env.DEV) return undefined;
     if (typeof window === 'undefined') return undefined;
     const raw = new URLSearchParams(window.location.search).get('ui_state');
     if (raw === 'loading' || raw === 'error' || raw === 'empty') return raw;
     return undefined;
-  }, [uiStateOverride]);
+  }, [mode, uiStateOverride]);
 
   const {
     navAlpha,
@@ -451,6 +452,7 @@ function SettingsPageBody({
             running={data.backupRunning}
             state={data.backupState}
             errorText={data.backupError}
+            webActionsSupported={mode === 'mock'}
             onRunBackup={() => void handleRunBackup()}
             onOpenRestoreVerify={() => setRestoreModalOpen(true)}
             onRetry={data.handlers.retryAll}
@@ -540,7 +542,7 @@ function SettingsPageBody({
                 <dt className="text-[12px] text-[var(--text-secondary)]">
                   敏感缓存策略
                 </dt>
-                <dd className="mt-0.5 font-medium text-[#1b8a4e]">
+                <dd className="mt-0.5 font-medium text-[#116b3b]">
                   禁止写入 Query Cache 与 localStorage
                 </dd>
               </div>
@@ -638,7 +640,11 @@ function SettingsPageBody({
                       : 'ready'
                 }
                 emptyTitle="暂无归档快照"
-                emptyDescription="执行一次立即备份后将在此列出最近加密归档。"
+                emptyDescription={
+                  mode === 'live'
+                    ? '加密归档文件保存在部署主机受保护目录，请通过主机备份与离线恢复演练脚本查看并验证。'
+                    : '执行一次立即备份后将在此列出最近加密归档。'
+                }
                 onRetry={data.handlers.retryAll}
               >
                 <ul className="divide-y divide-[var(--table-divider)] rounded-2xl border border-white/75 bg-white/44">
@@ -698,7 +704,7 @@ function SettingsPageBody({
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-[var(--text-secondary)]">私钥隔离</dt>
-                    <dd className="text-[#1b8a4e] font-medium">
+                    <dd className="text-[#116b3b] font-medium">
                       在线服务器仅持有加密公钥
                     </dd>
                   </div>
@@ -725,7 +731,7 @@ function SettingsPageBody({
                     <div
                       className={
                         data.auditIntegrity.valid
-                          ? 'flex items-center gap-2 rounded-2xl border border-[#2fbf71]/28 bg-[#2fbf71]/[0.08] px-3.5 py-2.5 text-[13px] font-medium text-[#1b8a4e]'
+                          ? 'flex items-center gap-2 rounded-2xl border border-[#2fbf71]/28 bg-[#2fbf71]/[0.08] px-3.5 py-2.5 text-[13px] font-medium text-[#116b3b]'
                           : 'flex items-center gap-2 rounded-2xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] px-3.5 py-2.5 text-[13px] font-medium text-[#a83838]'
                       }
                     >
@@ -775,7 +781,10 @@ function SettingsPageBody({
                         <dt className="text-[var(--text-secondary)]">
                           链尾摘要
                         </dt>
-                        <dd className="mt-0.5 font-mono text-[12px] text-[var(--text-primary)]">
+                        <dd
+                          data-dynamic="id"
+                          className="mt-0.5 font-mono text-[12px] text-[var(--text-primary)]"
+                        >
                           {data.auditIntegrity.latestHashShort ?? '—'}
                         </dd>
                       </div>
@@ -1006,6 +1015,7 @@ function SettingsPageBody({
         maxIdleMinutes={data.runtime.maxIdleMinutes}
         isRecentlyVerified={data.isRecentlyVerified}
         requireStepUpTotp={data.adminSecurity.stepUpTotpRequired}
+        readOnlyRetentionDays={mode === 'live'}
         onSave={data.handlers.updateRetentionPolicy}
         onSuccess={(msg) =>
           showToast(msg ?? '日志保留与数据生命周期策略已更新。', 'success')

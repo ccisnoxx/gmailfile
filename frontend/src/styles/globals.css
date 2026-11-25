@@ -30,22 +30,22 @@
   --desktop-start: #dceeff;
   --desktop-mid: #c9e3ff;
   --desktop-end: #afcfff;
-  --accent: #1677ff;
-  --accent-hover: #0e66e8;
+  --accent: #0f62df;
+  --accent-hover: #0a52c2;
   --accent-soft: #eaf3ff;
   --text-primary: #172033;
-  --text-secondary: #667085;
+  --text-secondary: #526074;
   --success: #2fbf71;
   --success-soft: rgba(47, 191, 113, 0.14);
-  --success-text: #1b8a4e;
+  --success-text: #116b3b;
   --warning: #f5a623;
   --warning-soft: rgba(245, 166, 35, 0.16);
-  --warning-text: #b76e08;
-  --danger: #e45d5d;
+  --warning-text: #8a5000;
+  --danger: #c53030;
   --danger-soft: rgba(228, 93, 93, 0.14);
   --purple: #8468f5;
   --purple-soft: rgba(132, 104, 245, 0.14);
-  --purple-text: #6246d6;
+  --purple-text: #5637cf;
 
   /* 亚克力玻璃、导航透明度、圆角、阴影与动效变量 */
   --nav-alpha: 0.6;

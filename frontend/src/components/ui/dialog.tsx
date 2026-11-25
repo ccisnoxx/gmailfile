@@ -5,10 +5,35 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 
 import { Button } from '@/components/ui/button';
 
+const DialogPreviousFocusContext =
+  React.createContext<React.MutableRefObject<HTMLElement | null> | null>(null);
+
 function Dialog({
+  open,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+  const prevOpenRef = React.useRef(Boolean(open));
+  const previousFocusRef = React.useRef<HTMLElement | null>(null);
+
+  if (
+    open &&
+    !prevOpenRef.current &&
+    typeof document !== 'undefined' &&
+    document.activeElement instanceof HTMLElement &&
+    document.activeElement !== document.body
+  ) {
+    previousFocusRef.current = document.activeElement;
+  }
+
+  React.useEffect(() => {
+    prevOpenRef.current = Boolean(open);
+  }, [open]);
+
+  return (
+    <DialogPreviousFocusContext.Provider value={previousFocusRef}>
+      <DialogPrimitive.Root data-slot="dialog" open={open} {...props} />
+    </DialogPreviousFocusContext.Provider>
+  );
 }
 
 function DialogTrigger({
@@ -49,15 +74,27 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
 }) {
+  const previousFocusRef = React.useContext(DialogPreviousFocusContext);
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          const target = previousFocusRef?.current;
+          if (!event.defaultPrevented && target && target.isConnected) {
+            event.preventDefault();
+            previousFocusRef.current = null;
+            target.focus();
+          }
+        }}
         className={cn(
           'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
           className,
@@ -68,7 +105,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            className="absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
           >
             <XIcon />
             <span className="sr-only">关闭</span>

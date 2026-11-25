@@ -318,12 +318,14 @@ function AccountsPageBody({
     const all = summary?.total ?? listState.list.data?.total ?? 0;
     const normal = summary?.normal ?? 0;
     const pending = summary?.pending_verification ?? 0;
-    const inferredArchived = Math.max(
-      archivedVisible,
-      all - normal - abnormal - pending,
-    );
-    const disabled = disabledVisible;
-    const risk = Math.max(0, abnormal - disabled);
+    const inferredArchived = summary
+      ? Math.max(0, all - normal - abnormal - pending)
+      : archivedVisible;
+    const disabled =
+      queryState.params.get('status') === 'disabled'
+        ? (listState.list.data?.total ?? disabledVisible)
+        : disabledVisible;
+    const risk = abnormal;
     return {
       all,
       normal,
@@ -337,6 +339,7 @@ function AccountsPageBody({
     listState.items,
     listState.list.data?.total,
     queryState.deleted,
+    queryState.params,
     summaryQuery.data,
   ]);
 
@@ -363,8 +366,12 @@ function AccountsPageBody({
     }));
   }, [listState.items, listState.tags.data]);
 
-  const uiStateParam = queryState.params.get('ui_state');
-  const showStateShowcase = uiStateParam === 'showcase' || showcaseToggle;
+  const allowDebugUiState = import.meta.env.DEV;
+  const uiStateParam = allowDebugUiState
+    ? queryState.params.get('ui_state')
+    : null;
+  const showStateShowcase =
+    allowDebugUiState && (uiStateParam === 'showcase' || showcaseToggle);
   const effectivePending =
     uiStateParam === 'loading' ? true : listState.list.isPending;
   const effectiveItems = uiStateParam === 'empty' ? [] : listState.items;
@@ -395,7 +402,11 @@ function AccountsPageBody({
             onSecurity();
           }}
           onOpenRecoveryUsage={queryState.openRecoveryView}
-          onToggleShowcase={() => setShowcaseToggle((prev) => !prev)}
+          onToggleShowcase={
+            allowDebugUiState
+              ? () => setShowcaseToggle((prev) => !prev)
+              : undefined
+          }
           showcaseActive={showStateShowcase}
           onLogout={() => {
             handleCloseDetail();

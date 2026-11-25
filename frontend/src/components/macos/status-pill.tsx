@@ -14,27 +14,27 @@ const statusConfig: Record<
 > = {
   normal: {
     label: '正常',
-    className: 'bg-[#e7f8ef] text-[#1b8a4e] border-[#2fbf71]/25',
+    className: 'bg-[#e7f8ef] text-[#116b3b] border-[#2fbf71]/25',
     kind: 'dot-green',
   },
   restricted: {
     label: '风险',
-    className: 'bg-[#fef3df] text-[#b76e08] border-[#f5a623]/30',
+    className: 'bg-[#fef3df] text-[#8a5000] border-[#f5a623]/30',
     kind: 'dot-orange',
   },
   login_failed: {
     label: '风险',
-    className: 'bg-[#fef3df] text-[#b76e08] border-[#f5a623]/30',
+    className: 'bg-[#fef3df] text-[#8a5000] border-[#f5a623]/30',
     kind: 'dot-orange',
   },
   risk: {
     label: '风险',
-    className: 'bg-[#fef3df] text-[#b76e08] border-[#f5a623]/30',
+    className: 'bg-[#fef3df] text-[#8a5000] border-[#f5a623]/30',
     kind: 'dot-orange',
   },
   pending_verification: {
     label: '待验证',
-    className: 'bg-[#fff7e6] text-[#9a6700] border-[#f5a623]/25',
+    className: 'bg-[#fff7e6] text-[#8a5000] border-[#f5a623]/25',
     kind: 'dot-amber',
   },
   archived: {

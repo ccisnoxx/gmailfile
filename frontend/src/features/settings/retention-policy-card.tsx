@@ -15,6 +15,7 @@ export function RetentionPolicyCard({
   onAdjustPolicy: () => void;
   onRetry?: () => void;
 }) {
+  const showStorageMetrics = policy.storageMetricsAvailable !== false;
   const auditPercent = Math.min(100, Math.max(0, policy.auditUsedPercent));
   const backupPercent = Math.min(100, Math.max(0, policy.backupUsedPercent));
 
@@ -55,22 +56,26 @@ export function RetentionPolicyCard({
               </strong>
             </span>
             <span className="text-[12.5px] tabular-nums text-[var(--text-secondary)]">
-              当前占用 {policy.auditUsedGb.toFixed(2)} GB，{auditPercent}%
+              {showStorageMetrics
+                ? `当前占用 ${policy.auditUsedGb.toFixed(2)} GB，${auditPercent}%`
+                : '由部署环境变量配置'}
             </span>
           </div>
-          <div
-            role="progressbar"
-            aria-label="审计日志存储占用比例"
-            aria-valuenow={auditPercent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#1677ff]/14"
-          >
+          {showStorageMetrics && (
             <div
-              className="h-full rounded-full bg-[var(--accent)] transition-all duration-[220ms] ease-out"
-              style={{ width: `${auditPercent}%` }}
-            />
-          </div>
+              role="progressbar"
+              aria-label="审计日志存储占用比例"
+              aria-valuenow={auditPercent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#1677ff]/14"
+            >
+              <div
+                className="h-full rounded-full bg-[var(--accent)] transition-all duration-[220ms] ease-out"
+                style={{ width: `${auditPercent}%` }}
+              />
+            </div>
+          )}
         </div>
 
         {/* 备份文件保留 */}
@@ -79,26 +84,32 @@ export function RetentionPolicyCard({
             <span className="font-medium text-[var(--text-primary)]">
               备份文件保留{' '}
               <strong className="font-semibold tabular-nums">
-                {policy.backupRetentionDays} 天
+                {policy.backupRetentionDays !== null
+                  ? `${policy.backupRetentionDays} 天`
+                  : '由主机策略管理'}
               </strong>
             </span>
             <span className="text-[12.5px] tabular-nums text-[var(--text-secondary)]">
-              当前占用 {policy.backupUsedGb.toFixed(2)} GB，{backupPercent}%
+              {showStorageMetrics
+                ? `当前占用 ${policy.backupUsedGb.toFixed(2)} GB，${backupPercent}%`
+                : '由备份脚本轮替清理'}
             </span>
           </div>
-          <div
-            role="progressbar"
-            aria-label="备份文件存储占用比例"
-            aria-valuenow={backupPercent}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#1677ff]/14"
-          >
+          {showStorageMetrics && (
             <div
-              className="h-full rounded-full bg-[#4d93ff] transition-all duration-[220ms] ease-out"
-              style={{ width: `${backupPercent}%` }}
-            />
-          </div>
+              role="progressbar"
+              aria-label="备份文件存储占用比例"
+              aria-valuenow={backupPercent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[#1677ff]/14"
+            >
+              <div
+                className="h-full rounded-full bg-[#4d93ff] transition-all duration-[220ms] ease-out"
+                style={{ width: `${backupPercent}%` }}
+              />
+            </div>
+          )}
         </div>
       </div>
 

@@ -293,7 +293,13 @@ function WorkspacePrimarySidebar({
           </div>
           <ul className="mt-2.5 space-y-1.5 text-[11px] leading-4 text-[var(--text-secondary)]">
             {healthItems.map((item) => (
-              <li key={item} className="flex items-center gap-1.5">
+              <li
+                key={item}
+                data-dynamic={
+                  item.startsWith('最近备份：') ? 'timestamp' : undefined
+                }
+                className="flex items-center gap-1.5"
+              >
                 <CheckCircle2
                   className="size-3.5 shrink-0 text-[var(--success)]"
                   aria-hidden="true"

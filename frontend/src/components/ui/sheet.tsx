@@ -5,8 +5,35 @@ import { cn } from '@/lib/utils';
 import { XIcon } from 'lucide-react';
 import { Dialog as SheetPrimitive } from 'radix-ui';
 
-function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+const SheetPreviousFocusContext =
+  React.createContext<React.MutableRefObject<HTMLElement | null> | null>(null);
+
+function Sheet({
+  open,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  const prevOpenRef = React.useRef(Boolean(open));
+  const previousFocusRef = React.useRef<HTMLElement | null>(null);
+
+  if (
+    open &&
+    !prevOpenRef.current &&
+    typeof document !== 'undefined' &&
+    document.activeElement instanceof HTMLElement &&
+    document.activeElement !== document.body
+  ) {
+    previousFocusRef.current = document.activeElement;
+  }
+
+  React.useEffect(() => {
+    prevOpenRef.current = Boolean(open);
+  }, [open]);
+
+  return (
+    <SheetPreviousFocusContext.Provider value={previousFocusRef}>
+      <SheetPrimitive.Root data-slot="sheet" open={open} {...props} />
+    </SheetPreviousFocusContext.Provider>
+  );
 }
 
 function SheetTrigger({
@@ -48,16 +75,28 @@ function SheetContent({
   children,
   side = 'right',
   showCloseButton = true,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left';
   showCloseButton?: boolean;
 }) {
+  const previousFocusRef = React.useContext(SheetPreviousFocusContext);
+
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          const target = previousFocusRef?.current;
+          if (!event.defaultPrevented && target && target.isConnected) {
+            event.preventDefault();
+            previousFocusRef.current = null;
+            target.focus();
+          }
+        }}
         className={cn(
           'fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500',
           side === 'right' &&
@@ -74,7 +113,7 @@ function SheetContent({
       >
         {children}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
+          <SheetPrimitive.Close className="absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-md opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
             <XIcon className="size-4" />
             <span className="sr-only">关闭</span>
           </SheetPrimitive.Close>

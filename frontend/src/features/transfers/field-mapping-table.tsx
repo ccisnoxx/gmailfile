@@ -159,7 +159,12 @@ export function FieldMappingTable({
         </div>
       )}
 
-      <div className="macos-thin-scrollbar overflow-x-auto rounded-2xl border border-white/82 bg-white/56 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)]">
+      <div
+        role="region"
+        aria-label="字段映射对照表"
+        tabIndex={0}
+        className="macos-thin-scrollbar overflow-x-auto rounded-2xl border border-white/82 bg-white/56 shadow-[inset_0_1px_0_rgba(255,255,255,0.88)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      >
         <table className="w-full min-w-[540px] border-collapse text-left text-[13px]">
           <thead>
             <tr className="border-b border-[var(--table-divider)] bg-white/55 text-[11.5px] font-semibold text-[var(--text-secondary)]">
@@ -300,7 +305,7 @@ export function FieldMappingTable({
                         必填项未映射
                       </span>
                     ) : selectedCol ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#1b8a4e]">
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#116b3b]">
                         <CheckCircle2
                           className="size-3.5 text-[var(--success)]"
                           aria-hidden="true"

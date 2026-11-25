@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Database, History, KeyRound, Link2, User } from 'lucide-react';
 import { GlassPanel } from '@/components/macos';
 import { cn } from '@/lib/utils';
@@ -26,18 +27,31 @@ export function AccountTabs({
   onChange: (tab: AccountDetailTabKey) => void;
   className?: string;
 }) {
+  const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const focusTab = (targetIndex: number) => {
+    const target = tabItems[targetIndex];
+    if (!target) return;
+    onChange(target.key);
+    buttonRefs.current[targetIndex]?.focus();
+  };
+
   const handleKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ) => {
     if (event.key === 'ArrowRight') {
       event.preventDefault();
-      const next = tabItems[(index + 1) % tabItems.length];
-      onChange(next.key);
+      focusTab((index + 1) % tabItems.length);
     } else if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      const prev = tabItems[(index - 1 + tabItems.length) % tabItems.length];
-      onChange(prev.key);
+      focusTab((index - 1 + tabItems.length) % tabItems.length);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      focusTab(0);
+    } else if (event.key === 'End') {
+      event.preventDefault();
+      focusTab(tabItems.length - 1);
     }
   };
 
@@ -57,6 +71,9 @@ export function AccountTabs({
           return (
             <button
               key={key}
+              ref={(el) => {
+                buttonRefs.current[index] = el;
+              }}
               id={`account-tab-${key}`}
               type="button"
               role="tab"

@@ -93,7 +93,7 @@ export function ImportHistoryDialog({
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       {rec.status === 'committed' ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[#2fbf71]/25 bg-[#e7f8ef] px-2.5 py-0.5 text-[11px] font-medium text-[#1b8a4e]">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[#2fbf71]/25 bg-[#e7f8ef] px-2.5 py-0.5 text-[11px] font-medium text-[#116b3b]">
                           <CheckCircle2 className="size-3" aria-hidden="true" />
                           已提交
                         </span>

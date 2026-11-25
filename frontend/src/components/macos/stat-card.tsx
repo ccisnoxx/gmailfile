@@ -11,10 +11,10 @@ const iconToneClasses: Record<StatTone, string> = {
 };
 
 const trendToneClasses: Record<StatTone, string> = {
-  blue: 'text-[#1677ff]',
-  green: 'text-[#1b8a4e]',
-  orange: 'text-[#b76e08]',
-  slate: 'text-[#667085]',
+  blue: 'text-[#0f62df]',
+  green: 'text-[#116b3b]',
+  orange: 'text-[#8a5000]',
+  slate: 'text-[#526074]',
 };
 
 export function StatCard({

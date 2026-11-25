@@ -63,8 +63,11 @@ export function GlassToolbar({
   const [notifOpen, setNotifOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    if (!menuOpen && !notifOpen) return;
     const onPointerDown = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(false);
@@ -78,8 +81,12 @@ export function GlassToolbar({
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        const wasMenu = menuOpen;
+        const wasNotif = notifOpen;
         setMenuOpen(false);
         setNotifOpen(false);
+        if (wasMenu) menuBtnRef.current?.focus();
+        else if (wasNotif) notifBtnRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -88,7 +95,7 @@ export function GlassToolbar({
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [menuOpen, notifOpen]);
 
   return (
     <header
@@ -149,6 +156,7 @@ export function GlassToolbar({
 
         <div ref={notifRef} className="relative">
           <button
+            ref={notifBtnRef}
             type="button"
             aria-label="通知"
             aria-expanded={notifOpen}
@@ -195,6 +203,7 @@ export function GlassToolbar({
 
         <div ref={menuRef} className="relative">
           <button
+            ref={menuBtnRef}
             type="button"
             aria-label="管理员菜单"
             aria-expanded={menuOpen}

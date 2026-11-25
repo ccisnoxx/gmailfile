@@ -69,8 +69,9 @@ export function TotpSecurityCard({
                 备用恢复码
               </dt>
               <dd className="font-medium tabular-nums text-[var(--text-primary)]">
-                {info.recoveryCodesTotal} 个，剩余 {info.recoveryCodesRemaining}{' '}
-                个
+                {info.recoveryCodesRemaining !== null
+                  ? `${info.recoveryCodesTotal} 个，剩余 ${info.recoveryCodesRemaining} 个`
+                  : `共 ${info.recoveryCodesTotal} 个（服务端单向摘要保存）`}
               </dd>
             </div>
           </dl>
@@ -92,6 +93,7 @@ export function TotpSecurityCard({
 
         {/* 右侧：抽象六位验证码演示卡片（不展示真实 Secret） */}
         <div
+          role="region"
           data-slot="totp-demo-card"
           aria-label="动态验证码演示卡片"
           className="flex flex-col items-center justify-between rounded-2xl border border-white/80 bg-[linear-gradient(155deg,rgba(234,243,255,0.72),rgba(255,255,255,0.52))] p-3.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"

@@ -89,6 +89,8 @@ export function CsvWorkspaceShell({
   const [notifOpen, setNotifOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
+  const adminBtnRef = useRef<HTMLButtonElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const adminRef = useRef<HTMLDivElement>(null);
 
@@ -122,8 +124,12 @@ export function CsvWorkspaceShell({
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        const wasAdmin = adminOpen;
+        const wasNotif = notifOpen;
         setNotifOpen(false);
         setAdminOpen(false);
+        if (wasAdmin) adminBtnRef.current?.focus();
+        else if (wasNotif) notifBtnRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -204,7 +210,7 @@ export function CsvWorkspaceShell({
               type="button"
               aria-label="清空全局搜索"
               onClick={() => onGlobalSearchChange('')}
-              className="absolute right-2 inline-flex size-4.5 items-center justify-center rounded-full text-[var(--text-secondary)] hover:bg-white/80 hover:text-[var(--text-primary)]"
+              className="absolute right-1.5 inline-flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] hover:bg-white/80 hover:text-[var(--text-primary)]"
             >
               <X className="size-3" aria-hidden="true" />
             </button>
@@ -214,6 +220,7 @@ export function CsvWorkspaceShell({
         {/* 通知 */}
         <div ref={notifRef} className="relative">
           <button
+            ref={notifBtnRef}
             type="button"
             aria-label="通知"
             aria-expanded={notifOpen}
@@ -262,6 +269,7 @@ export function CsvWorkspaceShell({
         {/* 管理员头像 */}
         <div ref={adminRef} className="relative">
           <button
+            ref={adminBtnRef}
             type="button"
             aria-label="管理员菜单"
             aria-expanded={adminOpen}

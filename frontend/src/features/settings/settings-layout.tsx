@@ -75,6 +75,8 @@ export function SettingsLayout({
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
+  const adminBtnRef = useRef<HTMLButtonElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const adminRef = useRef<HTMLDivElement>(null);
 
@@ -106,8 +108,12 @@ export function SettingsLayout({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
+        const wasAdmin = adminMenuOpen;
+        const wasNotif = notifOpen;
         setNotifOpen(false);
         setAdminMenuOpen(false);
+        if (wasAdmin) adminBtnRef.current?.focus();
+        else if (wasNotif) notifBtnRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -160,7 +166,7 @@ export function SettingsLayout({
             type="button"
             aria-label="清空设置搜索"
             onClick={() => onSearchQueryChange('')}
-            className="absolute right-2.5 inline-flex size-5 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-white/80 hover:text-[var(--text-primary)]"
+            className="absolute right-2 inline-flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-white/80 hover:text-[var(--text-primary)]"
           >
             <X className="size-3.5" aria-hidden="true" />
           </button>
@@ -193,6 +199,7 @@ export function SettingsLayout({
         {/* 通知 */}
         <div ref={notifRef} className="relative">
           <button
+            ref={notifBtnRef}
             type="button"
             aria-label="通知"
             aria-expanded={notifOpen}
@@ -241,6 +248,7 @@ export function SettingsLayout({
         {/* 管理员头像与菜单 */}
         <div ref={adminRef} className="relative">
           <button
+            ref={adminBtnRef}
             type="button"
             aria-label="管理员菜单"
             aria-expanded={adminMenuOpen}

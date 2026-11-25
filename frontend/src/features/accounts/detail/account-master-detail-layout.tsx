@@ -72,6 +72,8 @@ export function AccountMasterDetailLayout({
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const settingsBtnRef = useRef<HTMLButtonElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
+  const adminBtnRef = useRef<HTMLButtonElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const adminRef = useRef<HTMLDivElement>(null);
 
@@ -102,8 +104,12 @@ export function AccountMasterDetailLayout({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
+        const wasAdmin = adminMenuOpen;
+        const wasNotif = notifOpen;
         setNotifOpen(false);
         setAdminMenuOpen(false);
+        if (wasAdmin) adminBtnRef.current?.focus();
+        else if (wasNotif) notifBtnRef.current?.focus();
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -147,6 +153,7 @@ export function AccountMasterDetailLayout({
         {/* 通知按钮 */}
         <div ref={notifRef} className="relative">
           <button
+            ref={notifBtnRef}
             type="button"
             aria-label="通知"
             aria-expanded={notifOpen}
@@ -230,6 +237,7 @@ export function AccountMasterDetailLayout({
         {/* 管理员头像与下拉菜单 */}
         <div ref={adminRef} className="relative">
           <button
+            ref={adminBtnRef}
             type="button"
             aria-label="管理员菜单"
             aria-expanded={adminMenuOpen}
@@ -334,7 +342,7 @@ export function AccountMasterDetailLayout({
             type="button"
             aria-label="返回控制台"
             onClick={onNavigateAccountsList}
-            className="inline-flex items-center rounded-md p-1 transition-colors hover:bg-white/60 hover:text-[var(--text-primary)]"
+            className="inline-flex size-6 items-center justify-center rounded-md transition-colors hover:bg-white/60 hover:text-[var(--text-primary)]"
           >
             <Home className="size-3.5" aria-hidden="true" />
           </button>
@@ -342,7 +350,7 @@ export function AccountMasterDetailLayout({
           <button
             type="button"
             onClick={onNavigateAccountsList}
-            className="rounded-md px-1 py-0.5 font-medium transition-colors hover:bg-white/60 hover:text-[var(--accent)]"
+            className="inline-flex min-h-6 items-center rounded-md px-1.5 py-0.5 font-medium transition-colors hover:bg-white/60 hover:text-[var(--accent)]"
           >
             Gmail 账号
           </button>

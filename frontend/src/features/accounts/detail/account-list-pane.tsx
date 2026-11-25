@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Filter, Plus, Star } from 'lucide-react';
 import type { AccountSummary } from '@/api/generated';
 import {
@@ -24,7 +24,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
   switch (status) {
     case 'normal':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1b8a4e]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#116b3b]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[var(--success)]"
@@ -34,7 +34,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     case 'disabled':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#667085]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#526074]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[#98a2b3]"
@@ -44,7 +44,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     case 'archived':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#667085]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#526074]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full border border-[#8492a6] bg-transparent"
@@ -54,7 +54,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     case 'pending_verification':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#9a6700]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#8a5000]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[#f5a623]"
@@ -64,7 +64,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     default:
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#b76e08]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#8a5000]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[var(--warning)]"
@@ -86,6 +86,8 @@ export function AccountListPane({
   onSelectAccount,
   onCreateAccount,
   isLoading = false,
+  isError = false,
+  onRetry,
   className,
 }: {
   accounts: AccountSummary[];
@@ -98,11 +100,14 @@ export function AccountListPane({
   onSelectAccount: (accountId: string) => void;
   onCreateAccount: () => void;
   isLoading?: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   className?: string;
 }) {
   const [funnelOpen, setFunnelOpen] = useState(false);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [only2Fa, setOnly2Fa] = useState(false);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const visibleAccounts = useMemo(() => {
     return accounts.filter((account) => {
@@ -114,9 +119,17 @@ export function AccountListPane({
 
   const activeExtraCount = Number(onlyFavorites) + Number(only2Fa);
 
+  const focusFilterTab = (index: number) => {
+    const target = filterTabs[index];
+    if (!target) return;
+    onFilterTabChange(target.key);
+    tabRefs.current[index]?.focus();
+  };
+
   return (
     <GlassPanel
       variant="strong"
+      role="region"
       data-slot="account-list-pane"
       aria-label="账号列表面板"
       className={cn(
@@ -150,15 +163,36 @@ export function AccountListPane({
             aria-label="账号状态筛选"
             className="grid flex-1 grid-cols-4 gap-0.5 rounded-xl border border-white/75 bg-white/45 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
           >
-            {filterTabs.map((tab) => {
+            {filterTabs.map((tab, index) => {
               const active = filterTab === tab.key;
               return (
                 <button
                   key={tab.key}
+                  ref={(el) => {
+                    tabRefs.current[index] = el;
+                  }}
                   type="button"
                   role="tab"
                   aria-selected={active}
+                  tabIndex={active ? 0 : -1}
                   onClick={() => onFilterTabChange(tab.key)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight') {
+                      e.preventDefault();
+                      focusFilterTab((index + 1) % filterTabs.length);
+                    } else if (e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      focusFilterTab(
+                        (index - 1 + filterTabs.length) % filterTabs.length,
+                      );
+                    } else if (e.key === 'Home') {
+                      e.preventDefault();
+                      focusFilterTab(0);
+                    } else if (e.key === 'End') {
+                      e.preventDefault();
+                      focusFilterTab(filterTabs.length - 1);
+                    }
+                  }}
                   className={cn(
                     'h-7 rounded-[9px] px-1.5 text-[12px] font-medium whitespace-nowrap transition-all duration-[160ms] ease-out',
                     active
@@ -237,14 +271,31 @@ export function AccountListPane({
 
       {/* 可滚动账号列表区域（macOS 细滚动条） */}
       <div
-        role="list"
-        aria-label="Gmail 账号列表"
+        role={
+          isLoading || isError || visibleAccounts.length === 0
+            ? undefined
+            : 'list'
+        }
+        aria-label={
+          isLoading || isError || visibleAccounts.length === 0
+            ? undefined
+            : 'Gmail 账号列表'
+        }
         className="macos-thin-scrollbar max-h-[260px] flex-1 space-y-2 overflow-y-auto px-3 pt-0.5 pb-4 xl:max-h-[calc(100vh-14rem)]"
       >
         {isLoading ? (
           <LoadingState
             title="正在加载账号…"
             description="请稍候…"
+            className="border-0 bg-transparent px-3 py-8 shadow-none"
+          />
+        ) : isError ? (
+          <EmptyState
+            role="alert"
+            title="账号列表加载失败"
+            description="检查网络连接与服务状态后重试。"
+            onCreate={onRetry}
+            createLabel="重试加载"
             className="border-0 bg-transparent px-3 py-8 shadow-none"
           />
         ) : visibleAccounts.length === 0 ? (

@@ -44,7 +44,7 @@ export function ImportResultDialog({
           <>
             <DialogHeader className="space-y-2">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#2fbf71]/25 bg-[#e7f8ef] text-[#1b8a4e]">
+                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#2fbf71]/25 bg-[#e7f8ef] text-[#116b3b]">
                   <CheckCircle2 className="size-5" aria-hidden="true" />
                 </span>
                 <div>
@@ -71,7 +71,7 @@ export function ImportResultDialog({
                 <p className="text-[11.5px] text-[var(--text-secondary)]">
                   更新
                 </p>
-                <p className="mt-1 text-[20px] font-semibold tabular-nums text-[#1b8a4e]">
+                <p className="mt-1 text-[20px] font-semibold tabular-nums text-[#116b3b]">
                   {outcome.updated.toLocaleString('en-US')}
                 </p>
               </div>
@@ -203,7 +203,7 @@ export function ImportResultDialog({
           <>
             <DialogHeader className="space-y-2">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#f5a623]/35 bg-[#fef6df] text-[#a36207]">
+                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#f5a623]/35 bg-[#fef6df] text-[#8a5000]">
                   <AlertTriangle className="size-5" aria-hidden="true" />
                 </span>
                 <div>

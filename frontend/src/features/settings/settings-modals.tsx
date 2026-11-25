@@ -270,7 +270,7 @@ export function ChangePasswordModal({
             <span
               className={cn(
                 'inline-flex items-center gap-1',
-                lenOk && 'font-medium text-[#1b8a4e]',
+                lenOk && 'font-medium text-[#116b3b]',
               )}
             >
               <Check className="size-3.5" aria-hidden="true" />
@@ -279,7 +279,7 @@ export function ChangePasswordModal({
             <span
               className={cn(
                 'inline-flex items-center gap-1',
-                matchOk && 'font-medium text-[#1b8a4e]',
+                matchOk && 'font-medium text-[#116b3b]',
               )}
             >
               <Check className="size-3.5" aria-hidden="true" />
@@ -336,7 +336,7 @@ export function RecoveryCodesModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  remainingCount: number;
+  remainingCount: number | null;
   totalCount: number;
   onRegenerate: (
     currentPassword: string,
@@ -460,7 +460,10 @@ export function RecoveryCodesModal({
                   : '查看 / 重新生成恢复码'}
               </DialogTitle>
               <DialogDescription className="mt-0.5 text-[12.5px]">
-                当前共有 {totalCount} 个备用恢复码，剩余 {remainingCount} 个可用
+                当前共有 {totalCount} 个备用恢复码，
+                {remainingCount === null
+                  ? '服务端以单向摘要保存'
+                  : `剩余 ${remainingCount} 个可用`}
               </DialogDescription>
             </div>
           </div>
@@ -544,7 +547,7 @@ export function RecoveryCodesModal({
               <button
                 type="submit"
                 disabled={busy}
-                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[#d94f4f] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(217,79,79,0.22)] hover:bg-[#c54141] disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[#c53030] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(197,48,48,0.22)] hover:bg-[#a62626] disabled:opacity-60"
               >
                 {busy && (
                   <Loader2
@@ -558,7 +561,7 @@ export function RecoveryCodesModal({
           </form>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.07] px-3.5 py-2.5 text-[12px] text-[#1b8a4e]">
+            <div className="rounded-2xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.07] px-3.5 py-2.5 text-[12px] text-[#116b3b]">
               以下恢复码仅在本次会话内存中展示一次，关闭窗口或切换标签页后自动清空。
             </div>
 
@@ -741,7 +744,7 @@ export function RestoreVerifyModal({
                   active
                     ? 'bg-[var(--accent)] text-white shadow-[0_4px_10px_rgba(22,119,255,0.22)]'
                     : done
-                      ? 'bg-[#2fbf71]/12 text-[#1b8a4e]'
+                      ? 'bg-[#2fbf71]/12 text-[#116b3b]'
                       : 'text-[var(--text-secondary)]',
                 )}
               >
@@ -873,7 +876,7 @@ export function RestoreVerifyModal({
               className={cn(
                 'flex items-start gap-2.5 rounded-2xl border px-3.5 py-3 text-[13px]',
                 report.passed
-                  ? 'border-[#2fbf71]/28 bg-[#2fbf71]/[0.08] text-[#1b8a4e]'
+                  ? 'border-[#2fbf71]/28 bg-[#2fbf71]/[0.08] text-[#116b3b]'
                   : 'border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] text-[#a83838]',
               )}
             >
@@ -1005,6 +1008,7 @@ export function RetentionPolicySheet({
   maxIdleMinutes,
   isRecentlyVerified,
   requireStepUpTotp,
+  readOnlyRetentionDays = false,
   onSave,
   onSuccess,
 }: {
@@ -1015,6 +1019,7 @@ export function RetentionPolicySheet({
   maxIdleMinutes: number;
   isRecentlyVerified: boolean;
   requireStepUpTotp: boolean;
+  readOnlyRetentionDays?: boolean;
   onSave: (
     next: {
       auditRetentionDays: number;
@@ -1032,7 +1037,9 @@ export function RetentionPolicySheet({
   const totpId = useId();
 
   const [auditDays, setAuditDays] = useState(policy.auditRetentionDays);
-  const [backupDays, setBackupDays] = useState(policy.backupRetentionDays);
+  const [backupDays, setBackupDays] = useState(
+    policy.backupRetentionDays ?? 90,
+  );
   const [idle, setIdle] = useState(idleMinutes);
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
@@ -1042,7 +1049,7 @@ export function RetentionPolicySheet({
   useEffect(() => {
     if (open) {
       setAuditDays(policy.auditRetentionDays);
-      setBackupDays(policy.backupRetentionDays);
+      setBackupDays(policy.backupRetentionDays ?? 90);
       setIdle(idleMinutes);
       setPassword('');
       setTotpCode('');
@@ -1069,8 +1076,10 @@ export function RetentionPolicySheet({
   }, [open]);
 
   const shorteningRetention =
-    auditDays < policy.auditRetentionDays ||
-    backupDays < policy.backupRetentionDays;
+    !readOnlyRetentionDays &&
+    (auditDays < policy.auditRetentionDays ||
+      (policy.backupRetentionDays !== null &&
+        backupDays < policy.backupRetentionDays));
   const needsCredentials = !isRecentlyVerified;
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -1164,13 +1173,15 @@ export function RetentionPolicySheet({
                 min={30}
                 max={3650}
                 required
-                disabled={busy}
+                disabled={busy || readOnlyRetentionDays}
                 value={auditDays}
                 onChange={(e) => setAuditDays(Number(e.target.value))}
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-65"
               />
               <p className="text-[11.5px] text-[var(--text-secondary)]">
-                推荐至少 365–730 天以满足合规追溯要求。
+                {readOnlyRetentionDays
+                  ? '由部署环境变量（AUDIT_RETENTION_DAYS）只读控制，此处仅在线修改空闲自动锁定时间。'
+                  : '推荐至少 365–730 天以满足合规追溯要求。'}
               </p>
             </div>
 
@@ -1187,11 +1198,16 @@ export function RetentionPolicySheet({
                 min={7}
                 max={1095}
                 required
-                disabled={busy}
+                disabled={busy || readOnlyRetentionDays}
                 value={backupDays}
                 onChange={(e) => setBackupDays(Number(e.target.value))}
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-65"
               />
+              {readOnlyRetentionDays && (
+                <p className="text-[11.5px] text-[var(--text-secondary)]">
+                  由部署主机备份轮替脚本控制，不支持在 Web 端直接更改。
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -1277,7 +1293,7 @@ export function RetentionPolicySheet({
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 rounded-xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.08] px-3 py-2 text-[12px] text-[#1b8a4e]">
+              <div className="flex items-center gap-2 rounded-xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.08] px-3 py-2 text-[12px] text-[#116b3b]">
                 <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
                 <span>最近已完成重新验证，可直接保存策略。</span>
               </div>

@@ -91,7 +91,7 @@ export function ImportStepper({
                     className={cn(
                       'mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold tabular-nums transition-all duration-[180ms] ease-out',
                       isCompleted
-                        ? 'border-[#2fbf71]/35 bg-[#e7f8ef] text-[#1b8a4e]'
+                        ? 'border-[#2fbf71]/35 bg-[#e7f8ef] text-[#116b3b]'
                         : isActive
                           ? 'border-[var(--accent)] bg-[#eaf3ff] text-[var(--accent)] ring-4 ring-[#1677ff]/12'
                           : 'border-[#c6d8ee] bg-white/70 text-[var(--text-secondary)]',

@@ -301,7 +301,7 @@ export function BatchOperationsPanel({
                     </td>
                     <td className="px-3 py-2.5 text-[12px]">
                       {acc.twoFactorStatus === 'enabled' ? (
-                        <span className="inline-flex items-center gap-1 text-[#1b8a4e]">
+                        <span className="inline-flex items-center gap-1 text-[#116b3b]">
                           <ShieldCheck className="size-3.5 text-[var(--success)]" />
                           已启用
                         </span>

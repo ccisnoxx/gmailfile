@@ -3,11 +3,11 @@ import { cn } from '@/lib/utils';
 export type TagTone = 'blue' | 'purple' | 'green' | 'yellow' | 'gray';
 
 const toneClasses: Record<TagTone, string> = {
-  blue: 'bg-[#e8f2ff] text-[#1565d8] border-[#1677ff]/18',
-  purple: 'bg-[#efeafd] text-[#6246d6] border-[#8468f5]/20',
-  green: 'bg-[#e6f7ee] text-[#1b8a4e] border-[#2fbf71]/22',
-  yellow: 'bg-[#fef6df] text-[#9f6b06] border-[#f5a623]/25',
-  gray: 'bg-[#eef2f6] text-[#526074] border-[#98a2b3]/25',
+  blue: 'bg-[#e8f2ff] text-[#0f52ba] border-[#1677ff]/18',
+  purple: 'bg-[#efeafd] text-[#5637cf] border-[#8468f5]/20',
+  green: 'bg-[#e6f7ee] text-[#116b3b] border-[#2fbf71]/22',
+  yellow: 'bg-[#fef6df] text-[#8a5000] border-[#f5a623]/25',
+  gray: 'bg-[#eef2f6] text-[#475467] border-[#98a2b3]/25',
 };
 
 const cycleTones: readonly TagTone[] = ['blue', 'purple', 'green', 'yellow'];

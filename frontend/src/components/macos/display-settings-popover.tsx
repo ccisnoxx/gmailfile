@@ -101,7 +101,7 @@ export function MacSwitch({
       aria-label={ariaLabel}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
-        'relative inline-flex h-[22px] w-[38px] shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-[180ms] ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
+        'relative inline-flex h-6 w-[40px] shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-[180ms] ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
         checked
           ? 'border-[#1268e6]/30 bg-[linear-gradient(180deg,#2f8bff_0%,#1677ff_100%)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.28)]'
           : 'border-[#b9cadf]/70 bg-[#d5e1ee]/90 shadow-[inset_0_1px_2px_rgba(32,64,110,0.12)]',
@@ -110,7 +110,7 @@ export function MacSwitch({
       <span
         aria-hidden="true"
         className={cn(
-          'pointer-events-none block size-[18px] rounded-full bg-white shadow-[0_1px_3px_rgba(23,32,51,0.28),0_0_0_0.5px_rgba(255,255,255,0.85)] transition-transform duration-[180ms] ease-out',
+          'pointer-events-none block size-[20px] rounded-full bg-white shadow-[0_1px_3px_rgba(23,32,51,0.28),0_0_0_0.5px_rgba(255,255,255,0.85)] transition-transform duration-[180ms] ease-out',
           checked ? 'translate-x-[17px]' : 'translate-x-[1px]',
         )}
       />

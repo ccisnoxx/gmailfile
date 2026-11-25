@@ -74,7 +74,10 @@ export type CsvTransferAdapter = {
     receiptId: string;
     summary: CommitSummaryCounts;
   }) => Promise<CommitOutcome>;
-  exportAccountsCsv: (scope: 'all' | 'filtered') => Promise<{
+  exportAccountsCsv: (
+    scope: 'all' | 'filtered',
+    filters?: AccountQuery,
+  ) => Promise<{
     blob: Blob;
     filename: string;
   }>;
@@ -277,8 +280,13 @@ export function createLiveCsvAdapter({
         if (typeof value === 'number') numericMapping[key] = value;
       }
 
+      const payload =
+        typeof file.arrayBuffer === 'function'
+          ? await file.arrayBuffer()
+          : file;
+
       const result = await csvPreview({
-        body: file,
+        body: payload as Blob | File,
         query: {
           options: JSON.stringify({
             strategy: apiStrategy,
@@ -311,8 +319,12 @@ export function createLiveCsvAdapter({
         };
       }
       try {
+        const payload =
+          typeof file.arrayBuffer === 'function'
+            ? await file.arrayBuffer()
+            : file;
         const result = await csvCommit({
-          body: file,
+          body: payload as Blob | File,
           query: { receipt_id: receiptId },
           headers: csrfHeaders(),
         });
@@ -368,12 +380,12 @@ export function createLiveCsvAdapter({
       }
     },
 
-    async exportAccountsCsv(scope) {
+    async exportAccountsCsv(scope, filters) {
       const result = await csvExport({
         body:
           scope === 'all'
             ? { scope: 'all' }
-            : { scope: 'filtered', filters: {} as AccountQuery },
+            : { scope: 'filtered', filters: filters ?? ({} as AccountQuery) },
         headers: csrfHeaders(),
         parseAs: 'blob',
         throwOnError: true,
@@ -407,7 +419,7 @@ export function createLiveCsvAdapter({
           trash: trashRes.data.total,
         };
       } catch {
-        return DEFAULT_SIDEBAR_COUNTS;
+        return { accounts: 0, tags: 0, archived: 0, trash: 0 };
       }
     },
 

@@ -359,15 +359,9 @@ export function mapApiBackupStatus(data: BackupStatus): BackupRestoreInfo {
       : null,
     method: 'pg_dump + age 加密',
     scope: '数据库、标签、配置、审计日志',
-    lastRestoreVerifiedAt:
-      data.state === 'success' && data.last_success_at
-        ? formatSettingsDateTime(data.last_success_at)
-        : null,
-    restoreVerifySummary: '结构、约束与抽样解密',
+    lastRestoreVerifiedAt: null,
+    restoreVerifySummary: '请通过服务器端恢复演练脚本验证',
     offsiteState: data.offsite ?? 'unconfigured',
-    archives:
-      data.state === 'success' || data.state === 'stale'
-        ? createMockBackupArchives()
-        : [],
+    archives: [],
   };
 }

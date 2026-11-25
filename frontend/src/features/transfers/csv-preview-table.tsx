@@ -20,12 +20,12 @@ const STATUS_BADGE: Record<
 > = {
   valid: {
     label: '有效',
-    className: 'border-[#2fbf71]/25 bg-[#e7f8ef] text-[#1b8a4e]',
+    className: 'border-[#2fbf71]/25 bg-[#e7f8ef] text-[#116b3b]',
     dotClass: 'bg-[var(--success)]',
   },
   warning: {
     label: '警告',
-    className: 'border-[#f5a623]/30 bg-[#fef6df] text-[#a36207]',
+    className: 'border-[#f5a623]/30 bg-[#fef6df] text-[#8a5000]',
     dotClass: 'bg-[var(--warning)]',
   },
   error: {
@@ -229,9 +229,9 @@ export function CsvPreviewTable({
                           className={cn(
                             'inline-flex items-center gap-1 text-[12px] font-medium',
                             row.twoFactorStatus === 'enabled'
-                              ? 'text-[#1b8a4e]'
+                              ? 'text-[#116b3b]'
                               : row.twoFactorStatus === 'disabled'
-                                ? 'text-[#a36207]'
+                                ? 'text-[#8a5000]'
                                 : 'text-[var(--text-secondary)]',
                           )}
                         >
@@ -258,7 +258,7 @@ export function CsvPreviewTable({
                               row.status === 'error'
                                 ? 'font-medium text-[#b93838]'
                                 : row.status === 'warning'
-                                  ? 'text-[#a36207]'
+                                  ? 'text-[#8a5000]'
                                   : 'text-[var(--text-secondary)]',
                             )}
                           >
@@ -272,7 +272,7 @@ export function CsvPreviewTable({
                               onClick={() => toggleExpand(row.rowNumber)}
                               className="inline-flex h-6 shrink-0 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2 text-[11.5px] font-medium text-[var(--accent)] transition-colors hover:bg-white"
                             >
-                              <span>{isExpanded ? '收起' : '详情'}</span>
+                              <span>{isExpanded ? '收起' : '展开'}</span>
                               {isExpanded ? (
                                 <ChevronUp
                                   className="size-3"
@@ -333,7 +333,7 @@ export function CsvPreviewTable({
                                           'font-medium',
                                           issue.severity === 'error'
                                             ? 'text-[#b93838]'
-                                            : 'text-[#a36207]',
+                                            : 'text-[#8a5000]',
                                         )}
                                       >
                                         {issue.reason}

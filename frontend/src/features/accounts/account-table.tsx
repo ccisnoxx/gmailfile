@@ -131,7 +131,7 @@ function SortableHeader({
     <button
       type="button"
       onClick={() => onSort(isDesc ? field : `-${field}`)}
-      className="inline-flex items-center gap-1 rounded-md text-left font-medium text-[var(--text-primary)] transition-colors hover:text-[var(--accent)]"
+      className="inline-flex min-h-6 items-center gap-1 rounded-md py-0.5 text-left font-medium text-[var(--text-primary)] transition-colors hover:text-[var(--accent)]"
     >
       <span>{label}</span>
       <Icon
@@ -321,6 +321,7 @@ export function AccountTable({
   if (isError) {
     return (
       <EmptyState
+        role="alert"
         title="账号加载失败"
         description="检查网络连接与服务状态后重试。"
         onCreate={onRetry}
@@ -408,8 +409,8 @@ export function AccountTable({
               {columns.verified && (
                 <th className="px-3">
                   <SortableHeader
-                    label="最后活动"
-                    field="last_login_at"
+                    label="最后验证"
+                    field="last_verified_at"
                     currentSort={sort}
                     onSort={onSort}
                   />
@@ -418,8 +419,8 @@ export function AccountTable({
               {columns.registered && (
                 <th className="px-3">
                   <SortableHeader
-                    label="创建时间"
-                    field="created_at"
+                    label="注册时间"
+                    field="registered_at"
                     currentSort={sort}
                     onSort={onSort}
                   />
@@ -435,16 +436,14 @@ export function AccountTable({
                   />
                 </th>
               )}
-              <th className="w-16 pr-4 pl-2 text-right">操作</th>
+              <th className="sticky right-0 z-10 w-16 bg-[#f7fbff]/92 pr-4 pl-2 text-right backdrop-blur-md">
+                操作
+              </th>
             </tr>
           </thead>
           <tbody>
             {items.map((account) => {
               const isSelected = Boolean(selected[account.id]);
-              const activityTimestamp =
-                account.last_login_at ??
-                account.last_verified_at ??
-                account.updated_at;
               return (
                 <tr
                   key={account.id}
@@ -483,7 +482,7 @@ export function AccountTable({
                       <button
                         type="button"
                         onClick={() => onOpen(account)}
-                        className="text-left font-medium text-[var(--text-primary)] underline-offset-4 transition-colors hover:text-[var(--accent)] hover:underline"
+                        className="inline-flex min-h-6 items-center py-0.5 text-left font-medium text-[var(--text-primary)] underline-offset-4 transition-colors hover:text-[var(--accent)] hover:underline"
                       >
                         {account.gmail_email}
                       </button>
@@ -575,26 +574,31 @@ export function AccountTable({
                   )}
                   {columns.verified && (
                     <td
+                      data-dynamic="timestamp"
                       className="px-3 whitespace-nowrap tabular-nums text-[var(--text-primary)]/90"
-                      title={localDate(activityTimestamp)}
+                      title={localDate(account.last_verified_at)}
                     >
-                      {formatActivityDate(activityTimestamp)}
+                      {formatActivityDate(account.last_verified_at)}
                     </td>
                   )}
                   {columns.registered && (
                     <td
+                      data-dynamic="timestamp"
                       className="px-3 whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
-                      title={localDate(account.created_at)}
+                      title={localDate(account.registered_at)}
                     >
-                      {formatShortDate(account.created_at)}
+                      {formatShortDate(account.registered_at)}
                     </td>
                   )}
                   {columns.updated && (
-                    <td className="px-3 whitespace-nowrap tabular-nums text-[var(--text-secondary)]">
+                    <td
+                      data-dynamic="timestamp"
+                      className="px-3 whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
+                    >
                       {localDate(account.updated_at)}
                     </td>
                   )}
-                  <td className="pr-4 pl-2 text-right whitespace-nowrap">
+                  <td className="sticky right-0 bg-white/80 pr-4 pl-2 text-right whitespace-nowrap backdrop-blur-sm">
                     <RowActionsMenu
                       account={account}
                       deleted={deleted}
