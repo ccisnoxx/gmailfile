@@ -2,7 +2,7 @@
 
 单管理员、同源部署的 Gmail 资料管理工具。需求基线见 [产品与技术规格](gmail-account-manager-spec.md)。
 
-账号管理、CSV、Session、审计、设置和加密备份/恢复已实现，当前迁移版本为 `0003`。
+账号管理、CSV、Session、审计、设置和加密备份/恢复已实现，当前迁移版本为 `0004`。
 本仓库只发布应用代码、部署示例和通用运维说明；**示例配置不是任何实际实例的配置或上线证明**。
 真实域名、主机、网络、生产验证证据、发布/镜像清单和恢复拓扑由运营者在私有配置库维护。
 公开与私有资料的边界见 [公开仓库发布规范](docs/public-repository.md)，部署步骤见 [部署手册](docs/production-deployment.md)。
@@ -65,7 +65,7 @@ uv run --locked uvicorn app.main:create_app --factory \
 
 ## 初始化与使用认证
 
-先运行 `alembic upgrade head`（当前 head 为 `0003`），再通过交互终端初始化唯一管理员：
+先运行 `alembic upgrade head`（当前 head 为 `0004`），再通过交互终端初始化唯一管理员：
 
 ```bash
 # 原生开发：在 backend/，使用上节的应用角色与 Secret 文件配置。
@@ -74,7 +74,7 @@ uv run --locked python -m app.cli create-admin
 docker compose --env-file .env -f infra/docker-compose.yml exec api python -m app.cli create-admin
 ```
 
-密码至少 8 个字符，通过终端隐藏输入并确认；不接受密码参数、管道或 Bootstrap 环境变量。
+密码至少 16 个字符（且校验已知泄露密码黑名单），通过终端隐藏输入并确认；不接受密码参数、管道或 Bootstrap 环境变量。
 终端无法关闭回显时直接失败。已有管理员时拒绝重复创建；并发初始化也由事务锁和唯一约束保护。
 请不要与 Gmail 密码复用。CLI 不提供 Web 注册或管理员创建路由。
 
