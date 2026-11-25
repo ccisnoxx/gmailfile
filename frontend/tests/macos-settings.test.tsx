@@ -766,4 +766,330 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     expect(JSON.stringify(window.localStorage)).not.toContain(secretPassword);
     expect(JSON.stringify(window.localStorage)).not.toContain('778899');
   });
+
+  it('真实 API 模式下：reverify 轮换 CSRF 后修改密码与重新生成恢复码必须携带新 CSRF 且不重放同一 TOTP', async () => {
+    const user = userEvent.setup();
+    const initialCsrf = 'csrf-initial-001';
+    const rotatedCsrf1 = 'csrf-rotated-after-reverify-002';
+    const rotatedCsrf2 = 'csrf-rotated-after-regen-003';
+    const session = makeSession({
+      csrf_token: initialCsrf,
+      step_up_totp_required: false,
+      reauthenticated_until: null,
+      mfa_reauthenticated_until: null,
+    });
+    const reverifyBodies: Record<string, unknown>[] = [];
+    const regenCsrfHeaders: (string | null)[] = [];
+    const passwordCsrfHeaders: (string | null)[] = [];
+    const onRefreshSession = vi.fn();
+
+    const fetchMock = vi.fn(async (req: Request) => {
+      const url = new URL(req.url);
+      if (url.pathname === '/api/v1/auth/sessions') {
+        return json({ items: [], total: 0, page: 1, page_size: 20 });
+      }
+      if (url.pathname === '/api/v1/audit-events') {
+        return json({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 30,
+          event_types: [],
+        });
+      }
+      if (url.pathname === '/api/v1/audit-events/integrity') {
+        return json({
+          valid: true,
+          total_events: 0,
+          latest_seq: null,
+          latest_hash: null,
+          retention_days: 365,
+        });
+      }
+      if (url.pathname === '/api/v1/system/backup-status') {
+        return json({ state: 'unconfigured', offsite: 'unconfigured' });
+      }
+      if (url.pathname === '/api/v1/system/version') {
+        return json({ version: '1.2.0', schema_version: '0004' });
+      }
+      if (url.pathname === '/api/v1/settings') {
+        return json({ idle_minutes: 15, max_idle_minutes: 720 });
+      }
+      if (url.pathname === '/api/v1/auth/reverify' && req.method === 'POST') {
+        const body = (await req.json()) as Record<string, unknown>;
+        reverifyBodies.push(body);
+        return json(
+          makeSession({
+            csrf_token: rotatedCsrf1,
+            step_up_totp_required: false,
+            reauthenticated_until: new Date(Date.now() + 300_000).toISOString(),
+          }),
+        );
+      }
+      if (
+        url.pathname === '/api/v1/auth/totp/regenerate-recovery-codes' &&
+        req.method === 'POST'
+      ) {
+        regenCsrfHeaders.push(req.headers.get('x-csrf-token'));
+        if (req.headers.get('x-csrf-token') !== rotatedCsrf1) {
+          return json(
+            {
+              error: { code: 'CSRF_INVALID', message: 'CSRF 已过期' },
+              request_id: 'r1',
+            },
+            403,
+          );
+        }
+        return json({
+          session: makeSession({
+            csrf_token: rotatedCsrf2,
+            step_up_totp_required: false,
+            reauthenticated_until: new Date(Date.now() + 300_000).toISOString(),
+          }),
+          recovery_codes: Array.from({ length: 10 }, (_, i) => `code-${i}`),
+        });
+      }
+      if (url.pathname === '/api/v1/auth/password' && req.method === 'POST') {
+        passwordCsrfHeaders.push(req.headers.get('x-csrf-token'));
+        if (req.headers.get('x-csrf-token') !== rotatedCsrf1) {
+          return json(
+            {
+              error: { code: 'CSRF_INVALID', message: 'CSRF 已过期' },
+              request_id: 'r2',
+            },
+            403,
+          );
+        }
+        return json({ status: 'ok' });
+      }
+      return json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <SettingsPage
+          mode="live"
+          session={session}
+          onSession={vi.fn()}
+          onFailure={vi.fn()}
+          onRefreshSession={onRefreshSession}
+          onSignedOut={vi.fn()}
+          onLogout={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    // 1) 重新生成恢复码：先触发 reverify（不应消耗 totp_code），再用轮换后的新 CSRF 调用 regenerate
+    await user.click(screen.getByRole('button', { name: '查看 / 重新生成…' }));
+    const recDialog = await screen.findByRole('dialog', {
+      name: '查看 / 重新生成恢复码',
+    });
+    await user.type(
+      within(recDialog).getByLabelText('当前管理员密码'),
+      'CurrentAdminPassphrase#2026',
+    );
+    await user.type(
+      within(recDialog).getByLabelText('TOTP 验证码（6 位）'),
+      '246810',
+    );
+    await user.click(
+      within(recDialog).getByRole('button', { name: '验证并重新生成' }),
+    );
+    await screen.findByLabelText('新生成的备用恢复码');
+    expect(reverifyBodies[0]).not.toHaveProperty('totp_code');
+    expect(regenCsrfHeaders).toEqual([rotatedCsrf1]);
+
+    // 关闭恢复码弹窗后测试修改密码：reverify 轮换 CSRF 后立即调用 /auth/password 必须携带新 CSRF
+    await user.click(
+      screen.getByRole('checkbox', { name: '我已将上述 10 个恢复码离线保存' }),
+    );
+    await user.click(screen.getByRole('button', { name: '完成并清除展示' }));
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <SettingsPage
+          mode="live"
+          session={session}
+          onSession={vi.fn()}
+          onFailure={vi.fn()}
+          onRefreshSession={onRefreshSession}
+          onSignedOut={vi.fn()}
+          onLogout={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: '修改密码…' }));
+    const pwdDialog = await screen.findByRole('dialog', {
+      name: '修改管理员密码',
+    });
+    await user.type(
+      within(pwdDialog).getByLabelText('当前管理员密码'),
+      'CurrentAdminPassphrase#2026',
+    );
+    await user.type(
+      within(pwdDialog).getByLabelText('新密码（至少 16 位）'),
+      'BrandNewAdminPassphrase#2026',
+    );
+    await user.type(
+      within(pwdDialog).getByLabelText('确认新密码'),
+      'BrandNewAdminPassphrase#2026',
+    );
+    await user.click(
+      within(pwdDialog).getByRole('button', { name: '确认修改密码' }),
+    );
+    await waitFor(() => expect(passwordCsrfHeaders).toEqual([rotatedCsrf1]));
+    expect(onRefreshSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('真实 API 模式下：不伪造备份执行/恢复演练结果、不展示虚假归档或存储占用，且保留策略仅持久化 idle_minutes', async () => {
+    const user = userEvent.setup();
+    const initialCsrf = 'csrf-honest-001';
+    const rotatedCsrf = 'csrf-honest-002';
+    const session = makeSession({
+      csrf_token: initialCsrf,
+      step_up_totp_required: false,
+      reauthenticated_until: null,
+      mfa_reauthenticated_until: null,
+    });
+    const idleCalls: { csrf: string | null; body: Record<string, unknown> }[] =
+      [];
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (req: Request) => {
+        const url = new URL(req.url);
+        if (url.pathname === '/api/v1/auth/sessions') {
+          return json({ items: [], total: 0, page: 1, page_size: 20 });
+        }
+        if (url.pathname === '/api/v1/audit-events') {
+          return json({
+            items: [],
+            total: 0,
+            page: 1,
+            page_size: 30,
+            event_types: [],
+          });
+        }
+        if (url.pathname === '/api/v1/audit-events/integrity') {
+          return json({
+            valid: true,
+            total_events: 12,
+            latest_seq: 12,
+            latest_hash: '0123456789abcdef',
+            retention_days: 365,
+          });
+        }
+        if (url.pathname === '/api/v1/system/backup-status') {
+          return json({
+            state: 'success',
+            offsite: 'success',
+            last_attempt_at: '2026-11-25T02:30:00Z',
+            last_success_at: '2026-11-25T02:30:00Z',
+          });
+        }
+        if (url.pathname === '/api/v1/system/version') {
+          return json({ version: '1.3.0', schema_version: '0004' });
+        }
+        if (url.pathname === '/api/v1/settings') {
+          return json({ idle_minutes: 15, max_idle_minutes: 720 });
+        }
+        if (url.pathname === '/api/v1/accounts') {
+          return json({
+            items: [],
+            total: 7,
+            page: 1,
+            page_size: 1,
+            max_page_size: 100,
+          });
+        }
+        if (url.pathname === '/api/v1/auth/reverify' && req.method === 'POST') {
+          return json(
+            makeSession({
+              csrf_token: rotatedCsrf,
+              step_up_totp_required: false,
+              reauthenticated_until: new Date(
+                Date.now() + 300_000,
+              ).toISOString(),
+            }),
+          );
+        }
+        if (
+          url.pathname === '/api/v1/settings/idle' &&
+          req.method === 'PATCH'
+        ) {
+          idleCalls.push({
+            csrf: req.headers.get('x-csrf-token'),
+            body: (await req.json()) as Record<string, unknown>,
+          });
+          return json({ idle_minutes: 30, max_idle_minutes: 720 });
+        }
+        return json({});
+      }),
+    );
+
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <SettingsPage
+          mode="live"
+          session={session}
+          onSession={vi.fn()}
+          onFailure={vi.fn()}
+          onRefreshSession={vi.fn()}
+          onSignedOut={vi.fn()}
+          onLogout={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+    // 1. 备份卡片显示真实备份状态，但绝不把 last_success_at 伪造为“最近恢复验证时间”，且禁用在线模拟按钮
+    expect(await screen.findByText('备份正常')).toBeInTheDocument();
+    expect(screen.getByText('尚未验证')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '立即备份' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '恢复验证…' })).toBeDisabled();
+
+    // 2. 保留策略卡片不展示虚假 1.28 GB / 5.64 GB，并展示真实的回收站计数 7（非硬编码 3）
+    expect(screen.queryByText(/1\.28 GB/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/5\.64 GB/)).not.toBeInTheDocument();
+    const mainNav = screen.getByRole('navigation', { name: '系统主导航' });
+    expect(
+      await within(mainNav).findByLabelText('回收站 7 项'),
+    ).toHaveTextContent('7');
+
+    // 3. 调整策略 Sheet 中审计/备份保留天数为只读禁用，仅在线提交 idle_minutes 并携带轮换后的新 CSRF
+    await user.click(screen.getByRole('button', { name: '调整策略…' }));
+    const sheet = await screen.findByRole('dialog', {
+      name: '调整保留与生命周期策略',
+    });
+    expect(within(sheet).getByLabelText(/审计日志保留天数/)).toBeDisabled();
+    expect(within(sheet).getByLabelText(/备份文件保留天数/)).toBeDisabled();
+    const idleInput = within(sheet).getByLabelText(/会话空闲自动锁定/);
+    fireEvent.change(idleInput, { target: { value: '30' } });
+    await user.type(
+      within(sheet).getByLabelText('当前管理员密码'),
+      'LiveAdminSecret#2026',
+    );
+    await user.click(within(sheet).getByRole('button', { name: '保存策略' }));
+
+    await waitFor(() => expect(idleCalls).toHaveLength(1));
+    expect(idleCalls[0]).toEqual({
+      csrf: rotatedCsrf,
+      body: { idle_minutes: 30 },
+    });
+  });
 });

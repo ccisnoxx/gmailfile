@@ -651,4 +651,80 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
       expect(router.state.location.pathname).toBe('/preview/settings/audit'),
     );
   });
+
+  it('Live 模式下服务端预览失败（无有效确认凭据）时禁用“开始导入”，绝不伪造 receipt_id 提交', async () => {
+    const user = userEvent.setup();
+    const session = makeSession();
+    const commitCalls: string[] = [];
+
+    const fetchMock = vi.fn(async (req: Request) => {
+      const path = new URL(req.url).pathname;
+      if (path === '/api/v1/dashboard/summary') {
+        return json({
+          total: 0,
+          normal: 0,
+          pending_verification: 0,
+          abnormal: 0,
+          added_this_month: 0,
+          unverified_over_30_days: 0,
+          timezone: 'UTC',
+          month_from: '2026-11-01',
+          month_to: '2026-12-01',
+        });
+      }
+      if (path === '/api/v1/tags') return json([]);
+      if (path === '/api/v1/accounts') {
+        return json({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 30,
+          max_page_size: 100,
+        });
+      }
+      if (path === '/api/v1/audit-events') {
+        return json({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 20,
+          event_types: [],
+        });
+      }
+      if (path === '/api/v1/imports/csv/preview') {
+        return json(
+          {
+            error: {
+              code: 'REAUTH_REQUIRED',
+              message: '请先重新验证管理员密码',
+              details: {},
+            },
+            request_id: 'r-preview-fail',
+          },
+          403,
+        );
+      }
+      if (path === '/api/v1/imports/csv/commit') {
+        commitCalls.push(req.url);
+        return json({ status: 'rejected', errors: [] }, 409);
+      }
+      return json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<CsvImportPage mode="live" session={session} />);
+    const fileInput = screen.getByLabelText(
+      '选择 CSV 文件',
+    ) as HTMLInputElement;
+    await user.upload(fileInput, makeCleanCsvFile('blocked_preview.csv'));
+    await screen.findByText('blocked_preview.csv');
+    await screen.findByText(/请先重新验证管理员密码/);
+
+    const checkbox = screen.getByLabelText(
+      '我已确认数据无误，并知悉该操作将以事务方式原子提交',
+    );
+    await user.click(checkbox);
+    expect(screen.getByRole('button', { name: '开始导入' })).toBeDisabled();
+    expect(commitCalls).toHaveLength(0);
+  });
 });

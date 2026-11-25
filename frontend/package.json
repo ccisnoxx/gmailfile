@@ -14,6 +14,11 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:a11y": "playwright test e2e/macos-keyboard-a11y.spec.ts",
+    "test:e2e:ui": "playwright test e2e/macos-ui-states.spec.ts",
+    "test:e2e:security": "playwright test e2e/macos-security.spec.ts",
+    "test:e2e:visual": "playwright test e2e/macos-visual.spec.ts",
+    "test:e2e:visual:update": "playwright test e2e/macos-visual.spec.ts --update-snapshots",
     "generate:api": "cd ../backend && uv run --locked python ../scripts/generate-openapi.py && cd ../frontend && openapi-ts && prettier --write src/api/generated",
     "format:check": "prettier --check .",
     "format": "prettier --write ."
@@ -35,6 +40,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@hey-api/openapi-ts": "0.99.0",
     "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "4.3.5",

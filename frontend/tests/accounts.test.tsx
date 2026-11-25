@@ -639,3 +639,70 @@ it('启用 step_up_totp_required 时密码查看重新验证须提交 TOTP 验�
     totp_code: '654321',
   });
 });
+
+it('账号列表精确展示注册时间与最后验证列，全局统计不被当前页停用行数歪曲', async () => {
+  const disabledRow = {
+    ...row(),
+    status: 'disabled' as const,
+    registered_at: '2024-03-15T00:00:00Z',
+    created_at: '2026-11-25T00:00:00Z',
+    last_verified_at: '2025-06-01T10:30:00Z',
+    last_login_at: '2026-11-24T10:30:00Z',
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (req: Request) => {
+      const path = new URL(req.url).pathname;
+      if (path === '/api/v1/tags') return json([]);
+      if (path === '/api/v1/dashboard/summary') {
+        return json({
+          total: 50,
+          normal: 30,
+          pending_verification: 5,
+          abnormal: 10,
+          added_this_month: 4,
+          unverified_over_30_days: 2,
+        });
+      }
+      return json({
+        items: [disabledRow],
+        total: 50,
+        page: 1,
+        page_size: 30,
+      });
+    }),
+  );
+
+  provider(
+    <AccountsPage
+      session={session()}
+      onSession={vi.fn()}
+      onFailure={vi.fn()}
+      onSecurity={vi.fn()}
+      onLogout={vi.fn()}
+    />,
+  );
+
+  const table = await screen.findByRole('table', { name: '账号列表' });
+  expect(
+    within(table).getByRole('columnheader', { name: '最后验证' }),
+  ).toBeInTheDocument();
+  expect(
+    within(table).getByRole('columnheader', { name: '注册时间' }),
+  ).toBeInTheDocument();
+  // 注册时间显示 registered_at (2024-03-15) 而非 created_at (2026-11-25)
+  expect(within(table).getByText('2024-03-15')).toBeInTheDocument();
+  expect(within(table).queryByText('2026-11-25')).not.toBeInTheDocument();
+  // 最后验证显示 last_verified_at (2025-06-01) 而非 last_login_at (2026-11-24)
+  expect(within(table).getByText('2025-06-01')).toBeInTheDocument();
+  expect(within(table).queryByText('2026-11-24')).not.toBeInTheDocument();
+
+  // 全局风险账号应忠实展示后端 abnormal=10（不被当前页 1 条 disabled 减成 9），已归档=50-30-10-5=5
+  const summarySection = screen.getByLabelText('账号全局统计');
+  expect(
+    within(summarySection).getByRole('button', { name: /风险账号/ }),
+  ).toHaveTextContent('10');
+  expect(
+    within(summarySection).getByRole('button', { name: /已归档/ }),
+  ).toHaveTextContent('5');
+});

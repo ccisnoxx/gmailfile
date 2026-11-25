@@ -345,7 +345,7 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
       within(tablist).getByRole('tab', { name: '备份版本' }),
     ).toBeInTheDocument();
 
-    expect(screen.getByText('29 / 500')).toBeInTheDocument();
+    expect(screen.getByText('29 / 20000')).toBeInTheDocument();
     expect(screen.getByText('已启用（TOTP）')).toBeInTheDocument();
     expect(screen.getByLabelText('手机号')).toHaveTextContent(
       '+86 139 **** 6728',
@@ -657,5 +657,83 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
         screen.getByRole('button', { name: '保存修改' }),
       ).not.toBeDisabled(),
     );
+  });
+
+  it('真实 API 模式下：编辑关联辅助邮箱账号时保持 XOR 约束，不同时提交 recovery_account_id 和 recovery_email_external', async () => {
+    const user = userEvent.setup();
+    const linked = makeLiveAccount({
+      recovery_account_id: 'acc-recovery-target-001',
+      recovery_email_external: null,
+      recovery_email: 'linked.target@gmail.com',
+    });
+    const patchPayloads: Record<string, unknown>[] = [];
+
+    renderLiveDetail(linked, {
+      onPatch: async (req) => {
+        const body = (await req.json()) as Record<string, unknown>;
+        patchPayloads.push(body);
+        if (body.recovery_account_id && body.recovery_email_external) {
+          return json(
+            {
+              error: {
+                code: 'RECOVERY_INVALID',
+                message: '辅助邮箱必须且只能填写一种',
+                details: {},
+              },
+              request_id: crypto.randomUUID(),
+            },
+            422,
+          );
+        }
+        return json({
+          ...linked,
+          ...body,
+          row_version: linked.row_version + 1,
+        });
+      },
+    });
+
+    await screen.findByRole('heading', { name: linked.gmail_email });
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    const purposeInput = screen.getByLabelText('用途');
+    await user.clear(purposeInput);
+    await user.type(purposeInput, '保留关联辅助邮箱的修改');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => expect(patchPayloads).toHaveLength(1));
+    expect(patchPayloads[0]).toMatchObject({
+      recovery_account_id: 'acc-recovery-target-001',
+      recovery_email_external: null,
+      purpose: '保留关联辅助邮箱的修改',
+    });
+  });
+
+  it('真实 API 模式下：备注支持超过 500 字（对齐后端 20,000 字符上限）而不被截断', async () => {
+    const user = userEvent.setup();
+    const longNotes = '长备注测试内容'.repeat(90); // 630 chars > 500
+    const account = makeLiveAccount({ notes: '初始备注' });
+    const patchPayloads: Record<string, unknown>[] = [];
+
+    renderLiveDetail(account, {
+      onPatch: async (req) => {
+        const body = (await req.json()) as Record<string, unknown>;
+        patchPayloads.push(body);
+        return json({
+          ...account,
+          ...body,
+          row_version: account.row_version + 1,
+        });
+      },
+    });
+
+    await screen.findByRole('heading', { name: account.gmail_email });
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    const notesBox = screen.getByLabelText('备注');
+    fireEvent.change(notesBox, { target: { value: longNotes } });
+    expect(screen.getByText(`${longNotes.length} / 20000`)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => expect(patchPayloads).toHaveLength(1));
+    expect(patchPayloads[0].notes).toBe(longNotes);
   });
 });

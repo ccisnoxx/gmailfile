@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Providers } from '@/app/providers';
+import { buildRoutes } from '@/app/router';
 import { AuthPage } from '@/features/auth/auth-page';
 import { accountQuery } from '@/features/accounts/query-state';
 import type { SessionResponse } from '@/api/generated';
@@ -156,4 +157,28 @@ it('accountQuery 正确解析布尔、分页、排序与日期边界参数', () 
     page_size: 50,
     sort: 'registered_at',
   });
+});
+
+it('生产构建路由表（includePreview=false）不注册任何 /preview/* 演示路由，访问时落入 404', async () => {
+  const prodRoutes = buildRoutes(false);
+  expect(prodRoutes.some((route) => route.path?.startsWith('/preview/'))).toBe(
+    false,
+  );
+
+  const devRoutes = buildRoutes(true);
+  expect(devRoutes.some((route) => route.path === '/preview/accounts')).toBe(
+    true,
+  );
+
+  const memoryRouter = createMemoryRouter(prodRoutes, {
+    initialEntries: ['/preview/settings'],
+  });
+  render(
+    <Providers>
+      <RouterProvider router={memoryRouter} />
+    </Providers>,
+  );
+  expect(
+    await screen.findByRole('heading', { name: '页面不存在' }),
+  ).toBeInTheDocument();
 });
