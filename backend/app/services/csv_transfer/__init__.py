@@ -2,11 +2,14 @@
 
 from app.services.csv_transfer.analyzer import CsvImportAnalyzer
 from app.services.csv_transfer.exporter import (
+    DEFAULT_MAX_CONCURRENT_EXPORTS,
     EXPORT_BATCH_SIZE,
+    ExportSlot,
     export_csv,
     iter_export_csv_chunks,
     resolve_export_query,
     stream_export_csv,
+    try_acquire_export_slot,
 )
 from app.services.csv_transfer.importer import CsvService
 from app.services.csv_transfer.parser import (
@@ -18,11 +21,13 @@ from app.services.csv_transfer.parser import (
 )
 
 __all__ = [
+    "DEFAULT_MAX_CONCURRENT_EXPORTS",
     "EXPORT_BATCH_SIZE",
     "EXPORT_FIELDS",
     "FIELDS",
     "CsvImportAnalyzer",
     "CsvService",
+    "ExportSlot",
     "export_csv",
     "issue",
     "iter_export_csv_chunks",
@@ -30,4 +35,5 @@ __all__ = [
     "resolve_export_query",
     "spreadsheet_safe",
     "stream_export_csv",
+    "try_acquire_export_slot",
 ]

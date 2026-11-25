@@ -10,6 +10,7 @@ import json
 import logging
 import logging.handlers
 import socket
+import sys
 from datetime import UTC
 from urllib.parse import urlsplit
 
@@ -58,6 +59,17 @@ def parse_syslog_target(address: str) -> tuple[str | tuple[str, int], socket.Soc
     return (parsed.hostname, port), socktype
 
 
+class _ResilientSysLogHandler(logging.handlers.SysLogHandler):
+    """远程 Syslog 写入异常时转为安全告警日志，不向 stderr 倾倒堆栈且不阻断事务。"""
+
+    def handleError(self, record: logging.LogRecord) -> None:
+        _, exc, _ = sys.exc_info()
+        logging.getLogger("gmail_manager").error(
+            "audit_sink_failed",
+            extra={"safe_fields": {"exception_type": type(exc).__name__ if exc else "OSError"}},
+        )
+
+
 def configure_audit_sink(settings: Settings) -> logging.Logger:
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     for existing in list(logger.handlers):
@@ -77,7 +89,7 @@ def configure_audit_sink(settings: Settings) -> logging.Logger:
         kwargs: dict = {"address": target, "facility": facility}
         if socktype is not None:
             kwargs["socktype"] = socktype
-        syslog_handler = logging.handlers.SysLogHandler(**kwargs)
+        syslog_handler = _ResilientSysLogHandler(**kwargs)
         syslog_handler.ident = "gmail-manager-audit: "
         syslog_handler.setFormatter(AuditJsonFormatter())
         logger.addHandler(syslog_handler)
@@ -124,20 +136,43 @@ def emit_audit_records(records: list[dict[str, object]]) -> None:
 
 
 def attach_audit_session_hooks(session: Session) -> None:
-    """挂接会话钩子：flush 时采集数据库触发器生成的哈希链记录，仅在 commit 后外发。"""
+    """挂接会话钩子：按事务/保存点层级采集哈希链记录，回滚即丢弃，仅在顶层 commit 后外发。"""
 
     @event.listens_for(session, "after_flush")
     def _collect(sess: Session, _flush_context) -> None:
-        pending = sess.info.setdefault(_PENDING_KEY, [])
+        tx = sess.get_nested_transaction() or sess.get_transaction()
+        if tx is None:
+            return
+        buckets: dict[int, list[dict[str, object]]] = sess.info.setdefault(_PENDING_KEY, {})
+        bucket = buckets.setdefault(id(tx), [])
         for obj in sess.new:
             if isinstance(obj, AuditEvent):
-                pending.append(_serialize_audit_event(obj))
+                bucket.append(_serialize_audit_event(obj))
+
+    @event.listens_for(session, "after_soft_rollback")
+    def _discard_tx(sess: Session, previous_transaction) -> None:
+        buckets: dict[int, list[dict[str, object]]] | None = sess.info.get(_PENDING_KEY)
+        if not buckets:
+            return
+        buckets.pop(id(previous_transaction), None)
+        if not previous_transaction.nested:
+            buckets.clear()
+
+    @event.listens_for(session, "after_transaction_end")
+    def _promote_nested(sess: Session, transaction) -> None:
+        buckets: dict[int, list[dict[str, object]]] | None = sess.info.get(_PENDING_KEY)
+        if not buckets or not transaction.nested:
+            return
+        records = buckets.pop(id(transaction), None)
+        if records and transaction.parent is not None:
+            buckets.setdefault(id(transaction.parent), []).extend(records)
 
     @event.listens_for(session, "after_commit")
     def _publish(sess: Session) -> None:
-        records = sess.info.pop(_PENDING_KEY, [])
+        buckets: dict[int, list[dict[str, object]]] = sess.info.pop(_PENDING_KEY, {})
+        records = [item for bucket in buckets.values() for item in bucket]
         emit_audit_records(records)
 
     @event.listens_for(session, "after_rollback")
-    def _discard(sess: Session) -> None:
+    def _discard_all(sess: Session) -> None:
         sess.info.pop(_PENDING_KEY, None)

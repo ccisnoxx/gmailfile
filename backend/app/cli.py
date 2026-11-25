@@ -74,7 +74,10 @@ def verify_audit(engine) -> dict:
 def sign_audit(engine, signing_key_file: Path | None) -> dict:
     if signing_key_file is None:
         raise ValueError("请配置 AUDIT_SIGNING_KEY_FILE 后再签发审计检查点")
-    key = signing_key_file.read_bytes()
+    try:
+        key = signing_key_file.read_bytes()
+    except OSError:
+        raise ValueError("无法读取审计签名密钥文件，请检查路径与权限") from None
     with Session(engine) as db:
         status = verify_audit_chain(db)
     return sign_audit_checkpoint(status, key)

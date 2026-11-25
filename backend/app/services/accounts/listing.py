@@ -1,6 +1,6 @@
 """账号列表、分页筛选、可选辅助账号、全局统计与辅助邮箱使用统计服务。"""
 
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -103,12 +103,14 @@ class AccountQueryService:
         )
 
     def summary(self, timezone: str) -> DashboardSummary:
-        local = self.auth.now.astimezone(ZoneInfo(timezone))
-        start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        tz = ZoneInfo(timezone)
+        local = self.auth.now.astimezone(tz)
+        # 显式构造 fold=0 本地月初零点，避免子夜切换夏令时区因继承 fold=1 偏移 1 小时。
+        start = datetime(local.year, local.month, 1, tzinfo=tz, fold=0)
         end = (
-            start.replace(year=start.year + 1, month=1)
-            if start.month == 12
-            else start.replace(month=start.month + 1)
+            datetime(local.year + 1, 1, 1, tzinfo=tz, fold=0)
+            if local.month == 12
+            else datetime(local.year, local.month + 1, 1, tzinfo=tz, fold=0)
         )
         start, end = start.astimezone(UTC), end.astimezone(UTC)
         row = self.db.execute(

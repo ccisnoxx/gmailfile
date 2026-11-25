@@ -85,7 +85,7 @@ class AuthStateMachine:
 
     def change_password(self, password: str, new_password: str) -> None:
         row = self.sessions.require_session()
-        self.sessions.require_recent(row)
+        self.sessions.require_recent(row, require_mfa=self.ctx.settings.step_up_totp_required)
         self.ctx.check_throttle("password_change")
         admin = self.ctx.admin()
         if not self.ctx.check_password(admin, password):

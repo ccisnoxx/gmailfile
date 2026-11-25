@@ -70,6 +70,7 @@ class CsvImportAnalyzer:
         data: dict,
         snapshot: list,
         row_errors: list,
+        recovery_cache: dict[str, GmailAccount | None],
     ) -> None:
         if "recovery_email" not in mapping and "recovery_account" not in mapping:
             return
@@ -77,21 +78,25 @@ class CsvImportAnalyzer:
         link = values.get("recovery_account", "").strip()
         data.update(recovery_account_id=None, recovery_email_external=recovery or None)
         if link:
-            target = None
-            if re.fullmatch(r"GM-[0-9]+", link):
-                target = self.db.scalar(
-                    select(GmailAccount).where(GmailAccount.account_no == int(link[3:]))
-                )
+            if link in recovery_cache:
+                target = recovery_cache[link]
             else:
-                try:
-                    email_value(link)
+                target = None
+                if re.fullmatch(r"GM-[0-9]+", link):
                     target = self.db.scalar(
-                        select(GmailAccount).where(
-                            GmailAccount.gmail_email_normalized == normalize_email(link)
-                        )
+                        select(GmailAccount).where(GmailAccount.account_no == int(link[3:]))
                     )
-                except ValueError:
-                    pass
+                else:
+                    try:
+                        email_value(link)
+                        target = self.db.scalar(
+                            select(GmailAccount).where(
+                                GmailAccount.gmail_email_normalized == normalize_email(link)
+                            )
+                        )
+                    except ValueError:
+                        pass
+                recovery_cache[link] = target
             if target is None or target.deleted_at:
                 row_errors.append(
                     issue(line, "recovery_account", "关联目标必须是数据库中未删除的账号")
@@ -103,13 +108,18 @@ class CsvImportAnalyzer:
             row_errors.append(issue(line, "recovery_email", "辅助邮箱不能为空"))
 
     @staticmethod
-    def _parse_tags(line: int, raw: str, row_errors: list) -> list[str]:
+    def _parse_tags(
+        line: int, raw: str, row_errors: list, valid_tags: set[str] | None = None
+    ) -> list[str]:
         tag_names = list(dict.fromkeys(n.strip() for n in raw.split("|") if n.strip()))
         try:
             if len(tag_names) > 100:
                 raise ValueError
             for name in tag_names:
-                TagInput(name=name)
+                if valid_tags is None or name not in valid_tags:
+                    TagInput(name=name)
+                    if valid_tags is not None:
+                        valid_tags.add(name)
         except (ValidationError, ValueError):
             row_errors.append(issue(line, "tags", "标签最多100个，每个1至50字符"))
         return tag_names
@@ -134,6 +144,8 @@ class CsvImportAnalyzer:
                     "recovery_email_external",
                     existing.recovery_email_external if existing else None,
                 ),
+                current_recovery_id=existing.recovery_account_id if existing else None,
+                check_incoming=existing is not None,
             )
             return model
         except ValidationError as exc:
@@ -150,20 +162,47 @@ class CsvImportAnalyzer:
             row_errors.append(issue(line, "recovery_email", "辅助邮箱关联不符合业务规则"))
         return None
 
+    def _preload_existing(self, normalized_emails: list[str]) -> dict[str, GmailAccount]:
+        existing_map: dict[str, GmailAccount] = {}
+        chunk_size = 1000
+        for offset in range(0, len(normalized_emails), chunk_size):
+            batch = normalized_emails[offset : offset + chunk_size]
+            for row in self.db.scalars(
+                select(GmailAccount).where(GmailAccount.gmail_email_normalized.in_(batch))
+            ):
+                existing_map[row.gmail_email_normalized] = row
+        return existing_map
+
     def analyze(self, content: bytes, options, *, default_time):
         headers, rows = parse_csv(content)
         columns, mapping = self._resolve_mapping(headers, options.mapping)
         if "gmail_email" not in mapping:
             return mapping, columns, [], [issue(0, "gmail_email", "请先映射 Gmail 地址列")], [], []
+        email_col = mapping["gmail_email"]
+        parsed_emails: list[str | None] = []
+        unique_emails: list[str] = []
+        pre_seen: set[str] = set()
+        for cells in rows:
+            raw_email = cells[email_col]
+            try:
+                email_value(raw_email)
+                normalized = normalize_email(raw_email)
+            except ValueError:
+                parsed_emails.append(None)
+                continue
+            parsed_emails.append(normalized)
+            if normalized not in pre_seen:
+                pre_seen.add(normalized)
+                unique_emails.append(normalized)
+
+        existing_map = self._preload_existing(unique_emails)
+        recovery_cache: dict[str, GmailAccount | None] = {}
+        valid_tags: set[str] = set()
+
         results, errors, plans, snapshot = [], [], [], []
         seen = set()
-        for line, cells in enumerate(rows, 2):
-            values = {field: cells[index] for field, index in mapping.items()}
-            row_errors = []
-            try:
-                email_value(values["gmail_email"])
-                email = normalize_email(values["gmail_email"])
-            except ValueError:
+        for (line, cells), email in zip(enumerate(rows, 2), parsed_emails, strict=True):
+            if email is None:
                 errors.append(issue(line, "gmail_email", "邮箱格式不正确"))
                 results.append(CsvRow(row=line, action="error"))
                 continue
@@ -174,9 +213,7 @@ class CsvImportAnalyzer:
                 results.append(CsvRow(row=line, action=action))
                 continue
             seen.add(email)
-            existing = self.db.scalar(
-                select(GmailAccount).where(GmailAccount.gmail_email_normalized == email)
-            )
+            existing = existing_map.get(email)
             snapshot.append(
                 [
                     line,
@@ -186,21 +223,24 @@ class CsvImportAnalyzer:
                 ]
             )
             if existing and options.strategy == "error":
-                row_errors.append(
-                    issue(line, "gmail_email", "数据库中已有该规范化地址（含软删除）")
-                )
+                row_errors = [issue(line, "gmail_email", "数据库中已有该规范化地址（含软删除）")]
+            else:
+                row_errors = []
             action = "update" if existing else "create"
             if existing and options.strategy == "skip":
                 action = "skip"
             if action != "skip":
+                values = {field: cells[index] for field, index in mapping.items()}
                 if existing and existing.deleted_at:
                     row_errors.append(
                         issue(line, "gmail_email", "已软删除账号不能由导入更新，请先恢复")
                     )
                 data = self._collect_scalar_fields(line, values, existing, row_errors)
-                self._resolve_recovery(line, values, mapping, data, snapshot, row_errors)
+                self._resolve_recovery(
+                    line, values, mapping, data, snapshot, row_errors, recovery_cache
+                )
                 tag_names = (
-                    self._parse_tags(line, values["tags"], row_errors)
+                    self._parse_tags(line, values["tags"], row_errors, valid_tags)
                     if "tags" in mapping
                     else None
                 )

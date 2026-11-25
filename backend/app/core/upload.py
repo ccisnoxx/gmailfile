@@ -5,8 +5,9 @@ from uuid import uuid4
 
 
 class CsvUploadLimit:
-    def __init__(self, app, max_bytes):
+    def __init__(self, app, max_bytes, cookie_name="__Host-gm_session"):
         self.app, self.max_bytes = app, max_bytes
+        self.cookie_token = f"{cookie_name}=".encode()
 
     async def __call__(self, scope, receive, send):
         if (
@@ -15,10 +16,18 @@ class CsvUploadLimit:
             or scope["method"] != "POST"
         ):
             return await self.app(scope, receive, send)
-        headers = dict(scope["headers"])
+        cookie_header = b"; ".join(
+            value for key, value in scope["headers"] if key.lower() == b"cookie"
+        )
+        content_type = next(
+            (value for key, value in scope["headers"] if key.lower() == b"content-type"), b""
+        )
+        media_type = content_type.split(b";", 1)[0].strip().lower()
         content = bytearray()
         status, code, message = 0, "", ""
-        if headers.get(b"content-type", b"").split(b";", 1)[0].lower() != b"text/csv":
+        if self.cookie_token not in cookie_header:
+            status, code, message = 401, "AUTH_REQUIRED", "会话已失效，请重新登录"
+        elif media_type != b"text/csv":
             status, code, message = 415, "CSV_TYPE_INVALID", "仅接受 text/csv 上传"
         else:
             while True:
@@ -37,10 +46,11 @@ class CsvUploadLimit:
                     break
         if status:
             content.clear()
+            request_id = scope.get("state", {}).get("request_id") or str(uuid4())
             payload = json.dumps(
                 {
                     "error": {"code": code, "message": message, "details": {}},
-                    "request_id": str(uuid4()),
+                    "request_id": request_id,
                 }
             ).encode()
             await send(

@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
@@ -24,6 +25,7 @@ from app.db.session import create_database_engine
 from app.schemas.system import ErrorResponse
 from app.services.accounts import AccountError
 from app.services.auth import SecurityError
+from app.services.csv_transfer import DEFAULT_MAX_CONCURRENT_EXPORTS
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -56,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         responses={422: {"model": ErrorResponse}},
     )
     app.state.settings = settings
+    app.state.export_semaphore = threading.BoundedSemaphore(DEFAULT_MAX_CONCURRENT_EXPORTS)
 
     async def security_error(request: Request, exc: SecurityError):
         return error_response(
@@ -70,6 +73,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(DecryptionError, decryption_error)
     app.add_exception_handler(HTTPException, http_error)
     app.add_exception_handler(RequestValidationError, validation_error)
+
+    app.add_middleware(
+        CsvUploadLimit,
+        max_bytes=settings.max_import_size_mb * 1024 * 1024,
+        cookie_name="__Host-gm_session" if settings.session_cookie_secure else "gm_dev_session",
+    )
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -100,7 +109,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return response
 
-    app.add_middleware(CsvUploadLimit, max_bytes=settings.max_import_size_mb * 1024 * 1024)
     app.include_router(operations_router, prefix="/api/v1")
     app.include_router(transfers_router, prefix="/api/v1")
     app.include_router(router, prefix="/api/v1")

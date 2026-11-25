@@ -113,7 +113,7 @@ def _is_periodic(text: str) -> bool:
 
 def _matches_denylist_file(password: str, denylist_file: Path) -> bool:
     if not denylist_file.is_file():
-        return False
+        raise ValueError("密码黑名单文件不存在或不可读")
     lower = password.lower()
     sha1_hex = hashlib.sha1(password.encode("utf-8")).hexdigest().lower()
     sha256_hex = hashlib.sha256(password.encode("utf-8")).hexdigest().lower()

@@ -69,7 +69,14 @@ class AccountDetailService:
         return AccountDetail(**summary.model_dump(), **values)
 
     def recovery(
-        self, account_id: UUID, email: str, recovery_id: UUID | None, external: str | None
+        self,
+        account_id: UUID,
+        email: str,
+        recovery_id: UUID | None,
+        external: str | None,
+        *,
+        current_recovery_id: UUID | None = None,
+        check_incoming: bool = True,
     ) -> None:
         if (recovery_id is None) == (external is None):
             raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱必须且只能填写一种")
@@ -77,15 +84,18 @@ class AccountDetailService:
             target = self.record(recovery_id)
             if recovery_id == account_id:
                 raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱不能关联自身")
+            if target.deleted_at is not None and recovery_id != current_recovery_id:
+                raise AccountError(422, "RECOVERY_INVALID", "不能新关联已删除的辅助账号")
             external = target.gmail_email
         if normalize_email(external) == normalize_email(email):
             raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱不能与主邮箱相同")
-        # 主邮箱改名也不能使已有反向关联变成同一邮箱。
-        incoming = self.db.scalars(
-            select(GmailAccount).where(GmailAccount.recovery_account_id == account_id)
-        )
-        if any(row.gmail_email_normalized == normalize_email(email) for row in incoming):
-            raise AccountError(422, "RECOVERY_INVALID", "该地址与关联账号的主邮箱相同")
+        if check_incoming:
+            # 主邮箱改名也不能使已有反向关联变成同一邮箱。
+            incoming = self.db.scalars(
+                select(GmailAccount).where(GmailAccount.recovery_account_id == account_id)
+            )
+            if any(row.gmail_email_normalized == normalize_email(email) for row in incoming):
+                raise AccountError(422, "RECOVERY_INVALID", "该地址与关联账号的主邮箱相同")
 
     def encrypted(self, account_id: UUID, values: dict) -> None:
         for field in ("password", "phone", "notes"):
@@ -102,11 +112,12 @@ class AccountDetailService:
             for part in ("ciphertext", "nonce", "key_version"):
                 values[f"{field}_{part}"] = getattr(encrypted, part) if encrypted else None
 
-    def set_tags(self, account_id: UUID, tag_ids: list[UUID]) -> None:
+    def set_tags(self, account_id: UUID, tag_ids: list[UUID], *, verified: bool = False) -> None:
         ids = set(tag_ids)
-        found = set(self.db.scalars(select(Tag.id).where(Tag.id.in_(ids))))
-        if ids != found:
-            raise AccountError(422, "TAG_INVALID", "所选标签已不存在，请刷新后重试")
+        if not verified:
+            found = set(self.db.scalars(select(Tag.id).where(Tag.id.in_(ids))))
+            if ids != found:
+                raise AccountError(422, "TAG_INVALID", "所选标签已不存在，请刷新后重试")
         self.db.execute(
             delete(gmail_account_tags).where(gmail_account_tags.c.account_id == account_id)
         )
@@ -128,24 +139,34 @@ class AccountDetailService:
                 409, "ROW_VERSION_CONFLICT", "账号已在其他页面修改，请重新加载后再操作"
             )
 
-    def create(self, body: AccountCreate) -> AccountDetail:
+    def stage_create(self, body: AccountCreate) -> tuple[UUID, list[UUID]]:
+        """校验、加密并暂存新账号与审计记录（供单条创建与批量 CSV 事务分批刷盘共用）。"""
         account_id = uuid4()
         self.recovery(
-            account_id, body.gmail_email, body.recovery_account_id, body.recovery_email_external
+            account_id,
+            body.gmail_email,
+            body.recovery_account_id,
+            body.recovery_email_external,
+            check_incoming=False,
         )
         values = {key: getattr(body, key) for key in type(body).model_fields}
-        tag_ids = values.pop("tag_ids")
+        tag_ids = list(dict.fromkeys(values.pop("tag_ids")))
         values["gmail_email_normalized"] = normalize_email(body.gmail_email)
         values["archived_at"] = self.auth.now if body.status == "archived" else None
         self.encrypted(account_id, values)
-        row = GmailAccount(id=account_id, **values)
-        self.db.add(row)
+        self.db.add(GmailAccount(id=account_id, **values))
+        self.audit("account_created", account_id)
+        return account_id, tag_ids
+
+    def create(self, body: AccountCreate) -> AccountDetail:
+        account_id, tag_ids = self.stage_create(body)
         flush_unique(self.db)
         self.set_tags(account_id, tag_ids)
-        self.audit("account_created", account_id)
         return self.detail(account_id)
 
-    def patch(self, account_id: UUID, body: AccountPatch) -> AccountDetail:
+    def patch_row(
+        self, account_id: UUID, body: AccountPatch, *, verified_tags: bool = False
+    ) -> UUID:
         row = self.record(account_id)
         if row.deleted_at is not None:
             raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再编辑")
@@ -155,6 +176,7 @@ class AccountDetailService:
             values.get("gmail_email", row.gmail_email),
             values.get("recovery_account_id", row.recovery_account_id),
             values.get("recovery_email_external", row.recovery_email_external),
+            current_recovery_id=row.recovery_account_id,
         )
         if "gmail_email" in values:
             values["gmail_email_normalized"] = normalize_email(values["gmail_email"])
@@ -165,14 +187,17 @@ class AccountDetailService:
         try:
             self.cas(row, body.row_version, values)
             if tag_ids is not None:
-                self.set_tags(account_id, tag_ids)
+                self.set_tags(account_id, tag_ids, verified=verified_tags)
             flush_unique(self.db)
         except IntegrityError as exc:
             if exc.orig.sqlstate == "23505":
                 raise AccountError(409, "ACCOUNT_EMAIL_DUPLICATE", "该邮箱已存在") from None
             raise
         self.audit("account_updated", account_id)
-        return self.detail(account_id)
+        return account_id
+
+    def patch(self, account_id: UUID, body: AccountPatch) -> AccountDetail:
+        return self.detail(self.patch_row(account_id, body))
 
     def action(self, account_id: UUID, version: int, action: str) -> AccountDetail:
         row = self.record(account_id)

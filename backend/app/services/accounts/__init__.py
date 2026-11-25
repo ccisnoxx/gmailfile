@@ -93,9 +93,23 @@ class AccountService:
         return self.details.detail(account_id)
 
     def recovery(
-        self, account_id: UUID, email: str, recovery_id: UUID | None, external: str | None
+        self,
+        account_id: UUID,
+        email: str,
+        recovery_id: UUID | None,
+        external: str | None,
+        *,
+        current_recovery_id: UUID | None = None,
+        check_incoming: bool = True,
     ) -> None:
-        self.details.recovery(account_id, email, recovery_id, external)
+        self.details.recovery(
+            account_id,
+            email,
+            recovery_id,
+            external,
+            current_recovery_id=current_recovery_id,
+            check_incoming=check_incoming,
+        )
 
     def encrypted(self, account_id: UUID, values: dict) -> None:
         self.details.encrypted(account_id, values)

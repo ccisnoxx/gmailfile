@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -19,6 +20,36 @@ from app.services.accounts import AccountService
 from app.services.csv_transfer.parser import EXPORT_FIELDS, spreadsheet_safe
 
 EXPORT_BATCH_SIZE = 500
+# 数据库连接池默认 pool_size=5, max_overflow=0；将并发流式导出限制为 2，
+# 为健康检查、认证与日常读写始终保留至少 3 条可用连接，防止慢客户端占满连接池。
+DEFAULT_MAX_CONCURRENT_EXPORTS = 2
+
+
+class ExportSlot:
+    """线程安全且幂等释放的并发导出槽位句柄。"""
+
+    def __init__(self, semaphore: threading.BoundedSemaphore) -> None:
+        self._semaphore = semaphore
+        self._lock = threading.Lock()
+        self._released = False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        self._semaphore.release()
+
+    def __del__(self) -> None:
+        self.release()
+
+
+def try_acquire_export_slot(semaphore: threading.BoundedSemaphore) -> ExportSlot | None:
+    """非阻塞申请一个流式导出并发槽位；满载时立即返回 None。"""
+    if not semaphore.acquire(blocking=False):
+        return None
+    return ExportSlot(semaphore)
+
 
 _EXPORT_ACCOUNT_COLUMNS = (
     GmailAccount.id,
@@ -126,11 +157,16 @@ def stream_export_csv(
     params: AccountQuery,
     *,
     batch_size: int = EXPORT_BATCH_SIZE,
+    on_close: Callable[[], None] | None = None,
 ) -> Iterator[bytes]:
     """在独立只读 REPEATABLE READ 快照事务中流式导出 CSV，供 StreamingResponse 使用。"""
-    with Session(engine) as db, db.begin():
-        db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
-        yield from iter_export_csv_chunks(db, params, batch_size=batch_size)
+    try:
+        with Session(engine) as db, db.begin():
+            db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+            yield from iter_export_csv_chunks(db, params, batch_size=batch_size)
+    finally:
+        if on_close is not None:
+            on_close()
 
 
 def export_csv(auth, body: ExportInput, *, batch_size: int = EXPORT_BATCH_SIZE) -> bytes:
