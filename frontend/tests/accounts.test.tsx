@@ -387,7 +387,7 @@ it.each(['hidden', 'unmount'])(
   },
 );
 
-it('复制事件不传密码，审计响应挂起也在20秒清理展示和剪贴板', async () => {
+it('复制事件不传密码，审计挂起也在20秒清除展示并尝试清理剪贴板', async () => {
   vi.useFakeTimers();
   const secret = id();
   let clipboard = '';
@@ -421,8 +421,10 @@ it('复制事件不传密码，审计响应挂起也在20秒清理展示和剪�
   await act(async () => {
     vi.advanceTimersByTime(20001);
   });
-  expect(clipboard).toBe('');
   expect(screen.getByLabelText('Gmail 密码')).not.toHaveTextContent(secret);
+  expect(navigator.clipboard.readText).toHaveBeenCalledTimes(1);
+  vi.useRealTimers();
+  await waitFor(() => expect(clipboard).toBe(''));
   await act(async () => resolve(json({ status: 'ok' })));
   expect(screen.getByLabelText('Gmail 密码')).not.toHaveTextContent(secret);
 });
