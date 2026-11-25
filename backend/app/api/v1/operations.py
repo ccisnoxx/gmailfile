@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.dependencies import auth_service
+from app.api.dependencies import auth_service, auth_state_service
 from app.schemas.auth import ActionResponse
 from app.schemas.operations import (
     AuditPage,
@@ -22,6 +22,7 @@ router = APIRouter(
     tags=["operations"], responses={401: {"model": ErrorResponse}, 403: {"model": ErrorResponse}}
 )
 Service = Annotated[AuthService, Depends(auth_service, scope="function")]
+StateService = Annotated[AuthService, Depends(auth_state_service, scope="function")]
 
 
 @router.get("/auth/sessions", response_model=SessionPage, operation_id="sessionsList")
@@ -36,7 +37,7 @@ def sessions(
 @router.delete(
     "/auth/sessions/others", response_model=ActionResponse, operation_id="sessionsRevokeOthers"
 )
-def revoke_others(service: Service):
+def revoke_others(service: StateService):
     OperationsService(service).revoke()
     return ActionResponse()
 
@@ -44,7 +45,7 @@ def revoke_others(service: Service):
 @router.delete(
     "/auth/sessions/{session_id}", response_model=ActionResponse, operation_id="sessionsRevoke"
 )
-def revoke(service: Service, session_id: UUID):
+def revoke(service: StateService, session_id: UUID):
     OperationsService(service).revoke(session_id)
     return ActionResponse()
 
@@ -60,7 +61,7 @@ def settings(service: Service):
 
 
 @router.patch("/settings/idle", response_model=SettingsState, operation_id="settingsIdle")
-def idle(service: Service, body: IdleSetting):
+def idle(service: StateService, body: IdleSetting):
     return OperationsService(service).set_idle(body.idle_minutes)
 
 

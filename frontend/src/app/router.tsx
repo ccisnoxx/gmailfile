@@ -1,8 +1,22 @@
+import { lazy } from 'react';
 import { createBrowserRouter, Link } from 'react-router-dom';
 import { AuthPage } from '@/features/auth/auth-page';
 
+const AccountsRoute = lazy(() => import('@/app/routes/accounts-route'));
+const SecurityRoute = lazy(() => import('@/app/routes/security-route'));
+const OperationsRoute = lazy(() => import('@/app/routes/operations-route'));
+
 export const router = createBrowserRouter([
-  { path: '/', element: <AuthPage /> },
+  {
+    path: '/',
+    element: <AuthPage />,
+    children: [
+      { index: true, element: <AccountsRoute /> },
+      { path: 'accounts', element: <AccountsRoute /> },
+      { path: 'security', element: <SecurityRoute /> },
+      { path: 'operations', element: <OperationsRoute /> },
+    ],
+  },
   {
     path: '*',
     element: (

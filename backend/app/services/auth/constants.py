@@ -1,0 +1,59 @@
+"""认证域常量与安全异常定义。"""
+
+AUTH_LOCK = 720241101
+
+
+class SecurityError(Exception):
+    def __init__(self, status: int, code: str, message: str):
+        self.status, self.code, self.message = status, code, message
+
+
+AUDIT_EVENTS = {
+    "admin_initialized",
+    "login_failed",
+    "mfa_failed",
+    "login_success",
+    "password_verified",
+    "recovery_code_used",
+    "logout",
+    "password_reverified",
+    "totp_setup_started",
+    "totp_bound",
+    "recovery_codes_regenerated",
+    "admin_password_changed",
+    "account_created",
+    "account_updated",
+    "account_archived",
+    "account_deleted",
+    "account_restored",
+    "password_revealed",
+    "password_copied",
+    "tag_created",
+    "tag_updated",
+    "tag_deleted",
+    "csv_imported",
+    "csv_exported",
+    "session_revoked",
+    "settings_changed",
+}
+
+AUDIT_OPERATIONS = {
+    "login",
+    "reverify",
+    "totp_setup",
+    "totp_confirm",
+    "recovery_regenerate",
+    "password_change",
+    "archive",
+    "delete",
+    "restore",
+    "mark-verified",
+    "mark-logged-in",
+    "tag-deleted",
+    "batch-status",
+    "batch-tags",
+    "csv",
+    "revoke-session",
+    "revoke-others",
+    "idle-timeout",
+}

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { AccountsListData } from '@/api/generated';
 
 const subscribe = (notify: () => void) => {
@@ -9,11 +9,19 @@ const subscribe = (notify: () => void) => {
     window.removeEventListener('accounts-query', notify);
   };
 };
+
+export type AccountLocationChange = (
+  values: Record<string, string>,
+  reset?: boolean,
+) => void;
+
 export function useAccountLocation() {
   const search = useSyncExternalStore(subscribe, () => window.location.search);
-  const params = new URLSearchParams(search);
-  function change(values: Record<string, string>, reset = false) {
-    const next = reset ? new URLSearchParams() : new URLSearchParams(search);
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+  const change = useCallback<AccountLocationChange>((values, reset = false) => {
+    const next = reset
+      ? new URLSearchParams()
+      : new URLSearchParams(window.location.search);
     for (const [key, value] of Object.entries(values)) {
       if (value) next.set(key, value);
       else next.delete(key);
@@ -25,7 +33,7 @@ export function useAccountLocation() {
       `${window.location.pathname}${next.size ? '?' + next : ''}`,
     );
     window.dispatchEvent(new Event('accounts-query'));
-  }
+  }, []);
   return { params, change, search };
 }
 
@@ -45,6 +53,7 @@ export function dateBoundary(value: string, nextDay = false) {
   if (nextDay) date.setDate(date.getDate() + 1);
   return date.toISOString();
 }
+
 export function accountQuery(
   params: URLSearchParams,
 ): NonNullable<AccountsListData['query']> {
@@ -71,5 +80,33 @@ export function accountQuery(
     page_size: params.has('page_size')
       ? Number(params.get('page_size'))
       : undefined,
+  };
+}
+
+export function useAccountQueryState() {
+  const { params, change, search } = useAccountLocation();
+  const query = useMemo(() => accountQuery(params), [params]);
+  const deleted = query.deleted === true;
+  const recoveryView = params.get('view') === 'recovery';
+
+  const setDeleted = useCallback(
+    (value: boolean) =>
+      change({ deleted: value ? 'true' : '', view: '' }, true),
+    [change],
+  );
+  const openRecoveryView = useCallback(
+    () => change({ view: 'recovery' }, true),
+    [change],
+  );
+
+  return {
+    params,
+    change,
+    search,
+    query,
+    deleted,
+    recoveryView,
+    setDeleted,
+    openRecoveryView,
   };
 }

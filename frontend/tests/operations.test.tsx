@@ -83,7 +83,7 @@ function setup(handler?: (req: Request) => Promise<Response>) {
 async function upload() {
   await userEvent.click(screen.getByRole('button', { name: 'CSV 导入' }));
   await userEvent.upload(
-    screen.getByLabelText('CSV 文件'),
+    await screen.findByLabelText('CSV 文件'),
     new File(
       [
         'gmail_email,password,recovery_email\na@example.test,private-synthetic,b@example.test',
@@ -166,7 +166,7 @@ it('clears file on hidden state and discards a late preview', async () => {
   );
   await userEvent.click(screen.getByRole('button', { name: 'CSV 导入' }));
   await userEvent.upload(
-    screen.getByLabelText('CSV 文件'),
+    await screen.findByLabelText('CSV 文件'),
     new File(['a,b\na,b'], 'synthetic.csv', { type: 'text/csv' }),
   );
   await userEvent.click(screen.getByRole('button', { name: '上传并预览' }));
@@ -204,7 +204,9 @@ it('leaving import discards preview and late commit cannot contaminate another t
     screen.queryByText('已提交：新增 1，更新 0，跳过 0。'),
   ).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'CSV 导入' }));
-  expect(screen.getByRole('button', { name: '上传并预览' })).toBeDisabled();
+  expect(
+    await screen.findByRole('button', { name: '上传并预览' }),
+  ).toBeDisabled();
 });
 it('unknown commit result is not retried or described as rollback', async () => {
   const env = setup(async (req) => {

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import auth_service
+from app.api.dependencies import auth_service, auth_state_service
 from app.schemas.auth import (
     ActionResponse,
     ChangePasswordInput,
@@ -26,7 +26,8 @@ router = APIRouter(
         429: {"model": ErrorResponse},
     },
 )
-Service = Annotated[AuthService, Depends(auth_service, scope="function")]
+Service = Annotated[AuthService, Depends(auth_state_service, scope="function")]
+ActivityService = Annotated[AuthService, Depends(auth_service, scope="function")]
 
 
 @router.get("/session", response_model=SessionResponse, operation_id="authSession")
@@ -35,7 +36,7 @@ def session(service: Service):
 
 
 @router.post("/activity", response_model=SessionResponse, operation_id="authActivity")
-def activity(service: Service):
+def activity(service: ActivityService):
     row = service.require_session(full=False)
     return service.state(row, service.request.headers["x-csrf-token"])
 

@@ -171,7 +171,7 @@ it('新增与编辑共用表单，编辑密码为空且保存时省略，不读�
     mock.mock.calls.some(([req]) => req.url.includes('reveal-password')),
   ).toBe(false);
   await userEvent.click(screen.getByRole('button', { name: '新增账号' }));
-  expect(screen.getByLabelText('Gmail 地址')).toHaveValue('');
+  expect(await screen.findByLabelText('Gmail 地址')).toHaveValue('');
   expect(screen.getByLabelText('Gmail 登录密码')).toBeRequired();
 });
 
@@ -186,7 +186,10 @@ it('新增提交真实字段和UTC，关联切换不会同时提交两种辅助�
   await userEvent.click(
     await screen.findByRole('button', { name: '新增账号' }),
   );
-  await userEvent.type(screen.getByLabelText('Gmail 地址'), 'new@gmail.com');
+  await userEvent.type(
+    await screen.findByLabelText('Gmail 地址'),
+    'new@gmail.com',
+  );
   const secret = id();
   await userEvent.type(screen.getByLabelText('Gmail 登录密码'), secret);
   await userEvent.selectOptions(
@@ -215,7 +218,7 @@ it('表单阻止辅助邮箱与主邮箱同一规范化地址', async () => {
     await screen.findByRole('button', { name: '新增账号' }),
   );
   await userEvent.type(
-    screen.getByLabelText('Gmail 地址'),
+    await screen.findByLabelText('Gmail 地址'),
     'user.name+tag@googlemail.com',
   );
   await userEvent.type(screen.getByLabelText('Gmail 登录密码'), id());

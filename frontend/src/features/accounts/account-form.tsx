@@ -3,7 +3,6 @@ import { useForm } from 'react-hook-form';
 import type {
   AccountCreateWritable,
   AccountDetail,
-  AccountSummary,
   TagResponse,
 } from '@/api/generated';
 import { Button } from '@/components/ui/button';
@@ -21,19 +20,9 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
+import { factorLabels, localDate, statusLabels } from './constants';
 
-export const statusLabels: Record<AccountSummary['status'], string> = {
-  normal: '正常',
-  pending_verification: '待验证',
-  restricted: '受限',
-  login_failed: '无法登录',
-  disabled: '已停用',
-  archived: '已归档',
-};
-export const factorLabels: Record<AccountSummary['two_factor_status'], string> =
-  { unknown: '未知', disabled: '未开启', enabled: '已开启' };
-export const localDate = (value?: string | null) =>
-  value ? new Date(value).toLocaleString() : '—';
+export { factorLabels, localDate, statusLabels };
 const inputDate = (value?: string | null) => {
   if (!value) return '';
   const date = new Date(value);

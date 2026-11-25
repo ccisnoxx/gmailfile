@@ -513,7 +513,9 @@ it('撤销自身先清空工作区；网络结果未知也不能恢复旧页面�
   await userEvent.click(
     await screen.findByRole('button', { name: '迁移与运维' }),
   );
-  await userEvent.click(screen.getByRole('button', { name: 'Session 管理' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Session 管理' }),
+  );
   await userEvent.click(
     await screen.findByRole('button', { name: '退出当前会话' }),
   );

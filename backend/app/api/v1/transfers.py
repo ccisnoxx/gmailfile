@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query, Response
 from pydantic import Json
 
-from app.api.dependencies import auth_service
+from app.api.dependencies import account_write_auth, auth_service
 from app.schemas.operations import CsvCommit, CsvOptions, CsvPreview, ExportInput
 from app.schemas.system import ErrorResponse
 from app.services.auth import AuthService
@@ -20,6 +20,7 @@ router = APIRouter(
     },
 )
 Service = Annotated[AuthService, Depends(auth_service, scope="function")]
+WriteService = Annotated[AuthService, Depends(account_write_auth, scope="function")]
 CsvBody = Annotated[bytes, Body(media_type="text/csv")]
 
 
@@ -38,7 +39,7 @@ def preview(
     responses={409: {"model": CsvCommit}},
     operation_id="csvCommit",
 )
-def commit(service: Service, body: CsvBody, receipt_id: UUID, response: Response):
+def commit(service: WriteService, body: CsvBody, receipt_id: UUID, response: Response):
     result = CsvService(service).commit(body, receipt_id)
     if result.status == "rejected":
         response.status_code = 409

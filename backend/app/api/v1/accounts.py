@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.dependencies import auth_service
+from app.api.dependencies import account_write_auth, auth_service
 from app.schemas.accounts import (
     AccountCreate,
     AccountDetail,
@@ -38,7 +38,14 @@ def account_service(auth: Annotated[AuthService, Depends(auth_service, scope="fu
     return AccountService(auth)
 
 
+def account_write_service(
+    auth: Annotated[AuthService, Depends(account_write_auth, scope="function")],
+):
+    return AccountService(auth)
+
+
 Service = Annotated[AccountService, Depends(account_service)]
+WriteService = Annotated[AccountService, Depends(account_write_service)]
 
 
 @router.get("/accounts", response_model=AccountPage, operation_id="accountsList")
@@ -72,19 +79,19 @@ def options(
 @router.post(
     "/accounts/batch-status", response_model=BatchResult, operation_id="accountsBatchStatus"
 )
-def batch_status(body: BatchStatus, service: Service):
+def batch_status(body: BatchStatus, service: WriteService):
     return service.batch(body)
 
 
 @router.post("/accounts/batch-tags", response_model=BatchResult, operation_id="accountsBatchTags")
-def batch_tags(body: BatchTags, service: Service):
+def batch_tags(body: BatchTags, service: WriteService):
     return service.batch(body)
 
 
 @router.post(
     "/accounts", response_model=AccountDetail, status_code=201, operation_id="accountsCreate"
 )
-def create(body: AccountCreate, service: Service):
+def create(body: AccountCreate, service: WriteService):
     return service.create(body)
 
 
@@ -94,28 +101,28 @@ def detail(account_id: UUID, service: Service):
 
 
 @router.patch("/accounts/{account_id}", response_model=AccountDetail, operation_id="accountsPatch")
-def patch(account_id: UUID, body: AccountPatch, service: Service):
+def patch(account_id: UUID, body: AccountPatch, service: WriteService):
     return service.patch(account_id, body)
 
 
 @router.delete(
     "/accounts/{account_id}", response_model=AccountDetail, operation_id="accountsDelete"
 )
-def remove(account_id: UUID, body: VersionInput, service: Service):
+def remove(account_id: UUID, body: VersionInput, service: WriteService):
     return service.action(account_id, body.row_version, "delete")
 
 
 @router.post(
     "/accounts/{account_id}/archive", response_model=AccountDetail, operation_id="accountsArchive"
 )
-def archive(account_id: UUID, body: VersionInput, service: Service):
+def archive(account_id: UUID, body: VersionInput, service: WriteService):
     return service.action(account_id, body.row_version, "archive")
 
 
 @router.post(
     "/accounts/{account_id}/restore", response_model=AccountDetail, operation_id="accountsRestore"
 )
-def restore(account_id: UUID, body: VersionInput, service: Service):
+def restore(account_id: UUID, body: VersionInput, service: WriteService):
     return service.action(account_id, body.row_version, "restore")
 
 
@@ -124,7 +131,7 @@ def restore(account_id: UUID, body: VersionInput, service: Service):
     response_model=AccountDetail,
     operation_id="accountsMarkVerified",
 )
-def verified(account_id: UUID, body: VersionInput, service: Service):
+def verified(account_id: UUID, body: VersionInput, service: WriteService):
     return service.action(account_id, body.row_version, "mark-verified")
 
 
@@ -133,7 +140,7 @@ def verified(account_id: UUID, body: VersionInput, service: Service):
     response_model=AccountDetail,
     operation_id="accountsMarkLoggedIn",
 )
-def logged_in(account_id: UUID, body: VersionInput, service: Service):
+def logged_in(account_id: UUID, body: VersionInput, service: WriteService):
     return service.action(account_id, body.row_version, "mark-logged-in")
 
 
@@ -162,16 +169,16 @@ def tags(service: Service):
 
 
 @router.post("/tags", response_model=TagResponse, status_code=201, operation_id="tagsCreate")
-def tag_create(body: TagInput, service: Service):
+def tag_create(body: TagInput, service: WriteService):
     return service.save_tag(body.name)
 
 
 @router.patch("/tags/{tag_id}", response_model=TagResponse, operation_id="tagsPatch")
-def tag_patch(tag_id: UUID, body: TagInput, service: Service):
+def tag_patch(tag_id: UUID, body: TagInput, service: WriteService):
     return service.save_tag(body.name, tag_id)
 
 
 @router.delete("/tags/{tag_id}", response_model=ActionResponse, operation_id="tagsDelete")
-def tag_delete(tag_id: UUID, service: Service):
+def tag_delete(tag_id: UUID, service: WriteService):
     service.delete_tag(tag_id)
     return ActionResponse()
