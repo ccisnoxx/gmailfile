@@ -458,3 +458,149 @@ def test_tags_require_full_auth_and_csrf(env, method, path, body):
         ).status_code
         == 403
     )
+
+
+def test_full_account_lifecycle_versions_visibility_password_and_audit(env, signed):
+    from app.services.audit_integrity import verify_audit_chain
+
+    client, state = signed
+    initial_pw = random_token()
+    rotated_pw = random_token()
+    tag = client.post(
+        "/api/v1/tags", json={"name": "生命周期"}, headers={"X-CSRF-Token": state["csrf_token"]}
+    ).json()
+
+    # 1. 创建（v1）
+    row = create(
+        signed,
+        gmail_email="Life.Cycle+init@googlemail.com",
+        password=initial_pw,
+        phone="+86 13800138000",
+        notes="初始敏感备注",
+        purpose="测试生命周期",
+        status="pending_verification",
+    )
+    assert row["row_version"] == 1
+    assert client.get("/api/v1/dashboard/summary").json()["total"] == 1
+
+    # 2. 更新非密码字段并绑定标签（v2），密码密文保持不变
+    with Session(env["engine"]) as db:
+        cipher_v1 = db.get(GmailAccount, row["id"]).password_ciphertext
+    row = request(
+        signed,
+        "PATCH",
+        "/" + row["id"],
+        {**version(row), "status": "normal", "tag_ids": [tag["id"]], "purpose": "已激活"},
+    ).json()
+    assert row["row_version"] == 2 and [t["id"] for t in row["tags"]] == [tag["id"]]
+    with Session(env["engine"]) as db:
+        assert db.get(GmailAccount, row["id"]).password_ciphertext == cipher_v1
+
+    # 3. 修改密码（v3），重新验证后按需查看返回新密码
+    row = request(signed, "PATCH", "/" + row["id"], {**version(row), "password": rotated_pw}).json()
+    assert row["row_version"] == 3
+    state = post(client, "reverify", state, {"password": env["password"]}).json()
+    signed = (client, state)
+    revealed = request(signed, "POST", "/" + row["id"] + "/reveal-password", {})
+    assert revealed.status_code == 200 and revealed.json()["password"] == rotated_pw
+
+    # 4. 标记登录（v4）与验证（v5）
+    row = request(signed, "POST", "/" + row["id"] + "/mark-logged-in", version(row)).json()
+    assert row["row_version"] == 4 and row["last_login_at"] is not None
+    row = request(signed, "POST", "/" + row["id"] + "/mark-verified", version(row)).json()
+    assert row["row_version"] == 5 and row["last_verified_at"] is not None
+
+    # 5. 归档（v6）与取消归档（v7）
+    row = request(signed, "POST", "/" + row["id"] + "/archive", version(row)).json()
+    assert row["row_version"] == 6 and row["status"] == "archived" and row["archived_at"]
+    assert client.get(ROOT, params={"archived": False}).json()["total"] == 0
+    assert client.get(ROOT, params={"archived": True}).json()["total"] == 1
+    row = request(signed, "PATCH", "/" + row["id"], {**version(row), "status": "normal"}).json()
+    assert row["row_version"] == 7 and row["archived_at"] is None
+
+    # 6. 软删除（v8）：从默认列表与统计消失，仅在 deleted=true 可见，写/查密码均返回 409
+    row = request(signed, "DELETE", "/" + row["id"], version(row)).json()
+    assert row["row_version"] == 8 and row["deleted_at"] is not None
+    assert client.get(ROOT).json()["total"] == 0
+    assert client.get(ROOT, params={"deleted": True}).json()["total"] == 1
+    assert client.get("/api/v1/dashboard/summary").json()["total"] == 0
+    for method, suffix, body in [
+        ("PATCH", "", {**version(row), "purpose": "禁止"}),
+        ("POST", "/archive", version(row)),
+        ("POST", "/mark-verified", version(row)),
+        ("POST", "/mark-logged-in", version(row)),
+        ("POST", "/reveal-password", {}),
+        ("POST", "/copy-password-event", {}),
+    ]:
+        blocked = request(signed, method, "/" + row["id"] + suffix, body)
+        assert blocked.status_code == 409
+        assert blocked.json()["error"]["code"] == "ACCOUNT_DELETED"
+    # 软删除后规范化地址仍保留唯一性。
+    dup = request(signed, "POST", body=payload(gmail_email="lifecycle@gmail.com"))
+    assert dup.status_code == 409 and dup.json()["error"]["code"] == "ACCOUNT_EMAIL_DUPLICATE"
+
+    # 7. 恢复（v9）：回到列表与统计，密码仍可正常解密，审计链完整有效。
+    row = request(signed, "POST", "/" + row["id"] + "/restore", version(row)).json()
+    assert row["row_version"] == 9 and row["deleted_at"] is None
+    assert client.get(ROOT).json()["total"] == 1
+    assert client.get("/api/v1/dashboard/summary").json()["total"] == 1
+    assert (
+        request(signed, "POST", "/" + row["id"] + "/reveal-password", {}).json()["password"]
+        == rotated_pw
+    )
+    with Session(env["engine"]) as db:
+        assert verify_audit_chain(db).valid is True
+
+
+@pytest.mark.parametrize(
+    "other_method,other_suffix,other_body",
+    [
+        ("DELETE", "", {}),
+        ("POST", "/archive", {}),
+        ("POST", "/mark-verified", {}),
+    ],
+)
+def test_concurrent_patch_vs_lifecycle_action_version_conflict(
+    signed, other_method, other_suffix, other_body
+):
+    row = create(signed)
+    base_ver = row["row_version"]
+
+    def do_patch():
+        return request(
+            signed,
+            "PATCH",
+            "/" + row["id"],
+            {"row_version": base_ver, "purpose": "并发更新"},
+        )
+
+    def do_other():
+        return request(
+            signed,
+            other_method,
+            "/" + row["id"] + other_suffix,
+            {"row_version": base_ver, **other_body},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f1, f2 = pool.submit(do_patch), pool.submit(do_other)
+        responses = [f1.result(), f2.result()]
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    loser = next(r for r in responses if r.status_code == 409)
+    assert loser.json()["error"]["code"] in {"ROW_VERSION_CONFLICT", "ACCOUNT_DELETED"}
+    latest = signed[0].get(ROOT + "/" + row["id"]).json()
+    assert latest["row_version"] == base_ver + 1
+
+
+def test_concurrent_restore_only_one_commits(signed):
+    row = create(signed)
+    deleted = request(signed, "DELETE", "/" + row["id"], version(row)).json()
+
+    def do_restore(_):
+        return request(signed, "POST", "/" + deleted["id"] + "/restore", version(deleted))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses = list(pool.map(do_restore, range(2)))
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    loser = next(r for r in responses if r.status_code == 409)
+    assert loser.json()["error"]["code"] in {"ROW_VERSION_CONFLICT", "ACCOUNT_NOT_DELETED"}

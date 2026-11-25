@@ -44,3 +44,11 @@ def test_invalid_data_key_rejected(settings):
     (settings.data_key_directory / "data_key_v1").write_bytes(b"invalid")
     with pytest.raises(ValueError, match="32"):
         settings.validate_secret_files()
+
+
+def test_missing_password_denylist_file_rejected(settings, tmp_path):
+    settings.password_denylist_file = tmp_path / "does-not-exist.txt"
+    with pytest.raises(ValueError, match="密码黑名单"):
+        settings.validate_secret_files()
+    settings.password_denylist_file.write_text("weakpassword123456\n", encoding="utf-8")
+    settings.validate_secret_files()

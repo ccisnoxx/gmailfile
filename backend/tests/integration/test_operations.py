@@ -620,3 +620,203 @@ def test_audit_integrity_endpoint_detects_offline_tampering(env, signed):
             )
     broken = client.get("/api/v1/audit-events/integrity").json()
     assert broken["valid"] is False and broken["broken_seq"] == 1
+
+
+def test_csv_receipt_bound_to_session_and_survives_same_session_reverify(env):
+    import pyotp
+    from test_auth import enroll
+
+    client_a = env["client"]()
+    secret, initial = enroll(env, client_a)
+    signed_a = (client_a, initial["session"])
+    reverify(env, signed_a)
+
+    advance(env)
+    client_b = env["client"]()
+    state_b = login(env, client_b, totp_code=pyotp.TOTP(secret).at(env["clock"][0])).json()
+    signed_b = (client_b, state_b)
+    reverify(env, signed_b)
+
+    data = simple("bound@example.test")
+    p = preview(signed_a, data).json()
+    receipt_id = p["receipt_id"]
+    assert receipt_id
+
+    # 其他会话不能使用会话 A 的确认凭据，且不得消费原凭据。
+    hijack = commit(signed_b, data, receipt_id)
+    assert hijack.status_code == 409 and hijack.json()["status"] == "rejected"
+    with Session(env["engine"]) as db:
+        assert db.get(CsvReceipt, receipt_id).consumed_at is None
+
+    # 同一会话重新验证轮换 Secret/CSRF 不改变 session_id，原凭据在有效期内仍可提交。
+    advance(env, 301)
+    assert commit(signed_a, data, receipt_id).status_code == 403
+    old_csrf = signed_a[1]["csrf_token"]
+    reverify(env, signed_a)
+    assert signed_a[1]["csrf_token"] != old_csrf
+    ok = commit(signed_a, data, receipt_id)
+    assert ok.status_code == 200 and ok.json()["created"] == 1
+
+
+def test_csv_mixed_create_update_skip_and_snapshot_conflict_rollback(env, signed):
+    from app.services.audit_integrity import verify_audit_chain
+
+    target = create(signed, gmail_email="target-link@example.test")
+    existing = create(signed, gmail_email="existing.upd@gmail.com", purpose="旧用途")
+    reverify(env, signed)
+
+    # 先验证真实并发修改触发快照冲突时整批回滚（不创建新账号/新标签/导入审计，不消费凭据）。
+    data = csv_bytes(
+        [
+            ["gmail_email", "password", "recovery_email", "recovery_account", "purpose", "tags"],
+            [
+                "fresh.batch@gmail.com",
+                "synthetic-pw",
+                "",
+                target["gmail_email"],
+                "新账号",
+                "批次标签A",
+            ],
+            [
+                "existingupd+alias@googlemail.com",
+                "",
+                "ext@example.test",
+                "",
+                "新用途",
+                "批次标签B",
+            ],
+            ["freshbatch+dup@gmail.com", "synthetic-pw2", "ext2@example.test", "", "重复跳过", ""],
+        ]
+    )
+    stale_preview = preview(signed, data, strategy="update").json()
+    assert [r["action"] for r in stale_preview["rows"]] == ["create", "update", "skip"]
+    assert stale_preview["receipt_id"]
+
+    # 预览后修改 existing 记录触发版本变化。
+    assert (
+        request(
+            signed, "PATCH", "/" + existing["id"], {"row_version": 1, "purpose": "他人修改"}
+        ).status_code
+        == 200
+    )
+    rejected = commit(signed, data, stale_preview["receipt_id"])
+    assert rejected.status_code == 409
+    assert rejected.json()["status"] == "rejected"
+    assert any(err["field"] == "row_version" for err in rejected.json()["errors"])
+    with Session(env["engine"]) as db:
+        assert db.scalar(select(func.count()).select_from(GmailAccount)) == 2
+        assert db.scalar(select(func.count()).select_from(Tag)) == 0
+        assert db.get(CsvReceipt, stale_preview["receipt_id"]).consumed_at is None
+
+    # 重新预览后原子提交成功：1 新增 + 1 更新 + 1 跳过，且标签与关联正确落库。
+    fresh_preview = preview(signed, data, strategy="update").json()
+    committed = commit(signed, data, fresh_preview["receipt_id"])
+    assert committed.status_code == 200
+    assert committed.json() == {
+        "status": "committed",
+        "created": 1,
+        "updated": 1,
+        "skipped": 1,
+        "errors": [],
+    }
+    updated_detail = signed[0].get("/api/v1/accounts/" + existing["id"]).json()
+    assert updated_detail["purpose"] == "新用途" and updated_detail["row_version"] == 3
+    assert [t["name"] for t in updated_detail["tags"]] == ["批次标签B"]
+    with Session(env["engine"]) as db:
+        assert db.scalar(select(func.count()).select_from(GmailAccount)) == 3
+        assert verify_audit_chain(db).valid is True
+
+
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("PATCH", "/settings/idle", {"idle_minutes": 10}),
+        ("DELETE", "/auth/sessions/others", None),
+        ("DELETE", "/auth/sessions/00000000-0000-0000-0000-000000000000", None),
+        ("POST", "/exports/csv", {"scope": "all"}),
+    ],
+)
+@pytest.mark.parametrize("token", [None, "wrong-csrf"])
+def test_authenticated_operations_mutations_require_valid_csrf(signed, method, path, body, token):
+    client, _ = signed
+    res = client.request(
+        method,
+        "/api/v1" + path,
+        json=body,
+        headers={} if token is None else {"X-CSRF-Token": token},
+    )
+    assert res.status_code == 403 and res.json()["error"]["code"] == "CSRF_INVALID"
+
+
+def test_csv_upload_middleware_host_auth_headers_and_content_type_normalization(env, signed):
+    client, state = signed
+    reverify(env, signed)
+    payload = simple("upload-norm@example.test")
+
+    # 非法 Host 在 CsvUploadLimit 之前就被 request_context 拦截为 400 INVALID_HOST。
+    bad_host = client.post(
+        "/api/v1/imports/csv/preview",
+        content=payload,
+        headers={
+            "Host": "evil.test",
+            "Content-Type": "text/csv",
+            "X-CSRF-Token": state["csrf_token"],
+        },
+    )
+    assert bad_host.status_code == 400
+    assert bad_host.json()["error"]["code"] == "INVALID_HOST"
+    assert bad_host.headers.get("X-Request-ID") == bad_host.json()["request_id"]
+    assert bad_host.headers.get("Cache-Control") == "no-store"
+
+    # 未登录请求直接返回 401 AUTH_REQUIRED 且带 X-Request-ID 与 Cache-Control: no-store。
+    anon = env["client"]()
+    unauth = anon.post(
+        "/api/v1/imports/csv/preview",
+        content=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    assert unauth.status_code == 401
+    assert unauth.json()["error"]["code"] == "AUTH_REQUIRED"
+    assert unauth.headers.get("X-Request-ID") == unauth.json()["request_id"]
+    assert unauth.headers.get("Cache-Control") == "no-store"
+
+    # 已登录但非 text/csv 返回 415，且响应头包含 X-Request-ID 与 Cache-Control: no-store。
+    bad_type = client.post(
+        "/api/v1/imports/csv/preview",
+        content=payload,
+        headers={
+            "Content-Type": "text/plain",
+            "X-CSRF-Token": state["csrf_token"],
+        },
+    )
+    assert bad_type.status_code == 415
+    assert bad_type.json()["error"]["code"] == "CSV_TYPE_INVALID"
+    assert bad_type.headers.get("X-Request-ID") == bad_type.json()["request_id"]
+    assert bad_type.headers.get("Cache-Control") == "no-store"
+
+    # 带空格参数的 text/csv ; charset=utf-8 规范化放行。
+    spaced_ct = client.post(
+        "/api/v1/imports/csv/preview",
+        content=payload,
+        headers={
+            "Content-Type": "text/csv ; charset=utf-8",
+            "X-CSRF-Token": state["csrf_token"],
+        },
+    )
+    assert spaced_ct.status_code == 200
+    assert spaced_ct.json()["receipt_id"]
+
+    # 超限正文返回 413 且带 X-Request-ID 与 Cache-Control: no-store。
+    oversized = b"a" * (env["settings"].max_import_size_mb * 1024 * 1024 + 1)
+    too_large = client.post(
+        "/api/v1/imports/csv/preview",
+        content=oversized,
+        headers={
+            "Content-Type": "text/csv; charset=utf-8",
+            "X-CSRF-Token": state["csrf_token"],
+        },
+    )
+    assert too_large.status_code == 413
+    assert too_large.json()["error"]["code"] == "CSV_TOO_LARGE"
+    assert too_large.headers.get("X-Request-ID") == too_large.json()["request_id"]
+    assert too_large.headers.get("Cache-Control") == "no-store"

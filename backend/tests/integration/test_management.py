@@ -459,3 +459,64 @@ def test_batch_validation_locates_row_without_echoing_input(signed):
     private = "must-not-echo-unknown-key"
     result = request(signed, "POST", "/batch-status", {**body, private: "must-not-echo-value"})
     assert private not in result.text and "must-not-echo-value" not in result.text
+
+
+def test_batch_late_failure_rolls_back_earlier_rows_and_keeps_audit_chain_valid(env, signed):
+    from app.services.audit_integrity import verify_audit_chain
+
+    rows = sorted([create(signed) for _ in range(3)], key=lambda r: r["id"])
+    client, state = signed
+    tag = client.post(
+        "/api/v1/tags", json={"name": "回滚校验"}, headers={"X-CSRF-Token": state["csrf_token"]}
+    ).json()
+
+    # 前两条版本正确，最后一条版本过期；事务必须回滚前两条状态、版本、标签与审计。
+    stale = [dict(r) for r in rows]
+    stale[2]["row_version"] = 99
+    before = [client.get(ROOT + "/" + r["id"]).json() for r in rows]
+
+    status_fail = batch(signed, "status", stale, status="archived")
+    assert status_fail.status_code == 409
+    assert status_fail.json()["error"]["code"] == "ROW_VERSION_CONFLICT"
+    assert status_fail.json()["error"]["details"]["account_id"] == rows[2]["id"]
+    assert [client.get(ROOT + "/" + r["id"]).json() for r in rows] == before
+
+    tags_fail = batch(signed, "tags", stale, tag_ids=[tag["id"]])
+    assert tags_fail.status_code == 409
+    assert [client.get(ROOT + "/" + r["id"]).json() for r in rows] == before
+
+    with Session(env["engine"]) as db:
+        assert (
+            db.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.event_metadata["operation"].astext.in_(
+                        ["batch-status", "batch-tags"]
+                    )
+                )
+            ).all()
+            == []
+        )
+        assert verify_audit_chain(db).valid is True
+
+
+def test_concurrent_overlapping_batches_roll_back_loser_including_non_overlapping_row(signed):
+    from concurrent.futures import ThreadPoolExecutor
+
+    a, shared, b = [create(signed) for _ in range(3)]
+    client, _ = signed
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f1 = pool.submit(batch, signed, "status", [a, shared], status="archived")
+        f2 = pool.submit(batch, signed, "status", [b, shared], status="disabled")
+        r1, r2 = f1.result(), f2.result()
+
+    assert sorted([r1.status_code, r2.status_code]) == [200, 409]
+    cur_a = client.get(ROOT + "/" + a["id"]).json()
+    cur_shared = client.get(ROOT + "/" + shared["id"]).json()
+    cur_b = client.get(ROOT + "/" + b["id"]).json()
+    if r1.status_code == 200:
+        assert cur_a["status"] == cur_shared["status"] == "archived"
+        assert cur_b["status"] == b["status"] and cur_b["row_version"] == 1
+    else:
+        assert cur_b["status"] == cur_shared["status"] == "disabled"
+        assert cur_a["status"] == a["status"] and cur_a["row_version"] == 1

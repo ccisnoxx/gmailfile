@@ -255,3 +255,165 @@ def test_expired_receipt_cleanup_waits_for_inflight_commit(env, signed, monkeypa
         assert cleaning.result(timeout=10).status_code == 200
     rows = signed[0].get("/api/v1/accounts").json()["items"]
     assert len(rows) == 1 and rows[0]["gmail_email"] == "csv@example.test"
+
+
+def test_concurrent_duplicate_csv_commit_with_writes_commits_strictly_once(
+    env, signed, monkeypatch
+):
+    from test_operations import csv_bytes
+
+    from app.models import GmailAccount, Tag
+
+    reverify(env, signed)
+    content = csv_bytes(
+        [
+            ["gmail_email", "password", "recovery_email", "tags"],
+            ["dup-create-1@gmail.com", "synthetic-1", "r1@example.test", "并发标签"],
+            ["dup-create-2@gmail.com", "synthetic-2", "r2@example.test", "并发标签"],
+        ]
+    )
+    result = preview(signed, content).json()
+    assert result["receipt_id"]
+
+    analyzing, release = Event(), Event()
+    original = CsvService.analyze
+
+    def paused_first_analyze(self, *args, **kwargs):
+        analyzed = original(self, *args, **kwargs)
+        if not analyzing.is_set():
+            analyzing.set()
+            assert release.wait(timeout=10), "并发写入 CSV 提交未释放"
+        return analyzed
+
+    monkeypatch.setattr(CsvService, "analyze", paused_first_analyze)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(commit, signed, content, result["receipt_id"])
+        try:
+            assert analyzing.wait(timeout=10)
+            second = pool.submit(commit, signed, content, result["receipt_id"])
+            with pytest.raises(TimeoutError):
+                second.result(timeout=1)
+        finally:
+            release.set()
+        responses = [first.result(timeout=10), second.result(timeout=10)]
+
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    winner = next(r for r in responses if r.status_code == 200)
+    loser = next(r for r in responses if r.status_code == 409)
+    assert winner.json()["created"] == 2
+    assert loser.json()["status"] == "rejected"
+    with Session(env["engine"]) as db:
+        assert db.scalar(select(func.count()).select_from(GmailAccount)) == 2
+        assert db.scalar(select(func.count()).select_from(Tag)) == 1
+        assert db.get(CsvReceipt, result["receipt_id"]).consumed_at is not None
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.event_type == "csv_imported")
+            )
+            == 1
+        )
+
+
+def test_concurrent_two_receipts_for_same_csv_only_first_commits(env, signed, monkeypatch):
+    from app.models import GmailAccount
+
+    reverify(env, signed)
+    content = simple("race-two-receipts@gmail.com")
+    r1 = preview(signed, content).json()["receipt_id"]
+    r2 = preview(signed, content).json()["receipt_id"]
+    assert r1 and r2 and r1 != r2
+
+    analyzing, release = Event(), Event()
+    original = CsvService.analyze
+
+    def paused_first_analyze(self, *args, **kwargs):
+        analyzed = original(self, *args, **kwargs)
+        if not analyzing.is_set():
+            analyzing.set()
+            assert release.wait(timeout=10), "双凭据竞争测试未释放"
+        return analyzed
+
+    monkeypatch.setattr(CsvService, "analyze", paused_first_analyze)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(commit, signed, content, r1)
+        try:
+            assert analyzing.wait(timeout=10)
+            second = pool.submit(commit, signed, content, r2)
+            with pytest.raises(TimeoutError):
+                second.result(timeout=1)
+        finally:
+            release.set()
+        responses = [first.result(timeout=10), second.result(timeout=10)]
+
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    loser = next(r for r in responses if r.status_code == 409).json()
+    assert loser["status"] == "rejected"
+    assert any(err["field"] == "row_version" for err in loser["errors"])
+    with Session(env["engine"]) as db:
+        assert db.scalar(select(func.count()).select_from(GmailAccount)) == 1
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.event_type == "csv_imported")
+            )
+            == 1
+        )
+
+
+def test_concurrent_csv_update_commit_vs_patch_serializes_and_rolls_back_loser(
+    env, signed, monkeypatch
+):
+    from test_operations import csv_bytes
+
+    reverify(env, signed)
+    row = create(signed, gmail_email="race-csv-patch@gmail.com", purpose="初始")
+    content = csv_bytes(
+        [
+            ["gmail_email", "password", "recovery_email", "purpose"],
+            ["race-csv-patch@gmail.com", "", "r@example.test", "CSV更新"],
+            ["race-csv-new@gmail.com", "synthetic-pw", "r2@example.test", "随同新建"],
+        ]
+    )
+    receipt = preview(signed, content, strategy="update").json()["receipt_id"]
+    assert receipt
+
+    analyzing, release = Event(), Event()
+    original = CsvService.analyze
+
+    def paused_analyze(self, *args, **kwargs):
+        analyzed = original(self, *args, **kwargs)
+        if not analyzing.is_set():
+            analyzing.set()
+            assert release.wait(timeout=10), "CSV 与 PATCH 竞争测试未释放"
+        return analyzed
+
+    monkeypatch.setattr(CsvService, "analyze", paused_analyze)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        csv_future = pool.submit(commit, signed, content, receipt)
+        try:
+            assert analyzing.wait(timeout=10)
+            patch_future = pool.submit(
+                request,
+                signed,
+                "PATCH",
+                "/" + row["id"],
+                {"row_version": row["row_version"], "purpose": "PATCH更新"},
+            )
+            with pytest.raises(TimeoutError):
+                patch_future.result(timeout=1)
+        finally:
+            release.set()
+        csv_res = csv_future.result(timeout=10)
+        patch_res = patch_future.result(timeout=10)
+
+    assert sorted([csv_res.status_code, patch_res.status_code]) == [200, 409]
+    current = signed[0].get("/api/v1/accounts/" + row["id"]).json()
+    assert current["row_version"] == row["row_version"] + 1
+    if csv_res.status_code == 200:
+        assert current["purpose"] == "CSV更新"
+    else:
+        assert current["purpose"] == "PATCH更新"
+        assert signed[0].get("/api/v1/accounts").json()["total"] == 1

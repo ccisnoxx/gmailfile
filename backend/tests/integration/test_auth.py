@@ -443,6 +443,46 @@ def test_step_up_totp_enforced_for_password_reveal_and_copy(env):
     assert denied.status_code == 403 and denied.json()["error"]["code"] == "REAUTH_REQUIRED"
 
 
+def test_step_up_totp_enforced_for_password_change(env):
+    env["settings"].step_up_totp_required = True
+    client = env["client"]()
+    secret, result = enroll(env, client)
+    state = result["session"]
+    advance(env)
+    code = pyotp.TOTP(secret).at(env["clock"][0])
+    reverified = post(client, "reverify", state, {"password": env["password"], "totp_code": code})
+    assert reverified.status_code == 200
+    state = reverified.json()
+
+    # 仅有密码级 reauthenticated_at 而无 mfa_reauthenticated_at 时，管理员改密必须被拒。
+    with Session(env["engine"]) as db, db.begin():
+        db.execute(update(UserSession).values(mfa_reauthenticated_at=None))
+    new_password = random_token()[:20]
+    denied = post(
+        client,
+        "password",
+        state,
+        {"password": env["password"], "new_password": new_password},
+    )
+    assert denied.status_code == 403 and denied.json()["error"]["code"] == "REAUTH_REQUIRED"
+
+    # 完成带 TOTP 的 step-up reverify 后，改密成功。
+    advance(env)
+    fresh_code = pyotp.TOTP(secret).at(env["clock"][0])
+    reverified_again = post(
+        client, "reverify", state, {"password": env["password"], "totp_code": fresh_code}
+    )
+    assert reverified_again.status_code == 200
+    state = reverified_again.json()
+    ok = post(
+        client,
+        "password",
+        state,
+        {"password": env["password"], "new_password": new_password},
+    )
+    assert ok.status_code == 200
+
+
 def test_authenticated_rebind_and_regeneration_require_factor(env):
     client = env["client"]()
     secret, result = enroll(env, client)
@@ -770,3 +810,395 @@ def test_expired_pre_auth_state_cannot_login(env):
     state = bootstrap(client)
     advance(env, 600)
     assert post(client, "login", state, {"password": env["password"]}).status_code == 403
+
+
+def test_initial_totp_binding_edge_cases_rotation_and_secret_replacement(env):
+    client = env["client"]()
+    other_pending = env["client"]()
+    pending = login(env, client).json()
+    other_state = login(env, other_pending).json()
+    assert pending["state"] == other_state["state"] == "mfa_pending"
+
+    # 未调用 totp/setup 前直接 confirm 必须被拒。
+    before_setup = post(client, "totp/confirm", pending, {"code": "123456"})
+    assert before_setup.status_code == 403
+    assert before_setup.json()["error"]["code"] == "SETUP_REQUIRED"
+
+    first_setup = post(client, "totp/setup", pending).json()
+    # 重新发起 setup 会覆盖待绑定 Secret，旧 Secret 验证码不可再确认。
+    second_setup = post(client, "totp/setup", pending).json()
+    assert second_setup["secret"] != first_setup["secret"]
+
+    wrong_secret = post(
+        client,
+        "totp/confirm",
+        pending,
+        {"code": pyotp.TOTP(first_setup["secret"]).at(env["clock"][0])},
+    )
+    assert wrong_secret.status_code == 401
+    with Session(env["engine"]) as db:
+        assert not db.scalar(select(AdminUser)).totp_enabled
+    advance(env, 2)
+
+    old_cookie = client.cookies.get("__Host-gm_session")
+    confirm_code = pyotp.TOTP(second_setup["secret"]).at(env["clock"][0])
+    confirmed = post(client, "totp/confirm", pending, {"code": confirm_code})
+    assert confirmed.status_code == 200
+    body = confirmed.json()
+    assert body["session"]["state"] == "authenticated"
+    assert body["session"]["csrf_token"] != pending["csrf_token"]
+    assert client.cookies.get("__Host-gm_session") != old_cookie
+
+    # 确认绑定后：旧 Cookie 失效、旧 CSRF 失效、其他待绑定会话被撤销。
+    stale_cookie_client = env["client"]()
+    stale_cookie_client.cookies.set("__Host-gm_session", old_cookie)
+    assert stale_cookie_client.get("/protected").status_code == 401
+    assert post(client, "logout", pending).status_code == 403
+    assert other_pending.get("/protected").status_code == 401
+    assert post(other_pending, "totp/setup", other_state).status_code == 401
+
+    # 绑定确认用过的 TOTP 时间步不能立刻重放登录。
+    assert login(env, env["client"](), totp_code=confirm_code).status_code == 401
+
+
+def test_normal_login_requires_exact_single_factor_and_clears_throttle(env):
+    first = env["client"]()
+    secret, initial = enroll(env, first)
+    advance(env)
+
+    # 启用 TOTP 后：只传密码或同时传 TOTP 与恢复码都必须被拒。
+    assert login(env, env["client"]()).status_code == 401
+    advance(env, 2)
+    code = pyotp.TOTP(secret).at(env["clock"][0])
+    both = login(
+        env,
+        env["client"](),
+        totp_code=code,
+        recovery_code=initial["recovery_codes"][0],
+    )
+    assert both.status_code == 401
+    with Session(env["engine"]) as db:
+        assert db.get(AuthThrottle, "admin").failures == 2
+        assert all(r.used_at is None for r in db.scalars(select(AdminRecoveryCode)))
+    advance(env, 4)
+
+    # 正确密码 + TOTP 登录成功，清空退避计数并开放业务接口。
+    valid_client = env["client"]()
+    ok = login(env, valid_client, totp_code=pyotp.TOTP(secret).at(env["clock"][0]))
+    assert ok.status_code == 200
+    assert ok.json()["state"] == "authenticated"
+    assert valid_client.get("/api/v1/accounts").status_code == 200
+    assert valid_client.get("/api/v1/dashboard/summary").status_code == 200
+    with Session(env["engine"]) as db:
+        assert db.get(AuthThrottle, "admin").failures == 0
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.event_type == "login_success")
+            )
+            == 1
+        )
+
+
+def test_recovery_login_restricts_business_and_rebind_invalidates_all_old_codes(env):
+    first = env["client"]()
+    old_secret, initial = enroll(env, first)
+    old_codes = initial["recovery_codes"]
+
+    recovery_client = env["client"]()
+    res = login(env, recovery_client, recovery_code=old_codes[0])
+    assert res.status_code == 200
+    pending = res.json()
+    assert pending["state"] == "mfa_pending"
+
+    # 恢复码登录后处于 mfa_pending，所有业务与运维端点均被拒。
+    for path in ("/api/v1/accounts", "/api/v1/settings", "/api/v1/auth/sessions"):
+        blocked = recovery_client.get(path)
+        assert blocked.status_code == 403 and blocked.json()["error"]["code"] == "MFA_REQUIRED"
+
+    # 重新绑定 TOTP 后生成 10 个全新恢复码，旧恢复码（含未使用的）全部失效。
+    advance(env)
+    setup = post(recovery_client, "totp/setup", pending).json()
+    confirmed = post(
+        recovery_client,
+        "totp/confirm",
+        pending,
+        {"code": pyotp.TOTP(setup["secret"]).at(env["clock"][0])},
+    )
+    assert confirmed.status_code == 200
+    new_codes = confirmed.json()["recovery_codes"]
+    assert len(new_codes) == 10 and set(new_codes).isdisjoint(old_codes)
+    assert recovery_client.get("/api/v1/accounts").status_code == 200
+
+    # 旧的未使用恢复码与旧 TOTP 均不可登录。
+    advance(env)
+    assert login(env, env["client"](), recovery_code=old_codes[1]).status_code == 401
+    advance(env, 2)
+    assert (
+        login(
+            env, env["client"](), totp_code=pyotp.TOTP(old_secret).at(env["clock"][0])
+        ).status_code
+        == 401
+    )
+    advance(env, 32)
+    # 新恢复码可用。
+    assert login(env, env["client"](), recovery_code=new_codes[0]).status_code == 200
+
+
+def test_password_change_revokes_all_sessions_including_mfa_pending_and_blocks_old_password(env):
+    primary = env["client"]()
+    secret, initial = enroll(env, primary)
+    state = initial["session"]
+
+    # 同时存在第二个已认证会话和一个带待绑定密文的 mfa_pending 会话。
+    advance(env)
+    second = env["client"]()
+    assert login(env, second, totp_code=pyotp.TOTP(secret).at(env["clock"][0])).status_code == 200
+
+    with Session(env["engine"]) as db, db.begin():
+        admin = db.scalar(select(AdminUser))
+        pending_session = UserSession(
+            admin_user_id=admin.id,
+            auth_level="mfa_pending",
+            token_hash=b"p" * 32,
+            csrf_token_hash=b"c" * 32,
+            last_seen_at=env["clock"][0],
+            created_at=env["clock"][0],
+            expires_at=env["clock"][0] + timedelta(hours=12),
+            pending_totp_ciphertext=b"x" * 32,
+            pending_totp_nonce=b"n" * 12,
+            pending_totp_key_version=1,
+            pending_totp_expires_at=env["clock"][0] + timedelta(minutes=10),
+        )
+        db.add(pending_session)
+        db.flush()
+        pending_id = pending_session.id
+
+    state = post(primary, "reverify", state, {"password": env["password"]}).json()
+
+    # 新密码不能与当前密码相同，拒绝时不撤销会话。
+    same = post(
+        primary, "password", state, {"password": env["password"], "new_password": env["password"]}
+    )
+    assert same.status_code == 422 and same.json()["error"]["code"] == "WEAK_PASSWORD"
+    assert primary.get("/protected").status_code == 200
+
+    # 当前密码错误时记录失败且不改密、不撤销会话。
+    new_password = random_token()[:20]
+    wrong = post(
+        primary, "password", state, {"password": random_token(), "new_password": new_password}
+    )
+    assert wrong.status_code == 401
+    assert primary.get("/protected").status_code == 200
+    advance(env, 2)
+
+    # 正确改密：清除 Cookie、撤销全部会话并清理 pending_totp。
+    changed = post(
+        primary, "password", state, {"password": env["password"], "new_password": new_password}
+    )
+    assert changed.status_code == 200
+    assert (
+        "Max-Age=0" in changed.headers.get("set-cookie", "")
+        or "expires=" in changed.headers.get("set-cookie", "").lower()
+    )
+    assert primary.get("/protected").status_code == 401
+    assert second.get("/protected").status_code == 401
+    with Session(env["engine"]) as db:
+        rows = db.scalars(select(UserSession)).all()
+        assert len(rows) == 3 and all(r.revoked_at is not None for r in rows)
+        pending_row = db.get(UserSession, pending_id)
+        assert pending_row.pending_totp_ciphertext is None
+        assert pending_row.pending_totp_nonce is None
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(AuditEvent.event_type == "admin_password_changed")
+            )
+            == 1
+        )
+
+    # 旧密码不可再登录，新密码 + TOTP 正常登录。
+    advance(env)
+    assert (
+        login(env, env["client"](), totp_code=pyotp.TOTP(secret).at(env["clock"][0])).status_code
+        == 401
+    )
+    advance(env, 32)
+    fresh = env["client"]()
+    fresh_state = bootstrap(fresh)
+    relogin = post(
+        fresh,
+        "login",
+        fresh_state,
+        {"password": new_password, "totp_code": pyotp.TOTP(secret).at(env["clock"][0])},
+    )
+    assert relogin.status_code == 200 and relogin.json()["state"] == "authenticated"
+
+
+def test_session_idle_renewal_extends_window_and_caps_at_absolute_expiry(env):
+    client = env["client"]()
+    _, result = enroll(env, client)
+    state = result["session"]
+    with Session(env["engine"]) as db:
+        row = db.scalar(select(UserSession))
+        session_id = row.id
+        t0 = row.last_seen_at
+        absolute = row.expires_at
+
+    # 10 分钟后普通读请求不续期；调用 /auth/activity 续期 15 分钟至 T+25m。
+    advance(env, 600)
+    assert client.get("/api/v1/accounts").status_code == 200
+    with Session(env["engine"]) as db:
+        assert db.get(UserSession, session_id).last_seen_at == t0
+
+    renewed = post(client, "activity", state)
+    assert renewed.status_code == 200
+    renewed_body = renewed.json()
+    assert datetime.fromisoformat(renewed_body["idle_expires_at"].replace("Z", "+00:00")) == (
+        t0 + timedelta(minutes=25)
+    )
+    with Session(env["engine"]) as db:
+        assert db.get(UserSession, session_id).last_seen_at == t0 + timedelta(minutes=10)
+
+    # 再过 10 分钟（总计 T+20m > 初始 15m 闲置截止），会话依然有效。
+    advance(env, 600)
+    assert client.get("/api/v1/accounts").status_code == 200
+    assert post(client, "activity", state).status_code == 200
+
+    # 接近绝对到期时间（绝对截止前 5 分钟）调用 activity，idle_expires_at 不得超过 expires_at。
+    while env["clock"][0] + timedelta(minutes=10) < absolute - timedelta(minutes=5):
+        advance(env, 600)
+        assert post(client, "activity", state).status_code == 200
+    env["clock"][0] = absolute - timedelta(minutes=5)
+    capped = post(client, "activity", state)
+    assert capped.status_code == 200
+    assert (
+        datetime.fromisoformat(capped.json()["idle_expires_at"].replace("Z", "+00:00")) == absolute
+    )
+    assert datetime.fromisoformat(capped.json()["expires_at"].replace("Z", "+00:00")) == absolute
+
+    # 到达绝对到期时间立即失效，即便 5 分钟前刚刚活跃过。
+    advance(env, 300)
+    assert client.get("/api/v1/accounts").status_code == 401
+    assert post(client, "activity", state).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "bad_headers",
+    [
+        {"origin": "https://evil.test"},
+        {"origin": "https://testserver"},
+        {"origin": "null"},
+        {"sec-fetch-site": "cross-site"},
+        {"sec-fetch-site": "same-site"},
+    ],
+)
+def test_origin_and_sec_fetch_site_rejected_across_business_and_ops_mutations(env, bad_headers):
+    client = env["client"]()
+    _, result = enroll(env, client)
+    state = post(client, "reverify", result["session"], {"password": env["password"]}).json()
+    valid_csrf = {"X-CSRF-Token": state["csrf_token"], **bad_headers}
+
+    cases = [
+        ("POST", "/api/v1/auth/activity", {}),
+        (
+            "POST",
+            "/api/v1/accounts",
+            {
+                "gmail_email": "origincheck@gmail.com",
+                "password": random_token(),
+                "recovery_email_external": "rec@example.test",
+            },
+        ),
+        ("POST", "/api/v1/tags", {"name": "origin-tag"}),
+        ("POST", "/api/v1/exports/csv", {"scope": "all"}),
+        ("PATCH", "/api/v1/settings/idle", {"idle_minutes": 20}),
+        ("DELETE", "/api/v1/auth/sessions/others", None),
+    ]
+    for method, path, body in cases:
+        res = client.request(method, path, json=body, headers=valid_csrf)
+        assert res.status_code == 403, (method, path, bad_headers)
+        assert res.json()["error"]["code"] == "CSRF_INVALID"
+
+    csv_res = client.post(
+        "/api/v1/imports/csv/preview",
+        content=b"gmail_email,password,recovery_email\na@gmail.com,secret,b@example.test\n",
+        headers={"Content-Type": "text/csv", **valid_csrf},
+    )
+    assert csv_res.status_code == 403 and csv_res.json()["error"]["code"] == "CSRF_INVALID"
+
+    # 匹配 app_base_url 且 same-origin 的合法请求应当放行。
+    ok_headers = {
+        "X-CSRF-Token": state["csrf_token"],
+        "origin": env["settings"].app_base_url,
+        "sec-fetch-site": "same-origin",
+    }
+    assert client.post("/api/v1/auth/activity", json={}, headers=ok_headers).status_code == 200
+    assert client.get("/api/v1/auth/session", headers={"host": "evil.test"}).status_code == 400
+
+
+def test_password_change_requires_mfa_step_up_when_configured(env, monkeypatch):
+    primary = env["client"]()
+    secret, initial = enroll(env, primary)
+    state = initial["session"]
+
+    advance(env)
+    secondary = env["client"]()
+    assert (
+        login(env, secondary, totp_code=pyotp.TOTP(secret).at(env["clock"][0])).status_code == 200
+    )
+
+    # 先以仅密码方式完成普通 reverify（reauthenticated_at 有值，mfa_reauthenticated_at 为空）。
+    pw_reverify = post(primary, "reverify", state, {"password": env["password"]})
+    assert pw_reverify.status_code == 200
+    state = pw_reverify.json()
+    assert state["reauthenticated_until"] is not None
+    assert state["mfa_reauthenticated_until"] is None
+
+    # 开启 step_up_totp_required 后，仅有密码重验不足以改密，且仅密码 reverify 也会被拒。
+    monkeypatch.setattr(env["settings"], "step_up_totp_required", True)
+    new_password = random_token()[:20]
+    denied = post(
+        primary,
+        "password",
+        state,
+        {"password": env["password"], "new_password": new_password},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "REAUTH_REQUIRED"
+    assert primary.get("/protected").status_code == 200
+    assert secondary.get("/protected").status_code == 200
+
+    pw_only_rejected = post(primary, "reverify", state, {"password": env["password"]})
+    assert pw_only_rejected.status_code == 401
+    advance(env)
+
+    # 携带密码 + 新时间步 TOTP 完成 step-up 后，改密成功并撤销全部会话。
+    mfa_reverify = post(
+        primary,
+        "reverify",
+        state,
+        {
+            "password": env["password"],
+            "totp_code": pyotp.TOTP(secret).at(env["clock"][0]),
+        },
+    )
+    assert mfa_reverify.status_code == 200
+    state = mfa_reverify.json()
+    assert state["step_up_totp_required"] is True
+    assert state["mfa_reauthenticated_until"] is not None
+
+    changed = post(
+        primary,
+        "password",
+        state,
+        {"password": env["password"], "new_password": new_password},
+    )
+    assert changed.status_code == 200
+    assert primary.get("/protected").status_code == 401
+    assert secondary.get("/protected").status_code == 401
+    with Session(env["engine"]) as db:
+        rows = db.scalars(select(UserSession)).all()
+        assert len(rows) == 2 and all(r.revoked_at is not None for r in rows)
