@@ -60,7 +60,7 @@ export function CredentialForm({
               required
               maxLength={1024}
               disabled={busy}
-              className="pr-10"
+              className="h-10 rounded-xl pr-10"
               {...register('password')}
             />
             <button
@@ -68,7 +68,7 @@ export function CredentialForm({
               aria-label={showPassword ? '隐藏密码' : '显示密码'}
               disabled={busy}
               onClick={() => setShowPassword((prev) => !prev)}
-              className="absolute top-1/2 right-2.5 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+              className="absolute top-1/2 right-2.5 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-[var(--surface-control-hover)] hover:text-foreground"
             >
               {showPassword ? (
                 <EyeOff className="size-4" aria-hidden="true" />
@@ -92,6 +92,7 @@ export function CredentialForm({
                 required
                 maxLength={128}
                 disabled={busy}
+                className="h-10 rounded-xl"
                 {...register('recovery_code')}
               />
             ) : (
@@ -104,6 +105,8 @@ export function CredentialForm({
                 maxLength={6}
                 required={kind === 'factor'}
                 disabled={busy}
+                placeholder="6 位动态数字验证码"
+                className="h-10 rounded-xl tracking-[0.2em] tabular-nums"
                 {...register('totp_code')}
               />
             )}
@@ -164,7 +167,7 @@ export function CredentialForm({
                 maxLength={1024}
                 required
                 disabled={busy}
-                className="pr-10"
+                className="h-10 rounded-xl pr-10"
                 {...register('new_password')}
               />
               <button
@@ -172,7 +175,7 @@ export function CredentialForm({
                 aria-label={showNewPassword ? '隐藏新密码' : '显示新密码'}
                 disabled={busy}
                 onClick={() => setShowNewPassword((prev) => !prev)}
-                className="absolute top-1/2 right-2.5 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+                className="absolute top-1/2 right-2.5 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-[var(--surface-control-hover)] hover:text-foreground"
               >
                 {showNewPassword ? (
                   <EyeOff className="size-4" aria-hidden="true" />
@@ -187,7 +190,11 @@ export function CredentialForm({
             </FieldDescription>
           </Field>
         )}
-        <Button type="submit" disabled={busy}>
+        <Button
+          type="submit"
+          disabled={busy}
+          className="h-10 w-full rounded-xl font-semibold shadow-[0_8px_20px_rgba(15,98,223,0.24)]"
+        >
           {busy ? '正在验证…' : titles[kind]}
         </Button>
       </FieldGroup>

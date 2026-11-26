@@ -21,7 +21,11 @@ import type {
 import { GlassPanel } from '@/components/macos';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AccountAppPill } from '@/features/accounts/account-app-pill';
-import { AccountAppsEditor } from '@/features/accounts/account-apps-editor';
+import {
+  AccountAppsEditor,
+  type CreateAppHandler,
+  type FetchAppIconHandler,
+} from '@/features/accounts/account-apps-editor';
 import type { AppStatus } from '@/features/accounts/constants';
 import { CredentialForm } from '@/features/auth/credential-form';
 import { cn } from '@/lib/utils';
@@ -138,6 +142,7 @@ export function AccountBasicInfoForm({
   session,
   appsCatalog = [],
   onCreateApp,
+  onFetchAppIcon,
   onQuickToggleAppStatus,
   onSession,
   onFailure,
@@ -161,7 +166,8 @@ export function AccountBasicInfoForm({
   secretEpoch?: number;
   session?: SessionResponse;
   appsCatalog?: RegisteredAppResponse[];
-  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
+  onCreateApp?: CreateAppHandler;
+  onFetchAppIcon?: FetchAppIconHandler;
   onQuickToggleAppStatus?: (
     appId: string,
     nextStatus: AppStatus,
@@ -756,6 +762,7 @@ export function AccountBasicInfoForm({
                   onDraftChange({ ...draft, apps: nextApps })
                 }
                 onCreateApp={onCreateApp}
+                onFetchAppIcon={onFetchAppIcon}
                 disabled={busy || conflict}
               />
             ) : account.apps && account.apps.length > 0 ? (

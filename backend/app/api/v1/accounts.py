@@ -10,6 +10,8 @@ from app.schemas.accounts import (
     AccountPage,
     AccountPatch,
     AccountQuery,
+    AppIconFetchInput,
+    AppIconFetchResponse,
     BatchInput,
     BatchResult,
     BatchStatus,
@@ -155,6 +157,15 @@ def batch_restore(body: BatchInput, service: WriteService):
 
 
 @router.post(
+    "/accounts/batch-permanent-delete",
+    response_model=BatchResult,
+    operation_id="accountsBatchPermanentDelete",
+)
+def batch_permanent_delete(body: BatchInput, service: WriteService):
+    return service.batch_permanent_delete(body)
+
+
+@router.post(
     "/accounts", response_model=AccountDetail, status_code=201, operation_id="accountsCreate"
 )
 def create(body: AccountCreate, service: WriteService):
@@ -176,6 +187,16 @@ def patch(account_id: UUID, body: AccountPatch, service: WriteService):
 )
 def remove(account_id: UUID, body: VersionInput, service: WriteService):
     return service.action(account_id, body.row_version, "delete")
+
+
+@router.delete(
+    "/accounts/{account_id}/permanent",
+    response_model=ActionResponse,
+    operation_id="accountsPermanentDelete",
+)
+def permanent_remove(account_id: UUID, body: VersionInput, service: WriteService):
+    service.permanent_delete(account_id, body.row_version)
+    return ActionResponse()
 
 
 @router.post(
@@ -270,15 +291,24 @@ def apps_usage(service: Service):
 
 
 @router.post(
+    "/apps/fetch-icon",
+    response_model=AppIconFetchResponse,
+    operation_id="appsFetchIcon",
+)
+def app_fetch_icon(body: AppIconFetchInput, service: Service):
+    return service.fetch_app_icon(body.domain)
+
+
+@router.post(
     "/apps", response_model=RegisteredAppResponse, status_code=201, operation_id="appsCreate"
 )
 def app_create(body: RegisteredAppInput, service: WriteService):
-    return service.save_app(body.name)
+    return service.save_app(body)
 
 
 @router.patch("/apps/{app_id}", response_model=RegisteredAppResponse, operation_id="appsPatch")
 def app_patch(app_id: UUID, body: RegisteredAppInput, service: WriteService):
-    return service.save_app(body.name, app_id)
+    return service.save_app(body, app_id)
 
 
 @router.delete("/apps/{app_id}", response_model=ActionResponse, operation_id="appsDelete")

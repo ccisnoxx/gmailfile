@@ -326,6 +326,84 @@ class AccountDetailService:
                 raise
         return BatchResult(updated_ids=[item.id for item in body.accounts])
 
+    def _purge_one(
+        self,
+        row: GmailAccount,
+        version: int,
+        *,
+        operation: str,
+        batch_ids: set[UUID] | None = None,
+    ) -> None:
+        if row.deleted_at is None:
+            raise AccountError(
+                409, "ACCOUNT_NOT_DELETED", "仅回收站中的账号支持永久删除，请先删除至回收站"
+            )
+        if row.row_version != version:
+            raise AccountError(
+                409, "ROW_VERSION_CONFLICT", "账号已被其他页面修改，请刷新最新版本后重试"
+            )
+        account_id = row.id
+        email = row.gmail_email
+        # 若其他账号将该账号设为站内辅助邮箱，转为外部辅助邮箱文本，保全其资料与 recovery_xor 约束。
+        dependents = self.db.scalars(
+            select(GmailAccount)
+            .where(GmailAccount.recovery_account_id == account_id)
+            .order_by(GmailAccount.id.asc())
+        ).all()
+        surviving_dep_ids: list[UUID] = []
+        for dep in dependents:
+            dep.recovery_account_id = None
+            dep.recovery_email_external = email
+            if batch_ids is None or dep.id not in batch_ids:
+                dep.row_version += 1
+                dep.updated_at = self.auth.now
+                surviving_dep_ids.append(dep.id)
+        if dependents:
+            self.db.flush()
+        for dep_id in surviving_dep_ids:
+            self.audit("account_updated", dep_id, operation="recovery-unlinked")
+        self.db.execute(
+            delete(gmail_account_tags).where(gmail_account_tags.c.account_id == account_id)
+        )
+        self.db.execute(delete(GmailAccountApp).where(GmailAccountApp.account_id == account_id))
+        deleted = self.db.execute(
+            delete(GmailAccount).where(
+                GmailAccount.id == account_id,
+                GmailAccount.row_version == version,
+                GmailAccount.deleted_at.is_not(None),
+            )
+        )
+        if deleted.rowcount != 1:
+            raise AccountError(
+                409, "ROW_VERSION_CONFLICT", "账号已被其他页面修改，请刷新最新版本后重试"
+            )
+        self.db.expunge(row)
+        self.audit("account_permanently_deleted", account_id, operation=operation)
+
+    def permanent_delete(self, account_id: UUID, version: int) -> None:
+        row = self.record(account_id)
+        self._purge_one(row, version, operation="permanent-delete")
+
+    def batch_permanent_delete(self, body: BatchInput) -> BatchResult:
+        # 回收站批量永久删除：每条 CAS 与审计共用请求事务，任一冲突/未删除整批回滚。
+        batch_ids = {entry.id for entry in body.accounts}
+        for item in sorted(body.accounts, key=lambda entry: entry.id):
+            try:
+                row = self.record(item.id)
+                self._purge_one(
+                    row,
+                    item.row_version,
+                    operation="batch-permanent-delete",
+                    batch_ids=batch_ids,
+                )
+            except AccountError as exc:
+                exc.details = {
+                    "account_id": str(item.id),
+                    "expected_row_version": str(item.row_version),
+                }
+                raise
+        return BatchResult(updated_ids=[item.id for item in body.accounts])
+
     def reveal(self, account_id: UUID) -> PasswordResponse:
         self.auth.require_recent(self.session, require_mfa=self.auth.settings.step_up_totp_required)
         row = self.record(account_id)

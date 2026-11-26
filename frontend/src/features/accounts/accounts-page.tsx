@@ -16,7 +16,11 @@ import type {
   RegisteredAppResponse,
   SessionResponse,
 } from '@/api/generated';
-import { appsCreate, dashboardSummary } from '@/api/generated';
+import {
+  appsCreate,
+  appsFetchIcon,
+  dashboardSummary,
+} from '@/api/generated';
 import {
   AppWindowShell,
   EmptyState,
@@ -220,9 +224,18 @@ function AccountsPageBody({
   refreshRef.current = listState.refresh;
 
   const handleCreateApp = useCallback(
-    async (name: string): Promise<RegisteredAppResponse | null> => {
+    async (
+      name: string,
+      options?: { domain?: string | null; icon_data?: string | null },
+    ): Promise<RegisteredAppResponse | null> => {
       const { data } = await appsCreate({
-        body: { name },
+        body: {
+          name,
+          ...(options?.domain !== undefined ? { domain: options.domain } : {}),
+          ...(options?.icon_data !== undefined
+            ? { icon_data: options.icon_data }
+            : {}),
+        },
         headers: detailState.headers,
         throwOnError: true,
       });
@@ -233,6 +246,18 @@ function AccountsPageBody({
       return data;
     },
     [detailState.headers, queryClient],
+  );
+
+  const handleFetchAppIcon = useCallback(
+    async (domain: string) => {
+      const { data } = await appsFetchIcon({
+        body: { domain },
+        headers: detailState.headers,
+        throwOnError: true,
+      });
+      return data;
+    },
+    [detailState.headers],
   );
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -651,7 +676,7 @@ function AccountsPageBody({
                 : isChartView
                   ? '实时查看账号注册趋势、状态分布、二步验证覆盖与辅助邮箱占用'
                   : queryState.deleted
-                    ? '邮箱唯一性和关联仍然保留，支持单条或批量恢复。'
+                    ? '软删除账号保留在此处，支持单条或批量恢复，也可执行不可逆永久删除。'
                     : '集中管理 Gmail 账号资料、凭据、辅助邮箱与使用状态'}
           </p>
         </div>
@@ -828,7 +853,11 @@ function AccountsPageBody({
           complete={async (kind) => {
             await listState.refresh();
             detailState.setNotice(
-              kind === 'restore' ? '整批账号已恢复。' : '整批操作已提交。',
+              kind === 'permanent-delete'
+                ? '整批账号已永久删除。'
+                : kind === 'restore'
+                  ? '整批账号已恢复。'
+                  : '整批操作已提交。',
             );
           }}
           onFailure={handleBatchFailure}
@@ -960,6 +989,7 @@ function AccountsPageBody({
             tags={listState.tags.data ?? []}
             appsCatalog={listState.apps.data ?? []}
             onCreateApp={handleCreateApp}
+            onFetchAppIcon={handleFetchAppIcon}
             busy={detailState.busy}
             conflict={detailState.conflict}
             notice={detailState.notice}

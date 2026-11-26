@@ -35,6 +35,14 @@ export type AccountAppItem = {
    */
   app_name: string;
   /**
+   * App Domain
+   */
+  app_domain?: string | null;
+  /**
+   * App Icon Data
+   */
+  app_icon_data?: string | null;
+  /**
    * Status
    */
   status: 'active' | 'restricted' | 'banned';
@@ -541,6 +549,30 @@ export type ActionResponse = {
    * Status
    */
   status?: 'ok';
+};
+
+/**
+ * AppIconFetchInput
+ */
+export type AppIconFetchInput = {
+  /**
+   * Domain
+   */
+  domain: string;
+};
+
+/**
+ * AppIconFetchResponse
+ */
+export type AppIconFetchResponse = {
+  /**
+   * Domain
+   */
+  domain: string;
+  /**
+   * Icon Data
+   */
+  icon_data: string;
 };
 
 /**
@@ -1224,6 +1256,14 @@ export type RegisteredAppInput = {
    * Name
    */
   name: string;
+  /**
+   * Domain
+   */
+  domain?: string | null;
+  /**
+   * Icon Data
+   */
+  icon_data?: string | null;
 };
 
 /**
@@ -1238,6 +1278,14 @@ export type RegisteredAppResponse = {
    * Name
    */
   name: string;
+  /**
+   * Domain
+   */
+  domain?: string | null;
+  /**
+   * Icon Data
+   */
+  icon_data?: string | null;
   /**
    * Sort Order
    */
@@ -1260,6 +1308,14 @@ export type RegisteredAppUsage = {
    * Name
    */
   name: string;
+  /**
+   * Domain
+   */
+  domain?: string | null;
+  /**
+   * Icon Data
+   */
+  icon_data?: string | null;
   /**
    * Sort Order
    */
@@ -4074,6 +4130,53 @@ export type AccountsBatchRestoreResponses = {
 export type AccountsBatchRestoreResponse =
   AccountsBatchRestoreResponses[keyof AccountsBatchRestoreResponses];
 
+export type AccountsBatchPermanentDeleteData = {
+  body: BatchInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/accounts/batch-permanent-delete';
+};
+
+export type AccountsBatchPermanentDeleteErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsBatchPermanentDeleteError =
+  AccountsBatchPermanentDeleteErrors[keyof AccountsBatchPermanentDeleteErrors];
+
+export type AccountsBatchPermanentDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  200: BatchResult;
+};
+
+export type AccountsBatchPermanentDeleteResponse =
+  AccountsBatchPermanentDeleteResponses[keyof AccountsBatchPermanentDeleteResponses];
+
 export type AccountsDeleteData = {
   body: VersionInput;
   path: {
@@ -4228,6 +4331,58 @@ export type AccountsPatchResponses = {
 
 export type AccountsPatchResponse =
   AccountsPatchResponses[keyof AccountsPatchResponses];
+
+export type AccountsPermanentDeleteData = {
+  body: VersionInput;
+  path: {
+    /**
+     * Account Id
+     */
+    account_id: string;
+  };
+  query?: never;
+  url: '/api/v1/accounts/{account_id}/permanent';
+};
+
+export type AccountsPermanentDeleteErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsPermanentDeleteError =
+  AccountsPermanentDeleteErrors[keyof AccountsPermanentDeleteErrors];
+
+export type AccountsPermanentDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  200: ActionResponse;
+};
+
+export type AccountsPermanentDeleteResponse =
+  AccountsPermanentDeleteResponses[keyof AccountsPermanentDeleteResponses];
 
 export type AccountsArchiveData = {
   body: VersionInput;
@@ -4923,6 +5078,52 @@ export type AppsUsageResponses = {
 };
 
 export type AppsUsageResponse = AppsUsageResponses[keyof AppsUsageResponses];
+
+export type AppsFetchIconData = {
+  body: AppIconFetchInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/apps/fetch-icon';
+};
+
+export type AppsFetchIconErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AppsFetchIconError = AppsFetchIconErrors[keyof AppsFetchIconErrors];
+
+export type AppsFetchIconResponses = {
+  /**
+   * Successful Response
+   */
+  200: AppIconFetchResponse;
+};
+
+export type AppsFetchIconResponse =
+  AppsFetchIconResponses[keyof AppsFetchIconResponses];
 
 export type AppsDeleteData = {
   body?: never;

@@ -49,13 +49,15 @@ export function AccountActionDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {detail?.gmail_email}。
-            {activeAction === 'delete'
-              ? '仅软删除，不释放邮箱唯一性，之后可在回收站中恢复。'
-              : activeAction === 'restore'
-                ? '恢复后账号将重新回到正常列表并保留原有资料。'
-                : activeAction === 'unarchive'
-                  ? '取消归档后账号将恢复为正常状态，并保留原有资料与标签。'
-                  : '归档后保留资料，后续可随时执行取消归档。'}
+            {activeAction === 'permanent-delete'
+              ? '此操作不可逆：将彻底清除该账号密码、敏感备注、标签与应用关联且无法恢复；若其他账号将其设为站内辅助邮箱，将自动转为外部辅助邮箱文本保留，并释放该邮箱地址占用。'
+              : activeAction === 'delete'
+                ? '仅软删除，不释放邮箱唯一性，之后可在回收站中恢复。'
+                : activeAction === 'restore'
+                  ? '恢复后账号将重新回到正常列表并保留原有资料。'
+                  : activeAction === 'unarchive'
+                    ? '取消归档后账号将恢复为正常状态，并保留原有资料与标签。'
+                    : '归档后保留资料，后续可随时执行取消归档。'}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {notice && (
@@ -66,7 +68,11 @@ export function AccountActionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
           <AlertDialogAction
-            variant={activeAction === 'delete' ? 'destructive' : 'default'}
+            variant={
+              activeAction === 'delete' || activeAction === 'permanent-delete'
+                ? 'destructive'
+                : 'default'
+            }
             disabled={busy || conflict}
             onClick={(e) => {
               e.preventDefault();

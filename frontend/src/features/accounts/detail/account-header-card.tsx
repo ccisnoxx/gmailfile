@@ -29,6 +29,7 @@ export function AccountHeaderCard({
   onUnarchive,
   onDelete,
   onRestore,
+  onPermanentDelete,
   onViewAudit,
   onMarkLoggedIn,
   onMarkVerified,
@@ -45,6 +46,7 @@ export function AccountHeaderCard({
   onUnarchive?: () => void;
   onDelete: () => void;
   onRestore: () => void;
+  onPermanentDelete?: () => void;
   onViewAudit: () => void;
   onMarkLoggedIn?: () => void;
   onMarkVerified?: () => void;
@@ -367,14 +369,24 @@ export function AccountHeaderCard({
                   <span>从回收站恢复</span>
                 </DropdownMenuPrimitive.Item>
                 <DropdownMenuPrimitive.Separator className="my-1 h-px bg-[var(--table-divider)]" />
-                <DropdownMenuPrimitive.Item
-                  disabled={Boolean(account.deleted_at)}
-                  onSelect={onDelete}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] text-[var(--danger-text)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <Trash2 className="size-4" />
-                  <span>删除</span>
-                </DropdownMenuPrimitive.Item>
+                {account.deleted_at && onPermanentDelete ? (
+                  <DropdownMenuPrimitive.Item
+                    onSelect={onPermanentDelete}
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] text-[var(--danger-text)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)]"
+                  >
+                    <Trash2 className="size-4" />
+                    <span>永久删除</span>
+                  </DropdownMenuPrimitive.Item>
+                ) : (
+                  <DropdownMenuPrimitive.Item
+                    disabled={Boolean(account.deleted_at)}
+                    onSelect={onDelete}
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] text-[var(--danger-text)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Trash2 className="size-4" />
+                    <span>删除</span>
+                  </DropdownMenuPrimitive.Item>
+                )}
               </DropdownMenuPrimitive.Content>
             </DropdownMenuPrimitive.Portal>
           </DropdownMenuPrimitive.Root>

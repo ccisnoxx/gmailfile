@@ -14,6 +14,7 @@ import {
   accountsMarkLoggedIn,
   accountsMarkVerified,
   accountsPatch,
+  accountsPermanentDelete,
   accountsRestore,
   accountsUnarchive,
 } from '@/api/generated';
@@ -239,6 +240,19 @@ export function useAccountDetail({
       if (!detail) return;
       const ticket = generation.current;
       await run(async () => {
+        if (action === 'permanent-delete') {
+          await accountsPermanentDelete({
+            path: { account_id: detail.id },
+            body: { row_version: detail.row_version },
+            headers,
+            throwOnError: true,
+          });
+          await onRefresh();
+          if (ticket !== generation.current || document.hidden) return;
+          close();
+          setNotice('账号已永久删除。');
+          return;
+        }
         const fn = {
           archive: accountsArchive,
           unarchive: accountsUnarchive,
@@ -261,7 +275,7 @@ export function useAccountDetail({
         setNotice(`${actionLabels[action]}成功。`);
       });
     },
-    [detail, headers, onRefresh, run],
+    [close, detail, headers, onRefresh, run],
   );
 
   const markVerifiedQuick = useCallback(

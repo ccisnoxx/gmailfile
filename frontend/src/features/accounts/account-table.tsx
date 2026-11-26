@@ -248,13 +248,22 @@ function RowActionsMenu({
             )}
             <DropdownMenuPrimitive.Separator className="my-1 h-px bg-[var(--table-divider)]" />
             {deleted ? (
-              <DropdownMenuPrimitive.Item
-                onSelect={() => onOpen(account, false, 'restore')}
-                className={cn(itemClass, 'text-[var(--accent)]')}
-              >
-                <RotateCcw className="size-3.5" />
-                <span>恢复</span>
-              </DropdownMenuPrimitive.Item>
+              <>
+                <DropdownMenuPrimitive.Item
+                  onSelect={() => onOpen(account, false, 'restore')}
+                  className={cn(itemClass, 'text-[var(--accent)]')}
+                >
+                  <RotateCcw className="size-3.5" />
+                  <span>恢复</span>
+                </DropdownMenuPrimitive.Item>
+                <DropdownMenuPrimitive.Item
+                  onSelect={() => onOpen(account, false, 'permanent-delete')}
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] text-[var(--danger-text)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)]"
+                >
+                  <Trash2 className="size-3.5" />
+                  <span>永久删除</span>
+                </DropdownMenuPrimitive.Item>
+              </>
             ) : (
               <>
                 {account.status === 'archived' ? (

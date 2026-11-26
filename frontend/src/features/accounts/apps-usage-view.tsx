@@ -5,6 +5,8 @@ import {
   AppWindow,
   Ban,
   CheckCircle2,
+  Globe,
+  Loader2,
   Pencil,
   Plus,
   Search,
@@ -14,12 +16,14 @@ import {
 import {
   appsCreate,
   appsDelete,
+  appsFetchIcon,
   appsPatch,
   appsUsage,
   type ErrorResponse,
   type RegisteredAppUsage,
 } from '@/api/generated';
 import { GlassPanel } from '@/components/macos';
+import { AppBrandIcon, inferDefaultDomain } from './app-brand-icon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,8 +61,14 @@ export function AppsUsageView({
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [newName, setNewName] = useState('');
+  const [newDomain, setNewDomain] = useState('');
+  const [newIconData, setNewIconData] = useState<string | null>(null);
+  const [fetchingNewIcon, setFetchingNewIcon] = useState(false);
   const [editing, setEditing] = useState<RegisteredAppUsage | null>(null);
   const [editName, setEditName] = useState('');
+  const [editDomain, setEditDomain] = useState('');
+  const [editIconData, setEditIconData] = useState<string | null>(null);
+  const [fetchingEditIcon, setFetchingEditIcon] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RegisteredAppUsage | null>(
     null,
   );
@@ -85,6 +95,56 @@ export function AppsUsageView({
     ]);
   };
 
+  const handleFetchNewIcon = async () => {
+    const candidate = newDomain.trim() || inferDefaultDomain(newName) || '';
+    if (!candidate || fetchingNewIcon) return;
+    setFetchingNewIcon(true);
+    setNotice('');
+    try {
+      const { data } = await appsFetchIcon({
+        body: { domain: candidate },
+        headers,
+        throwOnError: true,
+      });
+      setNewDomain(data.domain);
+      setNewIconData(data.icon_data);
+      setNotice(`已从 ${data.domain} 获取到应用图标。`);
+    } catch (error) {
+      const msg = (error as Partial<ErrorResponse>)?.error?.message;
+      setNotice(msg || '获取图标失败，可留空使用默认品牌图标。');
+      onFailure(error);
+    } finally {
+      setFetchingNewIcon(false);
+    }
+  };
+
+  const handleFetchEditIcon = async () => {
+    if (!editing || fetchingEditIcon) return;
+    const candidate = editDomain.trim() || inferDefaultDomain(editName) || '';
+    if (!candidate) {
+      setNotice('请先输入应用官网域名后再获取图标。');
+      return;
+    }
+    setFetchingEditIcon(true);
+    setNotice('');
+    try {
+      const { data } = await appsFetchIcon({
+        body: { domain: candidate },
+        headers,
+        throwOnError: true,
+      });
+      setEditDomain(data.domain);
+      setEditIconData(data.icon_data);
+      setNotice(`已从 ${data.domain} 获取到最新图标，点击保存生效。`);
+    } catch (error) {
+      const msg = (error as Partial<ErrorResponse>)?.error?.message;
+      setNotice(msg || '获取图标失败，请检查域名是否可公开访问。');
+      onFailure(error);
+    } finally {
+      setFetchingEditIcon(false);
+    }
+  };
+
   const handleCreate = async (event: React.FormEvent) => {
     event.preventDefault();
     const cleaned = newName.trim();
@@ -92,12 +152,19 @@ export function AppsUsageView({
     setBusy(true);
     setNotice('');
     try {
+      const cleanedDomain = newDomain.trim() || inferDefaultDomain(cleaned);
       await appsCreate({
-        body: { name: cleaned },
+        body: {
+          name: cleaned,
+          domain: cleanedDomain || null,
+          icon_data: newIconData,
+        },
         headers,
         throwOnError: true,
       });
       setNewName('');
+      setNewDomain('');
+      setNewIconData(null);
       setNotice(`已添加应用「${cleaned}」。`);
       await invalidateApps();
     } catch (error) {
@@ -117,17 +184,23 @@ export function AppsUsageView({
     try {
       await appsPatch({
         path: { app_id: editing.id },
-        body: { name: editName.trim() },
+        body: {
+          name: editName.trim(),
+          domain: editDomain.trim() || null,
+          icon_data: editIconData,
+        },
         headers,
         throwOnError: true,
       });
-      setNotice(`已将应用重命名为「${editName.trim()}」。`);
+      setNotice(`已更新应用「${editName.trim()}」。`);
       setEditing(null);
       setEditName('');
+      setEditDomain('');
+      setEditIconData(null);
       await invalidateApps();
     } catch (error) {
       const msg = (error as Partial<ErrorResponse>)?.error?.message;
-      setNotice(msg || '重命名失败，请重试。');
+      setNotice(msg || '更新应用失败，请重试。');
       onFailure(error);
     } finally {
       setBusy(false);
@@ -207,15 +280,56 @@ export function AppsUsageView({
               className="h-9 w-48 rounded-xl border border-white/80 bg-white/65 pr-3 pl-8 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             />
           </div>
-          <form onSubmit={(e) => void handleCreate(e)} className="flex gap-1.5">
+          <form
+            onSubmit={(e) => void handleCreate(e)}
+            className="flex flex-wrap items-center gap-1.5"
+          >
+            <AppBrandIcon
+              name={newName.trim() || 'App'}
+              domain={newDomain.trim() || inferDefaultDomain(newName)}
+              iconData={newIconData}
+              size="md"
+            />
             <Input
               aria-label="新增应用名称"
               placeholder="输入新应用名…"
               maxLength={64}
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="h-9 w-44 rounded-xl text-[13px]"
+              onChange={(e) => {
+                setNewName(e.target.value);
+                setNewIconData(null);
+              }}
+              className="h-9 w-36 rounded-xl text-[13px]"
             />
+            <Input
+              aria-label="新增应用域名"
+              placeholder="官网域名（可选）"
+              maxLength={255}
+              value={newDomain}
+              onChange={(e) => {
+                setNewDomain(e.target.value);
+                setNewIconData(null);
+              }}
+              className="h-9 w-40 rounded-xl text-[13px]"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                busy ||
+                fetchingNewIcon ||
+                !(newDomain.trim() || inferDefaultDomain(newName))
+              }
+              onClick={() => void handleFetchNewIcon()}
+              className="h-9 rounded-xl"
+            >
+              {fetchingNewIcon ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Globe className="size-3.5" aria-hidden="true" />
+              )}
+              <span>{fetchingNewIcon ? '获取中…' : '获取图标'}</span>
+            </Button>
             <Button
               type="submit"
               disabled={busy || !newName.trim()}
@@ -325,15 +439,60 @@ export function AppsUsageView({
                   {editing?.id === row.id ? (
                     <form
                       onSubmit={(e) => void handleRename(e)}
-                      className="flex items-center gap-1.5"
+                      className="flex flex-wrap items-center gap-1.5"
                     >
+                      <AppBrandIcon
+                        name={editName.trim() || row.name}
+                        domain={editDomain.trim() || inferDefaultDomain(editName)}
+                        iconData={editIconData}
+                        size="md"
+                      />
                       <Input
                         aria-label={`重命名 ${row.name}`}
                         maxLength={64}
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
-                        className="h-8 w-40 text-xs"
+                        className="h-8 w-32 text-xs"
                       />
+                      <Input
+                        aria-label={`编辑域名 ${row.name}`}
+                        placeholder="官网域名"
+                        maxLength={255}
+                        value={editDomain}
+                        onChange={(e) => setEditDomain(e.target.value)}
+                        className="h-8 w-36 text-xs"
+                      />
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={
+                          busy ||
+                          fetchingEditIcon ||
+                          !(editDomain.trim() || inferDefaultDomain(editName))
+                        }
+                        onClick={() => void handleFetchEditIcon()}
+                      >
+                        {fetchingEditIcon ? (
+                          <Loader2
+                            className="size-3 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Globe className="size-3" aria-hidden="true" />
+                        )}
+                        <span>抓取图标</span>
+                      </Button>
+                      {editIconData && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => setEditIconData(null)}
+                        >
+                          恢复默认
+                        </Button>
+                      )}
                       <Button
                         type="submit"
                         size="xs"
@@ -348,13 +507,30 @@ export function AppsUsageView({
                         onClick={() => {
                           setEditing(null);
                           setEditName('');
+                          setEditDomain('');
+                          setEditIconData(null);
                         }}
                       >
                         取消
                       </Button>
                     </form>
                   ) : (
-                    row.name
+                    <div className="flex items-center gap-2.5">
+                      <AppBrandIcon
+                        name={row.name}
+                        domain={row.domain}
+                        iconData={row.icon_data}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold">{row.name}</div>
+                        {row.domain && (
+                          <div className="truncate text-[11px] font-normal text-[var(--text-secondary)]">
+                            {row.domain}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="tabular-nums font-semibold">
@@ -406,11 +582,13 @@ export function AppsUsageView({
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      aria-label={`重命名应用 ${row.name}`}
+                      aria-label={`编辑应用 ${row.name}`}
                       disabled={busy}
                       onClick={() => {
                         setEditing(row);
                         setEditName(row.name);
+                        setEditDomain(row.domain ?? '');
+                        setEditIconData(row.icon_data ?? null);
                       }}
                     >
                       <Pencil className="size-3.5" aria-hidden="true" />

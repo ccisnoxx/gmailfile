@@ -22,13 +22,15 @@ export function TotpSetupCard({
         在验证器中扫描二维码，或手工输入
         Secret。输入验证码确认后才会启用。离开或隐藏页面会清除展示。
       </p>
-      <img
-        src={setup.qr_data_url}
-        width={224}
-        height={224}
-        alt="验证器绑定二维码"
-        className="mx-auto size-56"
-      />
+      <div className="mx-auto rounded-2xl border border-[var(--border)] bg-white p-3 shadow-sm">
+        <img
+          src={setup.qr_data_url}
+          width={224}
+          height={224}
+          alt="验证器绑定二维码"
+          className="size-56"
+        />
+      </div>
       <Field>
         <FieldLabel htmlFor="totp-secret">手工 Secret</FieldLabel>
         <Input

@@ -1,10 +1,33 @@
 import { useState } from 'react';
-import { AlertTriangle, Ban, CheckCircle2, Plus, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Ban,
+  CheckCircle2,
+  Globe,
+  Loader2,
+  Plus,
+  X,
+} from 'lucide-react';
 import type { AccountAppInput, RegisteredAppResponse } from '@/api/generated';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { AppBrandIcon, inferDefaultDomain } from './app-brand-icon';
 import { appStatusLabels, type AppStatus } from './constants';
+
+export type CreateAppOptions = {
+  domain?: string | null;
+  icon_data?: string | null;
+};
+
+export type CreateAppHandler = (
+  name: string,
+  options?: CreateAppOptions,
+) => Promise<RegisteredAppResponse | null>;
+
+export type FetchAppIconHandler = (
+  domain: string,
+) => Promise<{ domain: string; icon_data: string } | null>;
 
 const statusOptions: readonly {
   value: AppStatus;
@@ -40,15 +63,20 @@ export function AccountAppsEditor({
   value,
   onChange,
   onCreateApp,
+  onFetchAppIcon,
   disabled = false,
 }: {
   catalog: RegisteredAppResponse[];
   value: AccountAppInput[];
   onChange: (next: AccountAppInput[]) => void;
-  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
+  onCreateApp?: CreateAppHandler;
+  onFetchAppIcon?: FetchAppIconHandler;
   disabled?: boolean;
 }) {
   const [newName, setNewName] = useState('');
+  const [newDomain, setNewDomain] = useState('');
+  const [fetchedIcon, setFetchedIcon] = useState<string | null>(null);
+  const [fetchingIcon, setFetchingIcon] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
@@ -76,15 +104,40 @@ export function AccountAppsEditor({
     );
   };
 
+  const handleFetchIcon = async () => {
+    if (!onFetchAppIcon || disabled || fetchingIcon) return;
+    const candidate = newDomain.trim() || inferDefaultDomain(newName) || '';
+    if (!candidate) {
+      setCreateError('请先填写应用域名（如 perplexity.ai）再获取图标。');
+      return;
+    }
+    setFetchingIcon(true);
+    setCreateError('');
+    try {
+      const result = await onFetchAppIcon(candidate);
+      if (result) {
+        setNewDomain(result.domain);
+        setFetchedIcon(result.icon_data);
+      }
+    } catch (error) {
+      const msg = (error as { error?: { message?: string } })?.error?.message;
+      setCreateError(msg || '获取图标失败，仍可直接保存并使用默认品牌图标。');
+    } finally {
+      setFetchingIcon(false);
+    }
+  };
+
   const handleQuickCreate = async () => {
     const cleaned = newName.trim();
     if (!cleaned || disabled || creating) return;
-    const existing = catalog.find(
+    const existing = safeCatalog.find(
       (app) => app.name.trim().toLowerCase() === cleaned.toLowerCase(),
     );
     if (existing) {
       addApp(existing.id);
       setNewName('');
+      setNewDomain('');
+      setFetchedIcon(null);
       setCreateError('');
       return;
     }
@@ -92,13 +145,22 @@ export function AccountAppsEditor({
     setCreating(true);
     setCreateError('');
     try {
-      const created = await onCreateApp(cleaned);
+      const cleanedDomain = newDomain.trim();
+      const created =
+        cleanedDomain || fetchedIcon
+          ? await onCreateApp(cleaned, {
+              domain: cleanedDomain || null,
+              icon_data: fetchedIcon,
+            })
+          : await onCreateApp(cleaned);
       if (created) {
         onChange([
           ...value,
           { app_id: created.id, status: 'active', note: null },
         ]);
         setNewName('');
+        setNewDomain('');
+        setFetchedIcon(null);
       }
     } catch (error) {
       const msg = (error as { error?: { message?: string } })?.error?.message;
@@ -107,6 +169,9 @@ export function AccountAppsEditor({
       setCreating(false);
     }
   };
+
+  const suggestedDomain = inferDefaultDomain(newName);
+  const previewDomain = newDomain.trim() || suggestedDomain;
 
   return (
     <div className="space-y-3" data-slot="account-apps-editor">
@@ -130,14 +195,23 @@ export function AccountAppsEditor({
                 )}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span
-                    className={cn(
-                      'text-[13px] font-semibold text-[var(--text-primary)]',
-                      status === 'banned' &&
-                        'text-[var(--badge-red-text)] line-through decoration-current/70',
-                    )}
-                  >
-                    {appName}
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    <AppBrandIcon
+                      name={appName}
+                      domain={appMeta?.domain}
+                      iconData={appMeta?.icon_data}
+                      size="md"
+                      className={cn(status === 'banned' && 'opacity-70 grayscale-[35%]')}
+                    />
+                    <span
+                      className={cn(
+                        'truncate text-[13px] font-semibold text-[var(--text-primary)]',
+                        status === 'banned' &&
+                          'text-[var(--badge-red-text)] line-through decoration-current/70',
+                      )}
+                    >
+                      {appName}
+                    </span>
                   </span>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <div
@@ -219,10 +293,16 @@ export function AccountAppsEditor({
               type="button"
               disabled={disabled}
               onClick={() => addApp(app.id)}
-              className="inline-flex h-7 items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-control)] px-2.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent-text)]"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-control)] px-2.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent-text)]"
             >
-              <Plus className="size-3" aria-hidden="true" />
+              <AppBrandIcon
+                name={app.name}
+                domain={app.domain}
+                iconData={app.icon_data}
+                size="sm"
+              />
               <span>{app.name}</span>
+              <Plus className="size-3 opacity-60" aria-hidden="true" />
             </button>
           ))}
         </div>
@@ -230,8 +310,14 @@ export function AccountAppsEditor({
 
       {/* 快捷新建自定义应用并勾选 */}
       {onCreateApp && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
+        <div className="space-y-2 rounded-xl border border-[var(--border)] bg-[var(--surface-control)]/70 p-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <AppBrandIcon
+              name={newName.trim() || 'App'}
+              domain={previewDomain}
+              iconData={fetchedIcon}
+              size="md"
+            />
             <Input
               type="text"
               disabled={disabled || creating}
@@ -241,6 +327,7 @@ export function AccountAppsEditor({
               value={newName}
               onChange={(e) => {
                 setNewName(e.target.value);
+                setFetchedIcon(null);
                 if (createError) setCreateError('');
               }}
               onKeyDown={(e) => {
@@ -249,7 +336,7 @@ export function AccountAppsEditor({
                   void handleQuickCreate();
                 }
               }}
-              className="h-8 flex-1 text-xs"
+              className="h-8 min-w-[160px] flex-1 text-xs"
             />
             <Button
               type="button"
@@ -262,6 +349,57 @@ export function AccountAppsEditor({
               {creating ? '添加中…' : '新增并选择'}
             </Button>
           </div>
+          {onFetchAppIcon && (
+            <div className="flex flex-wrap items-center gap-2 pl-7">
+              <Input
+                type="text"
+                disabled={disabled || creating || fetchingIcon}
+                maxLength={255}
+                aria-label="应用官网域名"
+                placeholder={
+                  suggestedDomain
+                    ? `可选域名（默认匹配 ${suggestedDomain}）`
+                    : '可选：官网域名（如 perplexity.ai）用于抓取 Logo'
+                }
+                value={newDomain}
+                onChange={(e) => {
+                  setNewDomain(e.target.value);
+                  setFetchedIcon(null);
+                  if (createError) setCreateError('');
+                }}
+                className="h-7 min-w-[160px] flex-1 text-xs"
+              />
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                disabled={
+                  disabled ||
+                  creating ||
+                  fetchingIcon ||
+                  !(newDomain.trim() || suggestedDomain)
+                }
+                onClick={() => void handleFetchIcon()}
+                className="h-7 shrink-0 text-[11.5px]"
+              >
+                {fetchingIcon ? (
+                  <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Globe className="size-3" aria-hidden="true" />
+                )}
+                <span>{fetchingIcon ? '获取中…' : '获取图标'}</span>
+              </Button>
+              {fetchedIcon && (
+                <button
+                  type="button"
+                  onClick={() => setFetchedIcon(null)}
+                  className="text-[11px] text-[var(--text-secondary)] underline hover:text-[var(--text-primary)]"
+                >
+                  重置默认
+                </button>
+              )}
+            </div>
+          )}
           {createError && (
             <p role="alert" className="text-xs text-[var(--danger-text)]">
               {createError}

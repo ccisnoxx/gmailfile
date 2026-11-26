@@ -5,7 +5,17 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 
 from app.models import GmailAccount, GmailAccountApp, RegisteredApp, UserSession
-from app.schemas.accounts import RegisteredAppResponse, RegisteredAppUsage
+from app.schemas.accounts import (
+    AppIconFetchResponse,
+    RegisteredAppInput,
+    RegisteredAppResponse,
+    RegisteredAppUsage,
+)
+from app.services.accounts.app_icon import (
+    fetch_domain_icon,
+    normalize_domain,
+    validate_icon_data,
+)
 from app.services.accounts.errors import AccountError, flush_unique
 from app.services.auth import AuthService
 
@@ -21,6 +31,8 @@ class AppService:
         return RegisteredAppResponse(
             id=row.id,
             name=row.name,
+            domain=row.domain,
+            icon_data=row.icon_data,
             sort_order=row.sort_order,
             created_at=row.created_at,
         )
@@ -64,6 +76,8 @@ class AppService:
             RegisteredAppUsage(
                 id=app.id,
                 name=app.name,
+                domain=app.domain,
+                icon_data=app.icon_data,
                 sort_order=app.sort_order,
                 total_count=int(total_count),
                 active_count=int(active_count),
@@ -74,17 +88,27 @@ class AppService:
             for app, total_count, active_count, restricted_count, banned_count in rows
         ]
 
-    def save_app(self, name: str, app_id: UUID | None = None) -> RegisteredAppResponse:
-        cleaned = name.strip()
+    def save_app(
+        self, body: RegisteredAppInput, app_id: UUID | None = None
+    ) -> RegisteredAppResponse:
+        cleaned = body.name.strip()
         row = self.db.get(RegisteredApp, app_id) if app_id else RegisteredApp()
         if row is None:
             raise AccountError(404, "APP_NOT_FOUND", "应用不存在")
         row.name = cleaned
         row.name_normalized = cleaned.lower()
+        if app_id is None or "domain" in body.model_fields_set:
+            row.domain = normalize_domain(body.domain)
+        if app_id is None or "icon_data" in body.model_fields_set:
+            row.icon_data = validate_icon_data(body.icon_data)
         self.db.add(row)
         flush_unique(self.db, app=True)
         self.auth.audit("app_updated" if app_id else "app_created", self.session)
         return self.app_response(row)
+
+    def fetch_icon(self, raw_domain: str) -> AppIconFetchResponse:
+        domain, icon_data = fetch_domain_icon(raw_domain)
+        return AppIconFetchResponse(domain=domain, icon_data=icon_data)
 
     def delete_app(self, app_id: UUID) -> None:
         row = self.db.get(RegisteredApp, app_id)

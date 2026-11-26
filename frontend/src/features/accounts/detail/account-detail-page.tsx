@@ -20,9 +20,11 @@ import {
   accountsMarkLoggedIn,
   accountsMarkVerified,
   accountsPatch,
+  accountsPermanentDelete,
   accountsRestore,
   accountsUnarchive,
   appsCreate,
+  appsFetchIcon,
   appsList,
   auditsList,
   backupStatus,
@@ -111,6 +113,7 @@ const auditEventLabels: Record<string, string> = {
   account_unarchived: '取消归档账号',
   account_deleted: '删除账号',
   account_restored: '恢复账号',
+  account_permanently_deleted: '永久删除账号',
   account_batch_status: '批量修改状态',
   account_batch_tags: '批量管理标签',
   password_revealed: '查看凭据（密码）',
@@ -125,6 +128,9 @@ const auditOperationLabels: Record<string, string> = {
   'reveal-password': '查看凭据（密码）',
   'copy-password-event': '复制凭据（密码）',
   unarchive: '取消归档账号',
+  'permanent-delete': '永久删除账号',
+  'batch-permanent-delete': '批量永久删除账号',
+  'recovery-unlinked': '辅助邮箱转为外部记录',
 };
 
 function mapAuditToTimeline(items: AuditItem[]): ActivityTimelineItem[] {
@@ -734,6 +740,35 @@ function AccountDetailLiveBody({
       setBusy(true);
       setConflict(false);
       try {
+        if (action === 'permanent-delete') {
+          const deletedId = account.id;
+          await accountsPermanentDelete({
+            path: { account_id: deletedId },
+            body: { row_version: account.row_version },
+            headers,
+            throwOnError: true,
+          });
+          setConfirmAction(null);
+          setIsEditing(false);
+          setSecretEpoch((n) => n + 1);
+          queryClient.removeQueries({
+            queryKey: ['account-detail', deletedId],
+          });
+          showToast('账号已永久删除');
+          await Promise.all([
+            queryClient.invalidateQueries({
+              queryKey: ['detail-accounts-list'],
+            }),
+            queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+            queryClient.invalidateQueries({ queryKey: ['summary'] }),
+          ]);
+          if (onNavigateList) {
+            onNavigateList();
+          } else {
+            setSelectedId('');
+          }
+          return;
+        }
         const fn = {
           archive: accountsArchive,
           unarchive: accountsUnarchive,
@@ -799,6 +834,7 @@ function AccountDetailLiveBody({
       busy,
       headers,
       onFailure,
+      onNavigateList,
       prependLocalTimeline,
       queryClient,
       showToast,
@@ -899,9 +935,18 @@ function AccountDetailLiveBody({
   );
 
   const handleCreateApp = useCallback(
-    async (name: string): Promise<RegisteredAppResponse | null> => {
+    async (
+      name: string,
+      options?: { domain?: string | null; icon_data?: string | null },
+    ): Promise<RegisteredAppResponse | null> => {
       const { data } = await appsCreate({
-        body: { name },
+        body: {
+          name,
+          ...(options?.domain !== undefined ? { domain: options.domain } : {}),
+          ...(options?.icon_data !== undefined
+            ? { icon_data: options.icon_data }
+            : {}),
+        },
         headers,
         throwOnError: true,
       });
@@ -912,6 +957,18 @@ function AccountDetailLiveBody({
       return data;
     },
     [headers, queryClient],
+  );
+
+  const handleFetchAppIcon = useCallback(
+    async (domain: string) => {
+      const { data } = await appsFetchIcon({
+        body: { domain },
+        headers,
+        throwOnError: true,
+      });
+      return data;
+    },
+    [headers],
   );
 
   const handleQuickToggleAppStatus = useCallback(
@@ -1233,6 +1290,7 @@ function AccountDetailLiveBody({
                 onUnarchive={() => setConfirmAction('unarchive')}
                 onDelete={() => setConfirmAction('delete')}
                 onRestore={() => setConfirmAction('restore')}
+                onPermanentDelete={() => setConfirmAction('permanent-delete')}
                 onViewAudit={() => setActiveTab('audit')}
                 onMarkLoggedIn={() => void handleLifecycleAction('logged-in')}
                 onMarkVerified={() => void handleLifecycleAction('verified')}
@@ -1261,6 +1319,7 @@ function AccountDetailLiveBody({
                       session={session}
                       appsCatalog={appsQuery.data ?? []}
                       onCreateApp={handleCreateApp}
+                      onFetchAppIcon={handleFetchAppIcon}
                       onQuickToggleAppStatus={handleQuickToggleAppStatus}
                       onSession={onSession}
                       onFailure={onFailure}
@@ -1413,6 +1472,7 @@ function AccountDetailLiveBody({
             tags={tagsQuery.data ?? []}
             appsCatalog={appsQuery.data ?? []}
             onCreateApp={handleCreateApp}
+            onFetchAppIcon={handleFetchAppIcon}
             busy={busy}
             conflict={false}
             onFailure={onFailure}

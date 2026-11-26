@@ -160,11 +160,24 @@ class TagResponse(BaseModel):
 
 class RegisteredAppInput(Input):
     name: str = Field(min_length=1, max_length=64, pattern=r"\S")
+    domain: str | None = Field(default=None, max_length=255)
+    icon_data: str | None = Field(default=None, max_length=98304)
+
+
+class AppIconFetchInput(Input):
+    domain: str = Field(min_length=3, max_length=255, pattern=r"\S")
+
+
+class AppIconFetchResponse(BaseModel):
+    domain: str
+    icon_data: str
 
 
 class RegisteredAppResponse(BaseModel):
     id: UUID
     name: str
+    domain: str | None = None
+    icon_data: str | None = None
     sort_order: int
     created_at: Timestamp
 
@@ -172,6 +185,8 @@ class RegisteredAppResponse(BaseModel):
 class RegisteredAppUsage(BaseModel):
     id: UUID
     name: str
+    domain: str | None = None
+    icon_data: str | None = None
     sort_order: int
     total_count: int
     active_count: int
@@ -183,6 +198,8 @@ class RegisteredAppUsage(BaseModel):
 class AccountAppItem(BaseModel):
     app_id: UUID
     app_name: str
+    app_domain: str | None = None
+    app_icon_data: str | None = None
     status: AppStatus
     note: str | None
     banned_at: Timestamp | None

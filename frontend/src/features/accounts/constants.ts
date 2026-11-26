@@ -4,13 +4,20 @@ import { localDate } from '@/lib/format';
 export { localDate };
 
 export type AccountAction =
-  'archive' | 'unarchive' | 'delete' | 'restore' | 'verified' | 'logged-in';
+  | 'archive'
+  | 'unarchive'
+  | 'delete'
+  | 'restore'
+  | 'permanent-delete'
+  | 'verified'
+  | 'logged-in';
 
 export const actionLabels: Record<AccountAction, string> = {
   archive: '归档',
   unarchive: '取消归档',
   delete: '删除',
   restore: '恢复',
+  'permanent-delete': '永久删除',
   verified: '今天已验证',
   'logged-in': '今天已登录',
 };

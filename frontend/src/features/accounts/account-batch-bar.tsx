@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Trash2 } from 'lucide-react';
 import {
+  accountsBatchPermanentDelete,
   accountsBatchRestore,
   accountsBatchStatus,
   accountsBatchTags,
@@ -37,14 +38,16 @@ export function BatchBar({
   tags: TagResponse[];
   session: SessionResponse;
   deleted?: boolean;
-  complete: (kind?: 'status' | 'tags' | 'restore') => Promise<void>;
+  complete: (
+    kind?: 'status' | 'tags' | 'restore' | 'permanent-delete',
+  ) => Promise<void>;
   onFailure: (e: unknown) => void;
 }) {
   const returnFocus = useRef<HTMLElement | null>(null);
   const [status, setStatus] = useState<AccountSummary['status']>('normal');
   const [tag, setTag] = useState('');
   const [confirmation, setConfirmation] = useState<
-    'status' | 'tags' | 'restore' | null
+    'status' | 'tags' | 'restore' | 'permanent-delete' | null
   >(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -68,6 +71,8 @@ export function BatchBar({
     try {
       if (actionKind === 'restore') {
         await accountsBatchRestore({ ...options, body: base });
+      } else if (actionKind === 'permanent-delete') {
+        await accountsBatchPermanentDelete({ ...options, body: base });
       } else if (actionKind === 'status') {
         await accountsBatchStatus({ ...options, body: { ...base, status } });
       } else {
@@ -112,22 +117,35 @@ export function BatchBar({
 
   return (
     <section
-      aria-label={deleted ? '回收站批量恢复' : '批量操作'}
+      aria-label={deleted ? '回收站批量操作' : '批量操作'}
       className="macos-glass-panel flex min-w-0 flex-1 flex-wrap items-center gap-3 px-4 py-2.5"
     >
       <p className="text-sm">已选当前页 {selected.length} 条（不跨页）</p>
       {deleted ? (
-        <Button
-          variant="default"
-          disabled={!selected.length || busy || failed}
-          onClick={() => {
-            returnFocus.current = document.activeElement as HTMLElement;
-            setConfirmation('restore');
-          }}
-        >
-          <RotateCcw className="size-4" aria-hidden="true" />
-          批量恢复所选账号
-        </Button>
+        <>
+          <Button
+            variant="default"
+            disabled={!selected.length || busy || failed}
+            onClick={() => {
+              returnFocus.current = document.activeElement as HTMLElement;
+              setConfirmation('restore');
+            }}
+          >
+            <RotateCcw className="size-4" aria-hidden="true" />
+            批量恢复所选账号
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!selected.length || busy || failed}
+            onClick={() => {
+              returnFocus.current = document.activeElement as HTMLElement;
+              setConfirmation('permanent-delete');
+            }}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            批量永久删除
+          </Button>
+        </>
       ) : (
         <>
           <NativeSelect
@@ -192,15 +210,21 @@ export function BatchBar({
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmation === 'restore' ? '确认批量恢复账号' : '确认批量操作'}
+              {confirmation === 'permanent-delete'
+                ? '确认批量永久删除账号？'
+                : confirmation === 'restore'
+                  ? '确认批量恢复账号'
+                  : '确认批量操作'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               对当前页选中的 {selected.length} 条
-              {confirmation === 'restore'
-                ? '已删除账号执行原子恢复（保留原状态、归档标记与标签）'
-                : confirmation === 'status'
-                  ? `修改为“${statusLabels[status]}”`
-                  : `追加标签“${selectedTag?.name ?? ''}”（保留原标签）`}
+              {confirmation === 'permanent-delete'
+                ? '已删除账号执行不可逆永久删除（彻底清除密码、备注、标签与应用关联，释放邮箱占用；若被其他账号用作站内辅助邮箱将自动转为外部文本保留）'
+                : confirmation === 'restore'
+                  ? '已删除账号执行原子恢复（保留原状态、归档标记与标签）'
+                  : confirmation === 'status'
+                    ? `修改为“${statusLabels[status]}”`
+                    : `追加标签“${selectedTag?.name ?? ''}”（保留原标签）`}
               。整批成功或整批回滚，不包含其他页面的账号。
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -212,13 +236,20 @@ export function BatchBar({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>取消批量操作</AlertDialogCancel>
             <AlertDialogAction
+              variant={
+                confirmation === 'permanent-delete' ? 'destructive' : 'default'
+              }
               disabled={busy || failed}
               onClick={(e) => {
                 e.preventDefault();
                 void submit();
               }}
             >
-              {confirmation === 'restore' ? '确认整批恢复' : '确认整批提交'}
+              {confirmation === 'permanent-delete'
+                ? '确认整批永久删除'
+                : confirmation === 'restore'
+                  ? '确认整批恢复'
+                  : '确认整批提交'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

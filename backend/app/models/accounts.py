@@ -100,7 +100,7 @@ class Tag(IdentityMixin, CreatedMixin, Base):
 gmail_account_tags = Table(
     "gmail_account_tags",
     Base.metadata,
-    Column("account_id", ForeignKey("gmail_accounts.id"), primary_key=True),
+    Column("account_id", ForeignKey("gmail_accounts.id", ondelete="CASCADE"), primary_key=True),
     Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
 )
 
@@ -111,10 +111,21 @@ class RegisteredApp(IdentityMixin, CreatedMixin, Base):
         UniqueConstraint("name_normalized"),
         CheckConstraint("btrim(name) <> ''", name="name_nonempty"),
         CheckConstraint("name_normalized = lower(btrim(name))", name="name_normalized"),
+        CheckConstraint("domain IS NULL OR btrim(domain) <> ''", name="domain_nonempty"),
+        CheckConstraint(
+            "icon_data IS NULL OR ("
+            "octet_length(icon_data) <= 98304 "
+            "AND icon_data ~ '^data:image/(png|jpeg|webp|gif|x-icon|"
+            "vnd\\.microsoft\\.icon);base64,[A-Za-z0-9+/=]+$'"
+            ")",
+            name="icon_data_format",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(64))
     name_normalized: Mapped[str] = mapped_column(String(64))
+    domain: Mapped[str | None] = mapped_column(String(255))
+    icon_data: Mapped[str | None] = mapped_column(Text)
     sort_order: Mapped[int] = mapped_column(SmallInteger, server_default=text("100"))
 
 

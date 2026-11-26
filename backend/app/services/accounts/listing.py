@@ -50,11 +50,13 @@ class AccountQueryService:
         if account_ids:
             for owner, tag in self.repo.tags(account_ids):
                 tags.setdefault(owner, []).append(TagService.tag_response(tag))
-            for link, app_name in self.repo.apps(account_ids):
+            for link, app_name, app_domain, app_icon_data in self.repo.apps(account_ids):
                 apps.setdefault(link.account_id, []).append(
                     AccountAppItem(
                         app_id=link.app_id,
                         app_name=app_name,
+                        app_domain=app_domain,
+                        app_icon_data=app_icon_data,
                         status=link.status,
                         note=link.note,
                         banned_at=link.banned_at,

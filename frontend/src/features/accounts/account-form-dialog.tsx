@@ -13,6 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import type {
+  CreateAppHandler,
+  FetchAppIconHandler,
+} from './account-apps-editor';
 import { AccountForm } from './account-form';
 
 export function AccountFormDialog({
@@ -21,6 +25,7 @@ export function AccountFormDialog({
   tags,
   appsCatalog = [],
   onCreateApp,
+  onFetchAppIcon,
   busy,
   conflict,
   notice,
@@ -34,7 +39,8 @@ export function AccountFormDialog({
   detail: AccountDetail | null;
   tags: TagResponse[];
   appsCatalog?: RegisteredAppResponse[];
-  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
+  onCreateApp?: CreateAppHandler;
+  onFetchAppIcon?: FetchAppIconHandler;
   busy: boolean;
   conflict: boolean;
   notice: string;
@@ -81,6 +87,7 @@ export function AccountFormDialog({
             tags={tags}
             appsCatalog={appsCatalog}
             onCreateApp={onCreateApp}
+            onFetchAppIcon={onFetchAppIcon}
             busy={busy}
             conflict={conflict}
             onSubmit={onSubmit}

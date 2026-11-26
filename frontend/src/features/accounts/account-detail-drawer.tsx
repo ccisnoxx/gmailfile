@@ -1,4 +1,4 @@
-import { Archive, RotateCcw } from 'lucide-react';
+import { Archive, RotateCcw, Trash2 } from 'lucide-react';
 import type { AccountDetail, SessionResponse } from '@/api/generated';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -169,12 +169,23 @@ export function AccountDetailDrawer({
               )}
               <div className="flex flex-wrap gap-2 border-t pt-5">
                 {detail.deleted_at ? (
-                  <Button
-                    disabled={busy || conflict}
-                    onClick={() => onAction('restore')}
-                  >
-                    恢复账号
-                  </Button>
+                  <>
+                    <Button
+                      disabled={busy || conflict}
+                      onClick={() => onAction('restore')}
+                    >
+                      <RotateCcw data-icon="inline-start" />
+                      恢复账号
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={busy || conflict}
+                      onClick={() => onRequestConfirm('permanent-delete')}
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      永久删除
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <Button

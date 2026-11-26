@@ -12,6 +12,9 @@ import type {
   AccountsArchiveData,
   AccountsArchiveErrors,
   AccountsArchiveResponses,
+  AccountsBatchPermanentDeleteData,
+  AccountsBatchPermanentDeleteErrors,
+  AccountsBatchPermanentDeleteResponses,
   AccountsBatchRestoreData,
   AccountsBatchRestoreErrors,
   AccountsBatchRestoreResponses,
@@ -48,6 +51,9 @@ import type {
   AccountsPatchData,
   AccountsPatchErrors,
   AccountsPatchResponses,
+  AccountsPermanentDeleteData,
+  AccountsPermanentDeleteErrors,
+  AccountsPermanentDeleteResponses,
   AccountsRestoreData,
   AccountsRestoreErrors,
   AccountsRestoreResponses,
@@ -63,6 +69,9 @@ import type {
   AppsDeleteData,
   AppsDeleteErrors,
   AppsDeleteResponses,
+  AppsFetchIconData,
+  AppsFetchIconErrors,
+  AppsFetchIconResponses,
   AppsListData,
   AppsListErrors,
   AppsListResponses,
@@ -1034,6 +1043,31 @@ export const accountsBatchRestore = <ThrowOnError extends boolean = false>(
   });
 
 /**
+ * Batch Permanent Delete
+ */
+export const accountsBatchPermanentDelete = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<AccountsBatchPermanentDeleteData, ThrowOnError>,
+): RequestResult<
+  AccountsBatchPermanentDeleteResponses,
+  AccountsBatchPermanentDeleteErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsBatchPermanentDeleteResponses,
+    AccountsBatchPermanentDeleteErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/batch-permanent-delete',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
  * Remove
  */
 export const accountsDelete = <ThrowOnError extends boolean = false>(
@@ -1076,6 +1110,29 @@ export const accountsPatch = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/accounts/{account_id}',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Permanent Remove
+ */
+export const accountsPermanentDelete = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsPermanentDeleteData, ThrowOnError>,
+): RequestResult<
+  AccountsPermanentDeleteResponses,
+  AccountsPermanentDeleteErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).delete<
+    AccountsPermanentDeleteResponses,
+    AccountsPermanentDeleteErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/{account_id}/permanent',
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -1348,6 +1405,25 @@ export const appsUsage = <ThrowOnError extends boolean = false>(
     AppsUsageErrors,
     ThrowOnError
   >({ url: '/api/v1/apps/usage', ...options });
+
+/**
+ * App Fetch Icon
+ */
+export const appsFetchIcon = <ThrowOnError extends boolean = false>(
+  options: Options<AppsFetchIconData, ThrowOnError>,
+): RequestResult<AppsFetchIconResponses, AppsFetchIconErrors, ThrowOnError> =>
+  (options.client ?? client).post<
+    AppsFetchIconResponses,
+    AppsFetchIconErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/apps/fetch-icon',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
 
 /**
  * App Delete

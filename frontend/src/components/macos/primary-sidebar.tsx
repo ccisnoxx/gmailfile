@@ -419,7 +419,7 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
               </button>
             )}
 
-            {/* 全部账号（可折叠/展开子状态） */}
+            {/* 全部账号（点击主项展开/切换，右侧箭头独立折叠/展开子状态） */}
             <div className="flex flex-col gap-0.5">
               <div
                 className={cn(
@@ -433,29 +433,22 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
               >
                 <button
                   type="button"
-                  aria-label={
-                    accountsExpanded ? '收起账号状态分组' : '展开账号状态分组'
-                  }
-                  aria-expanded={accountsExpanded}
-                  onClick={toggleAccountsExpanded}
-                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
-                >
-                  {accountsExpanded ? (
-                    <ChevronDown className="size-3.5" aria-hidden="true" />
-                  ) : (
-                    <ChevronRight className="size-3.5" aria-hidden="true" />
-                  )}
-                </button>
-                <button
-                  type="button"
                   aria-pressed={isAllAccountsActive}
-                  onClick={() => model.onSelectSection('all')}
+                  onClick={() => {
+                    if (isAllAccountsActive) {
+                      toggleAccountsExpanded();
+                    } else {
+                      setAccountsExpanded(true);
+                      writeBoolPref(ACCOUNTS_EXPANDED_KEY, true);
+                    }
+                    model.onSelectSection('all');
+                  }}
                   className={cn(
-                    'flex h-full min-w-0 flex-1 items-center justify-between pr-2.5 pl-0.5 text-[13px]',
+                    'flex h-full min-w-0 flex-1 items-center justify-between pr-1 pl-2.5 text-[13px]',
                     isAllAccountsActive ? 'font-semibold' : 'font-medium',
                   )}
                 >
-                  <span className="flex min-w-0 items-center gap-2">
+                  <span className="flex min-w-0 items-center gap-2.5">
                     <Mail
                       className={iconClass(isAllAccountsActive)}
                       aria-hidden="true"
@@ -466,6 +459,21 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
                     <span className={countBadgeClass(isAllAccountsActive)}>
                       {model.counts.all}
                     </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-label={
+                    accountsExpanded ? '收起账号状态分组' : '展开账号状态分组'
+                  }
+                  aria-expanded={accountsExpanded}
+                  onClick={toggleAccountsExpanded}
+                  className="mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
+                >
+                  {accountsExpanded ? (
+                    <ChevronDown className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <ChevronRight className="size-3.5" aria-hidden="true" />
                   )}
                 </button>
               </div>

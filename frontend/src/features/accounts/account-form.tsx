@@ -23,7 +23,11 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
-import { AccountAppsEditor } from './account-apps-editor';
+import {
+  AccountAppsEditor,
+  type CreateAppHandler,
+  type FetchAppIconHandler,
+} from './account-apps-editor';
 import { factorLabels, localDate, statusLabels } from './constants';
 import { isMaskedPasswordPlaceholder } from './detail/use-password-secret';
 
@@ -57,6 +61,7 @@ export function AccountForm({
   tags,
   appsCatalog = [],
   onCreateApp,
+  onFetchAppIcon,
   busy,
   conflict,
   onSubmit,
@@ -66,7 +71,8 @@ export function AccountForm({
   onFailure: (error: unknown) => void;
   tags: TagResponse[];
   appsCatalog?: RegisteredAppResponse[];
-  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
+  onCreateApp?: CreateAppHandler;
+  onFetchAppIcon?: FetchAppIconHandler;
   busy: boolean;
   conflict: boolean;
   onSubmit: (body: AccountCreateWritable) => Promise<void>;
@@ -330,6 +336,7 @@ export function AccountForm({
             value={selectedApps}
             onChange={setSelectedApps}
             onCreateApp={onCreateApp}
+            onFetchAppIcon={onFetchAppIcon}
             disabled={busy || conflict}
           />
         </FieldSet>

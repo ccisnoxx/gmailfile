@@ -11,6 +11,7 @@ from app.schemas.accounts import (
     AccountPatch,
     AccountQuery,
     AccountSummary,
+    AppIconFetchResponse,
     BatchInput,
     BatchResult,
     BatchStatus,
@@ -20,6 +21,7 @@ from app.schemas.accounts import (
     OptionPage,
     PasswordResponse,
     RecoveryPage,
+    RegisteredAppInput,
     RegisteredAppResponse,
     RegisteredAppUsage,
     RegistrationTrendResponse,
@@ -118,6 +120,9 @@ class AccountService:
     def batch_restore(self, body: BatchInput) -> BatchResult:
         return self.details.batch_restore(body)
 
+    def batch_permanent_delete(self, body: BatchInput) -> BatchResult:
+        return self.details.batch_permanent_delete(body)
+
     def status_values(self, row: GmailAccount, status: str) -> dict:
         return self.details.status_values(row, status)
 
@@ -164,6 +169,9 @@ class AccountService:
     def action(self, account_id: UUID, version: int, action: str) -> AccountDetail:
         return self.details.action(account_id, version, action)
 
+    def permanent_delete(self, account_id: UUID, version: int) -> None:
+        self.details.permanent_delete(account_id, version)
+
     def reveal(self, account_id: UUID) -> PasswordResponse:
         return self.details.reveal(account_id)
 
@@ -189,8 +197,13 @@ class AccountService:
     def apps_usage(self) -> list[RegisteredAppUsage]:
         return self.app_service.usage()
 
-    def save_app(self, name: str, app_id: UUID | None = None) -> RegisteredAppResponse:
-        return self.app_service.save_app(name, app_id)
+    def save_app(
+        self, body: RegisteredAppInput, app_id: UUID | None = None
+    ) -> RegisteredAppResponse:
+        return self.app_service.save_app(body, app_id)
+
+    def fetch_app_icon(self, domain: str) -> AppIconFetchResponse:
+        return self.app_service.fetch_icon(domain)
 
     def delete_app(self, app_id: UUID) -> None:
         self.app_service.delete_app(app_id)

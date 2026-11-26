@@ -287,6 +287,7 @@ function AuthWorkspace({
                 variant="outline"
                 disabled={auth.busy}
                 onClick={() => void auth.loginWithPasskey()}
+                className="h-10 w-full rounded-xl font-medium"
               >
                 <KeyRound className="size-4" aria-hidden="true" />
                 使用通行密钥（Passkey）登录

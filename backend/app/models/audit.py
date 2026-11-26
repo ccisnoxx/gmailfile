@@ -35,7 +35,7 @@ class AuditEvent(IdentityMixin, CreatedMixin, Base):
         LargeBinary, nullable=False, server_default=FetchedValue()
     )
     event_type: Mapped[str] = mapped_column(String(64), index=True)
-    account_id: Mapped[UUID | None] = mapped_column(ForeignKey("gmail_accounts.id"), index=True)
+    account_id: Mapped[UUID | None] = mapped_column(index=True)
     session_id: Mapped[UUID | None] = mapped_column(ForeignKey("user_sessions.id"))
     ip_address: Mapped[str | None] = mapped_column(INET)
     user_agent: Mapped[str | None] = mapped_column(Text)

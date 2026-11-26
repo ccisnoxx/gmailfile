@@ -42,7 +42,12 @@ class AccountRepository:
 
     def apps(self, account_ids: list[UUID]):
         return self.db.execute(
-            select(GmailAccountApp, RegisteredApp.name)
+            select(
+                GmailAccountApp,
+                RegisteredApp.name,
+                RegisteredApp.domain,
+                RegisteredApp.icon_data,
+            )
             .join(RegisteredApp, RegisteredApp.id == GmailAccountApp.app_id)
             .where(GmailAccountApp.account_id.in_(account_ids))
             .order_by(RegisteredApp.sort_order.asc(), RegisteredApp.name.asc())
