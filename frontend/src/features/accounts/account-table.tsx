@@ -23,6 +23,7 @@ import {
   TagPill,
 } from '@/components/macos';
 import { cn } from '@/lib/utils';
+import { AccountAppPill } from './account-app-pill';
 import {
   accountColumnLabels,
   localDate,
@@ -441,6 +442,11 @@ export function AccountTable({
               {columns.recovery && (
                 <th className="px-2 2xl:px-2.5 whitespace-nowrap">辅助邮箱</th>
               )}
+              {columns.apps && (
+                <th className="px-2 2xl:px-2.5 whitespace-nowrap">
+                  已注册应用
+                </th>
+              )}
               {columns.purpose && (
                 <th className="px-2 2xl:px-2.5 whitespace-nowrap">用途</th>
               )}
@@ -600,6 +606,38 @@ export function AccountTable({
                           >
                             <Copy className="size-3.5" aria-hidden="true" />
                           </button>
+                        </div>
+                      ) : (
+                        <span className="text-[var(--text-secondary)]">—</span>
+                      )}
+                    </td>
+                  )}
+                  {columns.apps && (
+                    <td className="px-2 2xl:px-2.5 whitespace-nowrap">
+                      {account.apps && account.apps.length > 0 ? (
+                        <div className="flex max-w-[180px] flex-wrap items-center gap-1 2xl:max-w-[230px]">
+                          {[...account.apps]
+                            .sort((a, b) => {
+                              const rank = {
+                                banned: 0,
+                                restricted: 1,
+                                active: 2,
+                              };
+                              return rank[a.status] - rank[b.status];
+                            })
+                            .slice(0, 3)
+                            .map((app) => (
+                              <AccountAppPill
+                                key={app.app_id}
+                                app={app}
+                                compact
+                              />
+                            ))}
+                          {account.apps.length > 3 && (
+                            <span className="text-[11px] text-[var(--text-secondary)]">
+                              +{account.apps.length - 3}
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-[var(--text-secondary)]">—</span>

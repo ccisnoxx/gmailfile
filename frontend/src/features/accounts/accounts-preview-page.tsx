@@ -13,7 +13,6 @@ import {
   GlassToolbar,
   IconTooltip,
   LoadingState,
-  MobilePrimaryNavMenu,
   persistDisplaySettings,
   persistNavAlpha,
   PrimarySidebar,
@@ -194,10 +193,7 @@ function AccountsPreviewBody({
       } else {
         if (isDeleted) return false;
         if (section === 'normal' && account.status !== 'normal') return false;
-        if (
-          section === 'pending' &&
-          account.status !== 'pending_verification'
-        )
+        if (section === 'pending' && account.status !== 'pending_verification')
           return false;
         if (
           section === 'risk' &&
@@ -471,12 +467,6 @@ function AccountsPreviewBody({
       flowingBackground={displaySettings.flowingBackground}
       animationsEnabled={displaySettings.animationsEnabled}
       compactMode={displaySettings.compactMode}
-      mobileDrawerHeader={
-        <MobilePrimaryNavMenu
-          activeNav="accounts"
-          onSelectNav={handleTopNav}
-        />
-      }
       toolbar={
         <GlassToolbar
           activeNav="accounts"
@@ -514,7 +504,13 @@ function AccountsPreviewBody({
             setSelected({});
           }}
           onAddTag={() => setTagModalOpen(true)}
+          onOpenDashboard={() => setViewMode('chart')}
+          onOpenApps={() => setNotice('已注册应用统计入口（预览模式）')}
+          onOpenRecoveryUsage={() => setNotice('辅助邮箱统计入口（预览模式）')}
+          onOpenTransfer={() => handleTopNav('transfer')}
+          onOpenAudit={() => handleTopNav('audit')}
           onOpenBackup={() => setNotice('备份与恢复入口（预览模式）')}
+          onOpenSettings={() => handleTopNav('settings')}
         />
       }
     >

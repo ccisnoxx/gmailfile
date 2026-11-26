@@ -220,8 +220,7 @@ describe('账号管理高保真页面交互与状态展示', () => {
       expect(within(table).getByText(email)).toBeInTheDocument();
     }
 
-    const searchInput =
-      screen.getByPlaceholderText('搜索邮箱、辅助邮箱或备注');
+    const searchInput = screen.getByPlaceholderText('搜索邮箱、辅助邮箱或备注');
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
 
@@ -246,8 +245,11 @@ describe('账号管理高保真页面交互与状态展示', () => {
     );
     await user.click(selectAll);
 
-    // 侧栏筛选风险账号
+    // 侧栏展开「全部账号」后筛选风险账号
     const sidebar = screen.getByLabelText('侧边导航栏');
+    await user.click(
+      within(sidebar).getByRole('button', { name: '展开账号状态分组' }),
+    );
     await user.click(within(sidebar).getByRole('button', { name: /风险账号/ }));
     const table = screen.getByRole('table', { name: '账号列表' });
     expect(

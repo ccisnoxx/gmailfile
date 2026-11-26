@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from app.models import GmailAccount, Tag, gmail_account_tags
 from app.repositories.accounts import AccountRepository
 from app.schemas.accounts import (
+    AccountAppItem,
     AccountOption,
     AccountPage,
     AccountQuery,
@@ -43,15 +44,29 @@ class AccountQueryService:
         return self.serialize(records)
 
     def serialize(self, records) -> list[AccountSummary]:
-        tags = {}
-        for owner, tag in self.repo.tags([row.id for row, _ in records]):
-            tags.setdefault(owner, []).append(TagService.tag_response(tag))
+        account_ids = [row.id for row, _ in records]
+        tags: dict[UUID, list] = {}
+        apps: dict[UUID, list[AccountAppItem]] = {}
+        if account_ids:
+            for owner, tag in self.repo.tags(account_ids):
+                tags.setdefault(owner, []).append(TagService.tag_response(tag))
+            for link, app_name in self.repo.apps(account_ids):
+                apps.setdefault(link.account_id, []).append(
+                    AccountAppItem(
+                        app_id=link.app_id,
+                        app_name=app_name,
+                        status=link.status,
+                        note=link.note,
+                        banned_at=link.banned_at,
+                        updated_at=link.updated_at,
+                    )
+                )
         result = []
         for row, recovery in records:
             fields = {
                 name: getattr(row, name)
                 for name in AccountSummary.model_fields
-                if name not in {"account_no", "recovery_email", "tags"}
+                if name not in {"account_no", "recovery_email", "tags", "apps"}
             }
             result.append(
                 AccountSummary(
@@ -59,6 +74,7 @@ class AccountQueryService:
                     account_no=f"GM-{row.account_no:06d}",
                     recovery_email=row.recovery_email_external or recovery,
                     tags=tags.get(row.id, []),
+                    apps=apps.get(row.id, []),
                 )
             )
         return result

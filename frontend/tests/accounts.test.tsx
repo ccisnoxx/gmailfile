@@ -551,7 +551,7 @@ it('管理标签新增、重命名及删除确认不删除账号', async () => {
   vi.stubGlobal('fetch', mock);
   page();
   await userEvent.click(
-    await screen.findByRole('button', { name: '标签管理' }),
+    await screen.findByRole('button', { name: '新增标签' }),
   );
   await userEvent.click(await screen.findByRole('button', { name: '重命名' }));
   await userEvent.clear(screen.getByLabelText('标签名称'));

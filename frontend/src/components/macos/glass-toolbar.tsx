@@ -26,12 +26,7 @@ import { GmailMark } from './gmail-mark';
 import { IconTooltip } from './icon-tooltip';
 
 export type TopNavKey =
-  | 'dashboard'
-  | 'accounts'
-  | 'tags'
-  | 'transfer'
-  | 'audit'
-  | 'settings';
+  'dashboard' | 'accounts' | 'tags' | 'transfer' | 'audit' | 'settings';
 
 export const GLOBAL_TOP_NAV_ITEMS: readonly {
   key: TopNavKey;
@@ -56,7 +51,8 @@ export function MobilePrimaryNavMenu({
     <nav aria-label="主模块导航" className="flex flex-col gap-1">
       {GLOBAL_TOP_NAV_ITEMS.map(({ key, label, icon: Icon }) => {
         const active =
-          activeNav === key || (key === 'accounts' && activeNav === 'dashboard');
+          activeNav === key ||
+          (key === 'accounts' && activeNav === 'dashboard');
         return (
           <button
             key={key}
@@ -189,6 +185,7 @@ export function GlassToolbar({
   return (
     <header
       data-slot="glass-toolbar"
+      data-active-nav={activeNav}
       className="macos-nav-surface relative z-30 flex min-h-[58px] items-center justify-between gap-2.5 border-b border-[var(--nav-divider)] px-3.5 py-2 shadow-[inset_0_-1px_0_rgba(255,255,255,0.45)] sm:px-5"
     >
       {/* 左侧：移动端菜单按钮 + 统一品牌标志与名称 */}
@@ -215,35 +212,6 @@ export function GlassToolbar({
           </span>
         </button>
       </div>
-
-      {/* 中部：全站统一的一级模块主导航（桌面端显示，移动端收纳进抽屉） */}
-      <nav
-        aria-label="主导航"
-        className="hidden items-center gap-0.5 rounded-2xl border border-[var(--nav-border)] bg-[var(--surface-control)] p-1 lg:flex xl:gap-1"
-      >
-        {GLOBAL_TOP_NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-          const active =
-            activeNav === key ||
-            (key === 'accounts' && activeNav === 'dashboard');
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-current={active ? 'page' : undefined}
-              onClick={() => onSelectNav(key)}
-              className={cn(
-                'inline-flex h-8.5 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-[12.5px] font-medium whitespace-nowrap transition-all duration-[180ms] ease-out xl:px-3 xl:text-[13px]',
-                active
-                  ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.26)]'
-                  : 'text-[var(--text-primary)]/90 hover:-translate-y-[0.5px] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]',
-              )}
-            >
-              <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       {/* 右侧：全站统一的全局工具区（外观/显示设置 + 通知 + 管理员菜单） */}
       <div className="flex shrink-0 items-center gap-2">

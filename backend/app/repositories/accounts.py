@@ -1,9 +1,15 @@
 from uuid import UUID
 
-from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy import String, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from app.models import GmailAccount, Tag, gmail_account_tags
+from app.models import (
+    GmailAccount,
+    GmailAccountApp,
+    RegisteredApp,
+    Tag,
+    gmail_account_tags,
+)
 from app.schemas.accounts import AccountQuery
 
 
@@ -32,6 +38,14 @@ class AccountRepository:
             .join(Tag, Tag.id == gmail_account_tags.c.tag_id)
             .where(gmail_account_tags.c.account_id.in_(account_ids))
             .order_by(Tag.name)
+        ).all()
+
+    def apps(self, account_ids: list[UUID]):
+        return self.db.execute(
+            select(GmailAccountApp, RegisteredApp.name)
+            .join(RegisteredApp, RegisteredApp.id == GmailAccountApp.app_id)
+            .where(GmailAccountApp.account_id.in_(account_ids))
+            .order_by(RegisteredApp.sort_order.asc(), RegisteredApp.name.asc())
         ).all()
 
     def filtered(self, params: AccountQuery):
@@ -75,6 +89,22 @@ class AccountRepository:
                 GmailAccount.id.in_(
                     select(gmail_account_tags.c.account_id).where(
                         gmail_account_tags.c.tag_id == params.tag
+                    )
+                )
+            )
+        if params.app_id is not None or params.app_status is not None:
+            app_subq = select(GmailAccountApp.account_id)
+            if params.app_id is not None:
+                app_subq = app_subq.where(GmailAccountApp.app_id == params.app_id)
+            if params.app_status is not None:
+                app_subq = app_subq.where(GmailAccountApp.status == params.app_status)
+            query = query.where(GmailAccount.id.in_(app_subq))
+        if params.exclude_app_id is not None:
+            query = query.where(
+                ~exists(
+                    select(1).where(
+                        GmailAccountApp.account_id == GmailAccount.id,
+                        GmailAccountApp.app_id == params.exclude_app_id,
                     )
                 )
             )

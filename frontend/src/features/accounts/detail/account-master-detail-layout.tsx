@@ -3,10 +3,12 @@ import { ChevronRight, Home } from 'lucide-react';
 import {
   AppWindowShell,
   GlassToolbar,
-  MobilePrimaryNavMenu,
   PrimarySidebar,
   type DisplaySettingsState,
+  type SidebarCounts,
+  type SidebarSectionKey,
   type SidebarSystemStatus,
+  type SidebarTagItem,
   type TopNavKey,
   type WorkspaceNavKey,
 } from '@/components/macos';
@@ -20,6 +22,11 @@ export function AccountMasterDetailLayout({
   onDisplaySettingsOpenChange,
   activeNav = 'accounts',
   onSelectNav,
+  onSelectSection,
+  onSelectTag,
+  onAddTag,
+  sidebarCounts,
+  sidebarTags,
   trashCount = 0,
   systemStatus,
   notifications = [],
@@ -42,6 +49,11 @@ export function AccountMasterDetailLayout({
   onSearchQueryChange?: (value: string) => void;
   activeNav?: WorkspaceNavKey;
   onSelectNav: (key: WorkspaceNavKey) => void;
+  onSelectSection?: (section: SidebarSectionKey) => void;
+  onSelectTag?: (tagId: string) => void;
+  onAddTag?: () => void;
+  sidebarCounts?: SidebarCounts;
+  sidebarTags?: SidebarTagItem[];
   trashCount?: number;
   systemStatus?: SidebarSystemStatus;
   notifications?: string[];
@@ -88,16 +100,18 @@ export function AccountMasterDetailLayout({
       animationsEnabled={displaySettings.animationsEnabled}
       compactMode={displaySettings.compactMode}
       toolbar={toolbar}
-      mobileDrawerHeader={
-        <MobilePrimaryNavMenu activeNav="accounts" onSelectNav={mapTopNav} />
-      }
       sidebar={
         <PrimarySidebar
           mode="workspace"
           activeNav={activeNav}
+          counts={sidebarCounts}
+          tags={sidebarTags}
           trashCount={trashCount}
           systemStatus={systemStatus}
           onSelectNav={onSelectNav}
+          onSelectSection={onSelectSection}
+          onSelectTag={onSelectTag}
+          onAddTag={onAddTag}
         />
       }
       mainClassName="flex-col gap-[var(--detail-gap,16px)] p-3.5 xl:flex-row lg:p-4"

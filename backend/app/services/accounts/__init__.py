@@ -20,10 +20,13 @@ from app.schemas.accounts import (
     OptionPage,
     PasswordResponse,
     RecoveryPage,
+    RegisteredAppResponse,
+    RegisteredAppUsage,
     RegistrationTrendResponse,
     StatusDistributionResponse,
     TagResponse,
 )
+from app.services.accounts.apps import AppService
 from app.services.accounts.detail import AccountDetailService
 from app.services.accounts.errors import ACCOUNT_WRITE_LOCK, AccountError, flush_unique
 from app.services.accounts.listing import AccountQueryService
@@ -36,12 +39,13 @@ __all__ = [
     "AccountError",
     "AccountQueryService",
     "AccountService",
+    "AppService",
     "TagService",
 ]
 
 
 class AccountService:
-    """组合账号列表查询、账号详情写入与标签管理服务的门面。"""
+    """组合账号列表查询、账号详情写入、标签与已注册应用管理服务的门面。"""
 
     def __init__(self, auth: AuthService):
         self.auth, self.db = auth, auth.db
@@ -50,6 +54,7 @@ class AccountService:
         self.listing = AccountQueryService(auth, self.repo)
         self.details = AccountDetailService(auth, self.session, self.listing)
         self.tag_service = TagService(auth, self.session)
+        self.app_service = AppService(auth, self.session)
 
     def audit(
         self, event: str, account_id: UUID | None = None, *, operation: str | None = None
@@ -177,3 +182,15 @@ class AccountService:
 
     def delete_tag(self, tag_id: UUID) -> None:
         self.tag_service.delete_tag(tag_id)
+
+    def apps(self) -> list[RegisteredAppResponse]:
+        return self.app_service.list_apps()
+
+    def apps_usage(self) -> list[RegisteredAppUsage]:
+        return self.app_service.usage()
+
+    def save_app(self, name: str, app_id: UUID | None = None) -> RegisteredAppResponse:
+        return self.app_service.save_app(name, app_id)
+
+    def delete_app(self, app_id: UUID) -> None:
+        self.app_service.delete_app(app_id)

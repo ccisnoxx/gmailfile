@@ -6,8 +6,16 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.encryption import EncryptedValue
-from app.models import GmailAccount, Tag, UserSession, gmail_account_tags
+from app.models import (
+    GmailAccount,
+    GmailAccountApp,
+    RegisteredApp,
+    Tag,
+    UserSession,
+    gmail_account_tags,
+)
 from app.schemas.accounts import (
+    AccountAppInput,
     AccountCreate,
     AccountDetail,
     AccountPatch,
@@ -128,6 +136,45 @@ class AccountDetailService:
                 [{"account_id": account_id, "tag_id": tag_id} for tag_id in ids],
             )
 
+    def set_apps(self, account_id: UUID, items: list[AccountAppInput]) -> None:
+        ids = {item.app_id for item in items}
+        if ids:
+            found = set(self.db.scalars(select(RegisteredApp.id).where(RegisteredApp.id.in_(ids))))
+            if ids != found:
+                raise AccountError(422, "APP_INVALID", "所选应用已不存在，请刷新后重试")
+        existing = {
+            row.app_id: row
+            for row in self.db.scalars(
+                select(GmailAccountApp).where(GmailAccountApp.account_id == account_id)
+            )
+        }
+        desired = {item.app_id: item for item in items}
+        for removed_id in set(existing) - set(desired):
+            self.db.delete(existing[removed_id])
+        for app_id, item in desired.items():
+            prev = existing.get(app_id)
+            if prev is None:
+                self.db.add(
+                    GmailAccountApp(
+                        account_id=account_id,
+                        app_id=app_id,
+                        status=item.status,
+                        note=item.note,
+                        banned_at=self.auth.now if item.status == "banned" else None,
+                        created_at=self.auth.now,
+                        updated_at=self.auth.now,
+                    )
+                )
+            elif prev.status != item.status or prev.note != item.note:
+                prev.status = item.status
+                prev.note = item.note
+                if item.status == "banned":
+                    if prev.banned_at is None:
+                        prev.banned_at = self.auth.now
+                else:
+                    prev.banned_at = None
+                prev.updated_at = self.auth.now
+
     def cas(self, row: GmailAccount, version: int, values: dict) -> None:
         changed = self.db.execute(
             update(GmailAccount)
@@ -152,6 +199,7 @@ class AccountDetailService:
         )
         values = {key: getattr(body, key) for key in type(body).model_fields}
         tag_ids = list(dict.fromkeys(values.pop("tag_ids")))
+        values.pop("apps", None)
         values["gmail_email_normalized"] = normalize_email(body.gmail_email)
         values["archived_at"] = self.auth.now if body.status == "archived" else None
         self.encrypted(account_id, values)
@@ -163,6 +211,9 @@ class AccountDetailService:
         account_id, tag_ids = self.stage_create(body)
         flush_unique(self.db)
         self.set_tags(account_id, tag_ids)
+        if body.apps:
+            self.set_apps(account_id, body.apps)
+            self.db.flush()
         return self.detail(account_id)
 
     def patch_row(
@@ -184,11 +235,14 @@ class AccountDetailService:
         if "status" in values:
             values.update(self.status_values(row, values["status"]))
         tag_ids = values.pop("tag_ids", None)
+        app_items = values.pop("apps", None)
         self.encrypted(account_id, values)
         try:
             self.cas(row, body.row_version, values)
             if tag_ids is not None:
                 self.set_tags(account_id, tag_ids, verified=verified_tags)
+            if app_items is not None:
+                self.set_apps(account_id, app_items)
             flush_unique(self.db)
         except IntegrityError as exc:
             if exc.orig.sqlstate == "23505":

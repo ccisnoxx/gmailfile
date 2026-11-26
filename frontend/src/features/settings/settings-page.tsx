@@ -29,7 +29,9 @@ import {
   SETTINGS_DEFAULT_NAV_ALPHA,
   subscribeDisplaySettings,
   subscribeNavAlpha,
+  useLiveSidebarData,
   type DisplaySettingsState,
+  type SidebarSectionKey,
   type WorkspaceNavKey,
 } from '@/components/macos';
 import { ActiveSessionsCard } from './active-sessions-card';
@@ -96,6 +98,19 @@ const CARD_SEARCH_INDEX: Record<SearchableCardId, string> = {
   runtime: '系统与维护 版本 schema 自动锁定 空闲超时 运行状态 快捷键',
 };
 
+export type SettingsAccountNavTarget =
+  | 'all'
+  | 'dashboard'
+  | 'apps'
+  | 'normal'
+  | 'pending'
+  | 'risk'
+  | 'disabled'
+  | 'archived'
+  | 'trash'
+  | 'tags'
+  | `tag:${string}`;
+
 export type SettingsPageProps = {
   mode?: 'live' | 'mock';
   initialSection?: SettingsSectionKey;
@@ -104,7 +119,7 @@ export type SettingsPageProps = {
   onFailure?: (error: unknown) => void;
   onRefreshSession?: () => void;
   onSignedOut?: (revocation: Promise<unknown>) => void;
-  onNavigateAccounts?: (filter?: 'all' | 'archived' | 'trash' | 'tags') => void;
+  onNavigateAccounts?: (filter?: SettingsAccountNavTarget) => void;
   onNavigateOperations?: (
     tab?: 'status' | 'import' | 'export' | 'audit',
   ) => void;
@@ -239,22 +254,35 @@ function RoutedSettingsPage(props: SettingsPageProps) {
         handleSectionRoute('backup');
         return;
       }
+      if (key === 'recovery') {
+        if (props.onNavigateRecoveryUsage) {
+          props.onNavigateRecoveryUsage();
+        } else {
+          void navigate(isPreview ? '/preview/accounts' : '/recovery-emails');
+        }
+        return;
+      }
       if (
         props.onNavigateAccounts &&
         (key === 'dashboard' ||
           key === 'accounts' ||
+          key === 'apps' ||
           key === 'tags' ||
           key === 'archived' ||
           key === 'trash')
       ) {
         props.onNavigateAccounts(
-          key === 'archived'
-            ? 'archived'
-            : key === 'trash'
-              ? 'trash'
-              : key === 'tags'
-                ? 'tags'
-                : 'all',
+          key === 'dashboard'
+            ? 'dashboard'
+            : key === 'apps'
+              ? 'apps'
+              : key === 'archived'
+                ? 'archived'
+                : key === 'trash'
+                  ? 'trash'
+                  : key === 'tags'
+                    ? 'tags'
+                    : 'all',
         );
         return;
       }
@@ -266,6 +294,7 @@ function RoutedSettingsPage(props: SettingsPageProps) {
         if (
           key === 'dashboard' ||
           key === 'accounts' ||
+          key === 'apps' ||
           key === 'tags' ||
           key === 'archived' ||
           key === 'trash'
@@ -276,8 +305,12 @@ function RoutedSettingsPage(props: SettingsPageProps) {
         }
         return;
       }
-      if (key === 'dashboard' || key === 'accounts') {
+      if (key === 'dashboard') {
+        void navigate('/accounts?view=chart');
+      } else if (key === 'accounts') {
         void navigate('/accounts');
+      } else if (key === 'apps') {
+        void navigate('/apps');
       } else if (key === 'tags') {
         void navigate('/accounts?modal=tags');
       } else if (key === 'archived') {
@@ -294,7 +327,49 @@ function RoutedSettingsPage(props: SettingsPageProps) {
       navigate,
       props.onNavigateAccounts,
       props.onNavigateOperations,
+      props.onNavigateRecoveryUsage,
     ],
+  );
+
+  const handleAccountSectionNav = useCallback(
+    (section: SidebarSectionKey) => {
+      if (props.onNavigateAccounts) {
+        props.onNavigateAccounts(section);
+        return;
+      }
+      if (isPreview) {
+        void navigate('/preview/accounts');
+        return;
+      }
+      const queryMap: Record<SidebarSectionKey, string> = {
+        all: '',
+        normal: '?status=normal',
+        pending: '?status=pending_verification',
+        risk: '?statuses=restricted,login_failed',
+        disabled: '?status=disabled',
+        archived: '?archived=true',
+        trash: '?deleted=true',
+      };
+      void navigate(`/accounts${queryMap[section]}`);
+    },
+    [isPreview, navigate, props.onNavigateAccounts],
+  );
+
+  const handleTagNav = useCallback(
+    (tagId: string) => {
+      if (props.onNavigateAccounts) {
+        props.onNavigateAccounts(`tag:${tagId}`);
+        return;
+      }
+      if (isPreview) {
+        void navigate('/preview/accounts');
+        return;
+      }
+      void navigate(
+        `/accounts?${new URLSearchParams({ tag: tagId }).toString()}`,
+      );
+    },
+    [isPreview, navigate, props.onNavigateAccounts],
   );
 
   return (
@@ -303,6 +378,8 @@ function RoutedSettingsPage(props: SettingsPageProps) {
       controlledSection={routeSection}
       onSectionChange={handleSectionRoute}
       onWorkspaceNav={handleWorkspaceNav}
+      onAccountSectionNav={handleAccountSectionNav}
+      onTagNav={handleTagNav}
     />
   );
 }
@@ -313,6 +390,8 @@ function SettingsPageBody({
   controlledSection,
   onSectionChange,
   onWorkspaceNav,
+  onAccountSectionNav,
+  onTagNav,
   session,
   onSession,
   onFailure,
@@ -327,6 +406,8 @@ function SettingsPageBody({
   controlledSection?: SettingsSectionKey;
   onSectionChange?: (section: SettingsSectionKey) => void;
   onWorkspaceNav?: (key: WorkspaceNavKey) => void;
+  onAccountSectionNav?: (section: SidebarSectionKey) => void;
+  onTagNav?: (tagId: string) => void;
 }) {
   const [localSection, setLocalSection] =
     useState<SettingsSectionKey>(initialSection);
@@ -369,6 +450,8 @@ function SettingsPageBody({
     uiStateOverride: resolvedUiState,
     simulateActionFailure,
   });
+
+  const liveSidebar = useLiveSidebarData(mode === 'live' && Boolean(session));
 
   const [searchQuery, setSearchQuery] = useState('');
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
@@ -1075,6 +1158,10 @@ function SettingsPageBody({
         activeSection={activeSection}
         onSelectSection={handleSelectSection}
         onSelectWorkspaceNav={handleWorkspaceNavFallback}
+        onSelectAccountSection={onAccountSectionNav}
+        onSelectTag={onTagNav}
+        sidebarCounts={mode === 'live' ? liveSidebar.counts : undefined}
+        sidebarTags={mode === 'live' ? liveSidebar.tags : undefined}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
         runtime={data.runtime}

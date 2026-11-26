@@ -4,10 +4,12 @@ import { AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
 import {
   AppWindowShell,
   GlassToolbar,
-  MobilePrimaryNavMenu,
   PrimarySidebar,
   type DisplaySettingsState,
+  type SidebarCounts,
+  type SidebarSectionKey,
   type SidebarSystemStatus,
+  type SidebarTagItem,
   type TopNavKey,
   type WorkspaceNavKey,
 } from '@/components/macos';
@@ -27,6 +29,10 @@ export function SettingsLayout({
   activeSection,
   onSelectSection,
   onSelectWorkspaceNav,
+  onSelectAccountSection,
+  onSelectTag,
+  sidebarCounts,
+  sidebarTags,
   searchQuery,
   onSearchQueryChange,
   runtime,
@@ -49,6 +55,10 @@ export function SettingsLayout({
   activeSection: SettingsSectionKey;
   onSelectSection: (section: SettingsSectionKey) => void;
   onSelectWorkspaceNav: (key: WorkspaceNavKey) => void;
+  onSelectAccountSection?: (section: SidebarSectionKey) => void;
+  onSelectTag?: (tagId: string) => void;
+  sidebarCounts?: SidebarCounts;
+  sidebarTags?: SidebarTagItem[];
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   runtime: SystemRuntimeInfo;
@@ -134,12 +144,6 @@ export function SettingsLayout({
       animationsEnabled={displaySettings.animationsEnabled}
       compactMode={displaySettings.compactMode}
       toolbar={toolbar}
-      mobileDrawerHeader={
-        <MobilePrimaryNavMenu
-          activeNav={activeTopNav}
-          onSelectNav={handleTopNav}
-        />
-      }
       sidebar={
         <PrimarySidebar
           mode="workspace"
@@ -150,9 +154,13 @@ export function SettingsLayout({
                 ? 'backup'
                 : 'settings'
           }
+          counts={sidebarCounts}
+          tags={sidebarTags}
           trashCount={runtime.trashCount}
           systemStatus={sidebarStatus}
           onSelectNav={onSelectWorkspaceNav}
+          onSelectSection={onSelectAccountSection}
+          onSelectTag={onSelectTag}
         />
       }
       mainClassName="flex-col gap-4 p-4 sm:p-5 lg:p-6"

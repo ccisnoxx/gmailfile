@@ -91,6 +91,11 @@ export function accountQuery(
       : undefined,
     purpose: params.get('purpose') || undefined,
     tag: params.get('tag') || undefined,
+    app_id: params.get('app_id') || undefined,
+    app_status: (params.get('app_status') || undefined) as NonNullable<
+      AccountsListData['query']
+    >['app_status'],
+    exclude_app_id: params.get('exclude_app_id') || undefined,
     two_factor_status: (params.get('two_factor_status') ||
       undefined) as NonNullable<AccountsListData['query']>['two_factor_status'],
     registered_from: dateBoundary(params.get('from') || ''),
@@ -113,6 +118,8 @@ export function useAccountQueryState() {
   const query = useMemo(() => accountQuery(params), [params]);
   const deleted = query.deleted === true;
   const recoveryView = params.get('view') === 'recovery';
+  const appsView = params.get('view') === 'apps';
+  const chartView = params.get('view') === 'chart';
 
   const setDeleted = useCallback(
     (value: boolean) =>
@@ -123,6 +130,14 @@ export function useAccountQueryState() {
     () => change({ view: 'recovery' }, true),
     [change],
   );
+  const openAppsView = useCallback(
+    () => change({ view: 'apps' }, true),
+    [change],
+  );
+  const openChartView = useCallback(
+    () => change({ view: 'chart' }, true),
+    [change],
+  );
 
   return {
     params,
@@ -131,7 +146,11 @@ export function useAccountQueryState() {
     query,
     deleted,
     recoveryView,
+    appsView,
+    chartView,
     setDeleted,
     openRecoveryView,
+    openAppsView,
+    openChartView,
   };
 }

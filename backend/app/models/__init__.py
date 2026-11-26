@@ -1,4 +1,10 @@
-from app.models.accounts import GmailAccount, Tag, gmail_account_tags
+from app.models.accounts import (
+    GmailAccount,
+    GmailAccountApp,
+    RegisteredApp,
+    Tag,
+    gmail_account_tags,
+)
 from app.models.audit import AuditEvent
 from app.models.auth import (
     AdminRecoveryCode,
@@ -19,7 +25,9 @@ __all__ = [
     "AuthThrottle",
     "CsvReceipt",
     "GmailAccount",
+    "GmailAccountApp",
     "PreAuthSession",
+    "RegisteredApp",
     "Tag",
     "UserSession",
     "WebAuthnChallenge",

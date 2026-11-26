@@ -12,9 +12,17 @@ import {
   RefreshCw,
   User,
 } from 'lucide-react';
-import type { AccountDetail, SessionResponse } from '@/api/generated';
+import type {
+  AccountAppInput,
+  AccountDetail,
+  RegisteredAppResponse,
+  SessionResponse,
+} from '@/api/generated';
 import { GlassPanel } from '@/components/macos';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AccountAppPill } from '@/features/accounts/account-app-pill';
+import { AccountAppsEditor } from '@/features/accounts/account-apps-editor';
+import type { AppStatus } from '@/features/accounts/constants';
 import { CredentialForm } from '@/features/auth/credential-form';
 import { cn } from '@/lib/utils';
 import { maskPhoneNumber } from './detail-mock-fixtures';
@@ -33,6 +41,7 @@ export type AccountBasicInfoDraft = {
   two_factor_status: AccountDetail['two_factor_status'];
   purpose: string;
   notes: string;
+  apps: AccountAppInput[];
 };
 
 export function createDraftFromAccount(
@@ -49,7 +58,24 @@ export function createDraftFromAccount(
     two_factor_status: account.two_factor_status,
     purpose: account.purpose ?? '',
     notes: account.notes ?? '',
+    apps: (account.apps ?? []).map((item) => ({
+      app_id: item.app_id,
+      status: item.status,
+      note: item.note ?? null,
+    })),
   };
+}
+
+function serializeAppsDraft(apps: AccountAppInput[]): string {
+  return JSON.stringify(
+    [...apps]
+      .map((item) => ({
+        app_id: item.app_id,
+        status: item.status ?? 'active',
+        note: (item.note ?? '').trim(),
+      }))
+      .sort((a, b) => a.app_id.localeCompare(b.app_id)),
+  );
 }
 
 export function isDraftDirty(
@@ -65,7 +91,8 @@ export function isDraftDirty(
     draft.status !== base.status ||
     draft.two_factor_status !== base.two_factor_status ||
     draft.purpose !== base.purpose ||
-    draft.notes !== base.notes
+    draft.notes !== base.notes ||
+    serializeAppsDraft(draft.apps) !== serializeAppsDraft(base.apps)
   );
 }
 
@@ -109,6 +136,9 @@ export function AccountBasicInfoForm({
   conflictMessage,
   secretEpoch = 0,
   session,
+  appsCatalog = [],
+  onCreateApp,
+  onQuickToggleAppStatus,
   onSession,
   onFailure,
   mockRevealPassword,
@@ -130,6 +160,12 @@ export function AccountBasicInfoForm({
   conflictMessage?: string;
   secretEpoch?: number;
   session?: SessionResponse;
+  appsCatalog?: RegisteredAppResponse[];
+  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
+  onQuickToggleAppStatus?: (
+    appId: string,
+    nextStatus: AppStatus,
+  ) => Promise<void> | void;
   onSession?: (value: SessionResponse) => void;
   onFailure?: (error: unknown) => void;
   mockRevealPassword?: (accountId: string) => Promise<string>;
@@ -706,6 +742,81 @@ export function AccountBasicInfoForm({
             }
             className={fieldBoxClass}
           />
+        </div>
+
+        {/* 6.5 已注册应用与封禁状态 */}
+        <div className="grid gap-1.5 sm:grid-cols-[80px_1fr] sm:items-start sm:gap-2.5">
+          <span className={labelClass}>已注册应用</span>
+          <div className="min-w-0">
+            {isEditing ? (
+              <AccountAppsEditor
+                catalog={appsCatalog}
+                value={draft.apps}
+                onChange={(nextApps) =>
+                  onDraftChange({ ...draft, apps: nextApps })
+                }
+                onCreateApp={onCreateApp}
+                disabled={busy || conflict}
+              />
+            ) : account.apps && account.apps.length > 0 ? (
+              <div className="space-y-2">
+                <ul className="space-y-2" aria-label="已注册应用">
+                  {account.apps.map((app) => (
+                    <li
+                      key={app.app_id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/82 bg-white/58 px-3 py-2"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <AccountAppPill app={app} />
+                        {app.note && (
+                          <span className="truncate text-xs text-[var(--text-secondary)]">
+                            {app.note}
+                          </span>
+                        )}
+                      </div>
+                      {!account.deleted_at && onQuickToggleAppStatus && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          {app.status !== 'banned' ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                void onQuickToggleAppStatus(
+                                  app.app_id,
+                                  'banned',
+                                )
+                              }
+                              className="inline-flex h-7 items-center rounded-lg border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-2 text-[11.5px] font-medium text-[var(--badge-red-text)] transition-opacity hover:opacity-85 disabled:opacity-50"
+                            >
+                              标为已封禁
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() =>
+                                void onQuickToggleAppStatus(
+                                  app.app_id,
+                                  'active',
+                                )
+                              }
+                              className="inline-flex h-7 items-center rounded-lg border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-2 text-[11.5px] font-medium text-[var(--badge-green-text)] transition-opacity hover:opacity-85 disabled:opacity-50"
+                            >
+                              恢复正常
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="flex h-10 items-center rounded-xl border border-white/82 bg-white/58 px-3 text-[13px] text-[var(--text-secondary)]">
+                暂未记录已注册应用（点击右上角「编辑」可添加）
+              </p>
+            )}
+          </div>
         </div>
 
         {/* 7. 备注（多行输入框 + 字数 29 / 500） */}

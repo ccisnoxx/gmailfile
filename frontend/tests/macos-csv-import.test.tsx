@@ -139,15 +139,10 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     const toolbar = container.querySelector('[data-slot="glass-toolbar"]');
     expect(toolbar).toBeInTheDocument();
     expect(toolbar).toHaveTextContent('Gmail 账号管理系统');
-    const topNav = screen.getByRole('navigation', { name: '主导航' });
-    for (const label of ['账号管理', '导入 / 导出', '审计日志', '系统设置']) {
-      expect(
-        within(topNav).getByRole('button', { name: label }),
-      ).toBeInTheDocument();
-    }
+    // 顶栏已精简移除重复导航 Tab，统一由左侧导航栏承载主模块入口
     expect(
-      within(topNav).getByRole('button', { name: '导入 / 导出' }),
-    ).toHaveAttribute('aria-current', 'page');
+      screen.queryByRole('navigation', { name: '主导航' }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: '界面与显示设置' }),
     ).toBeInTheDocument();
@@ -711,7 +706,9 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
 
     // 应弹出页内二次验证弹窗（保留内存 CSV 文件）；取消后仍禁止无有效 receipt 提交
     const reauthDialog = await screen.findByRole('dialog');
-    await user.click(within(reauthDialog).getByRole('button', { name: '取消' }));
+    await user.click(
+      within(reauthDialog).getByRole('button', { name: '取消' }),
+    );
     await waitFor(() =>
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
     );
@@ -752,7 +749,13 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
         return json({ items: [], total: 0, page: 1, page_size: 30 });
       }
       if (url.pathname === '/api/v1/audit-events') {
-        return json({ items: [], total: 0, page: 1, page_size: 20, event_types: [] });
+        return json({
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 20,
+          event_types: [],
+        });
       }
       if (url.pathname === '/api/v1/imports/csv/preview') {
         const raw = url.searchParams.get('options');
@@ -782,7 +785,9 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     await user.upload(fileInput, makeCleanCsvFile('skip_empty.csv'));
     await screen.findByText('skip_empty.csv');
 
-    await waitFor(() => expect(previewOptionsSent.length).toBeGreaterThanOrEqual(1));
+    await waitFor(() =>
+      expect(previewOptionsSent.length).toBeGreaterThanOrEqual(1),
+    );
     expect(previewOptionsSent[0]).toMatchObject({ skip_empty_fields: true });
 
     // 取消勾选后点击重新预览，应向后端发送 skip_empty_fields: false

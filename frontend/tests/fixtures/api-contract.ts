@@ -612,9 +612,17 @@ export function createStatefulApiServer(
       );
     }
 
-    // 5. Tags & Dashboard
+    // 5. Tags, Apps & Dashboard
     if (method === 'GET' && pathname === '/api/v1/tags') {
       return respond(tags, 200);
+    }
+
+    if (method === 'GET' && pathname === '/api/v1/apps') {
+      return respond([], 200);
+    }
+
+    if (method === 'GET' && pathname === '/api/v1/apps/usage') {
+      return respond([], 200);
     }
 
     if (method === 'GET' && pathname === '/api/v1/dashboard/summary') {

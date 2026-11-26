@@ -36,7 +36,9 @@ import {
   readStoredNavAlpha,
   subscribeDisplaySettings,
   subscribeNavAlpha,
+  useLiveSidebarData,
   type DisplaySettingsState,
+  type SidebarSectionKey,
   type SidebarSystemStatus,
 } from '@/components/macos';
 import { SensitiveActionDialog } from '@/features/settings/sensitive-action-dialog';
@@ -226,6 +228,7 @@ function CsvImportPageBody({
   );
 
   const isMock = mode === 'mock' || !liveSession;
+  const liveSidebar = useLiveSidebarData(!isMock);
 
   // 共享界面透明度（默认 60%，写入 localStorage 与其他页面同步）
   const [navAlpha, setNavAlpha] = useState<number>(() =>
@@ -1245,8 +1248,14 @@ function CsvImportPageBody({
         setSubTab('import');
       } else if (key === 'batch') {
         setSubTab('batch');
+      } else if (key === 'dashboard') {
+        navigateTo('/accounts?view=chart', '/preview/accounts');
       } else if (key === 'accounts') {
         navigateTo('/accounts', '/preview/accounts');
+      } else if (key === 'apps') {
+        navigateTo('/apps', '/preview/accounts');
+      } else if (key === 'recovery') {
+        navigateTo('/recovery-emails', '/preview/accounts');
       } else if (key === 'tags') {
         navigateTo('/accounts?modal=tags', '/preview/accounts');
       } else if (key === 'archived') {
@@ -1262,6 +1271,32 @@ function CsvImportPageBody({
       }
     },
     [handleOpenAuditLog, navigateTo],
+  );
+
+  const handleSelectAccountSection = useCallback(
+    (section: SidebarSectionKey) => {
+      const map: Record<SidebarSectionKey, string> = {
+        all: '/accounts',
+        normal: '/accounts?status=normal',
+        pending: '/accounts?status=pending_verification',
+        risk: '/accounts?statuses=restricted,login_failed',
+        disabled: '/accounts?status=disabled',
+        archived: '/accounts?archived=true',
+        trash: '/accounts?deleted=true',
+      };
+      navigateTo(map[section], '/preview/accounts');
+    },
+    [navigateTo],
+  );
+
+  const handleSelectTag = useCallback(
+    (tagId: string) => {
+      navigateTo(
+        `/accounts?${new URLSearchParams({ tag: tagId }).toString()}`,
+        '/preview/accounts',
+      );
+    },
+    [navigateTo],
   );
 
   const handleBatchStatus = useCallback(
@@ -1336,6 +1371,8 @@ function CsvImportPageBody({
       onDisplaySettingsChange={handleDisplaySettingsChange}
       activeSubTab={subTab}
       sidebarCounts={sidebarCounts}
+      primarySidebarCounts={!isMock ? liveSidebar.counts : undefined}
+      sidebarTags={!isMock ? liveSidebar.tags : undefined}
       systemStatus={systemStatus}
       globalSearch={globalSearch}
       onGlobalSearchChange={(value) => {
@@ -1345,6 +1382,8 @@ function CsvImportPageBody({
       notifications={notifications}
       onSelectTopNav={handleSelectTopNav}
       onSelectSidebarNav={handleSelectSidebarNav}
+      onSelectAccountSection={handleSelectAccountSection}
+      onSelectTag={handleSelectTag}
       onOpenSecurity={() =>
         navigateTo('/settings/security', '/preview/settings/security')
       }

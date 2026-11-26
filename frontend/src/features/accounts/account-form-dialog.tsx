@@ -1,6 +1,7 @@
 import type {
   AccountCreateWritable,
   AccountDetail,
+  RegisteredAppResponse,
   TagResponse,
 } from '@/api/generated';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -18,6 +19,8 @@ export function AccountFormDialog({
   form,
   detail,
   tags,
+  appsCatalog = [],
+  onCreateApp,
   busy,
   conflict,
   notice,
@@ -30,6 +33,8 @@ export function AccountFormDialog({
   form: 'new' | 'edit' | null;
   detail: AccountDetail | null;
   tags: TagResponse[];
+  appsCatalog?: RegisteredAppResponse[];
+  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
   busy: boolean;
   conflict: boolean;
   notice: string;
@@ -74,6 +79,8 @@ export function AccountFormDialog({
             account={form === 'edit' && detail ? detail : undefined}
             onFailure={onFailure}
             tags={tags}
+            appsCatalog={appsCatalog}
+            onCreateApp={onCreateApp}
             busy={busy}
             conflict={conflict}
             onSubmit={onSubmit}

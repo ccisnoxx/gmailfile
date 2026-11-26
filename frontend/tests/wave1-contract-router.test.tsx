@@ -188,9 +188,9 @@ describe('Wave 1 真实路由与 OpenAPI 有状态 CSRF 契约集成测试', () 
     expect(screen.getByRole('button', { name: '立即备份' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '恢复验证…' })).toBeDisabled();
     expect(
-      await within(
-        screen.getByRole('navigation', { name: '系统主导航' }),
-      ).findByLabelText('回收站 9 项'),
+      await within(screen.getByLabelText('侧边导航栏')).findByLabelText(
+        '回收站 9 项',
+      ),
     ).toHaveTextContent('9');
 
     // 1. Step-Up 开启且未重新验证时直接尝试重新生成恢复码：客户端防重放守卫立即拦截，不消耗 TOTP 也不发写请求

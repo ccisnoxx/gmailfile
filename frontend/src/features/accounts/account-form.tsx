@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { RecoverySelector } from './recovery-selector';
 import { useForm } from 'react-hook-form';
 import type {
+  AccountAppInput,
   AccountCreateWritable,
   AccountDetail,
+  RegisteredAppResponse,
   TagResponse,
 } from '@/api/generated';
 import { Button } from '@/components/ui/button';
@@ -20,6 +23,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from '@/components/ui/native-select';
+import { AccountAppsEditor } from './account-apps-editor';
 import { factorLabels, localDate, statusLabels } from './constants';
 import { isMaskedPasswordPlaceholder } from './detail/use-password-secret';
 
@@ -38,6 +42,7 @@ type Form = Omit<
   | 'recovery_account_id'
   | 'recovery_email_external'
   | 'tag_ids'
+  | 'apps'
 > & {
   registered_at: string;
   recovery_mode: 'external' | 'account';
@@ -50,6 +55,8 @@ export function AccountForm({
   account,
   onFailure,
   tags,
+  appsCatalog = [],
+  onCreateApp,
   busy,
   conflict,
   onSubmit,
@@ -58,11 +65,21 @@ export function AccountForm({
   account?: AccountDetail;
   onFailure: (error: unknown) => void;
   tags: TagResponse[];
+  appsCatalog?: RegisteredAppResponse[];
+  onCreateApp?: (name: string) => Promise<RegisteredAppResponse | null>;
   busy: boolean;
   conflict: boolean;
   onSubmit: (body: AccountCreateWritable) => Promise<void>;
   onCancel: () => void;
 }) {
+  const [selectedApps, setSelectedApps] = useState<AccountAppInput[]>(
+    () =>
+      account?.apps?.map((item) => ({
+        app_id: item.app_id,
+        status: item.status,
+        note: item.note ?? null,
+      })) ?? [],
+  );
   const {
     register,
     handleSubmit,
@@ -104,10 +121,7 @@ export function AccountForm({
           }
           return `${local}@${domain}`;
         };
-        if (
-          values.password &&
-          isMaskedPasswordPlaceholder(values.password)
-        ) {
+        if (values.password && isMaskedPasswordPlaceholder(values.password)) {
           setError('password', {
             message: '请填写真实密码，不要填写星号或圆点掩码占位符。',
           });
@@ -142,6 +156,11 @@ export function AccountForm({
           phone: values.phone || null,
           purpose: values.purpose || null,
           notes: values.notes || null,
+          apps: selectedApps.map((item) => ({
+            app_id: item.app_id,
+            status: item.status ?? 'active',
+            note: item.note?.trim() || null,
+          })),
           last_login_at: values.last_login_at
             ? new Date(values.last_login_at).toISOString()
             : null,
@@ -304,6 +323,16 @@ export function AccountForm({
           <FieldLabel htmlFor="purpose">账号用途</FieldLabel>
           <Input id="purpose" maxLength={100} {...register('purpose')} />
         </Field>
+        <FieldSet>
+          <FieldLegend>已注册应用与状态</FieldLegend>
+          <AccountAppsEditor
+            catalog={appsCatalog}
+            value={selectedApps}
+            onChange={setSelectedApps}
+            onCreateApp={onCreateApp}
+            disabled={busy || conflict}
+          />
+        </FieldSet>
         <FieldSet>
           <FieldLegend>标签</FieldLegend>
           <div className="flex flex-wrap gap-4">

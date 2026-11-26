@@ -21,6 +21,7 @@ Status = Literal[
     "normal", "pending_verification", "restricted", "login_failed", "disabled", "archived"
 ]
 TwoFactor = Literal["unknown", "disabled", "enabled"]
+AppStatus = Literal["active", "restricted", "banned"]
 
 
 def email_value(value: str) -> str:
@@ -61,6 +62,23 @@ class Input(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
+class AccountAppInput(Input):
+    app_id: UUID
+    status: AppStatus = "active"
+    note: str | None = Field(default=None, max_length=200)
+
+    @field_validator("note")
+    @classmethod
+    def clean_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
+AccountApps = Annotated[list[AccountAppInput], Field(max_length=100)]
+
+
 class AccountCreate(Input):
     gmail_email: Email
     password: Password
@@ -72,6 +90,7 @@ class AccountCreate(Input):
     two_factor_status: TwoFactor = "unknown"
     purpose: str | None = Field(default=None, max_length=100)
     tag_ids: TagIds = Field(default_factory=list)
+    apps: AccountApps = Field(default_factory=list)
     last_login_at: Timestamp | None = None
     last_verified_at: Timestamp | None = None
     password_changed_at: Timestamp | None = None
@@ -85,6 +104,8 @@ class AccountCreate(Input):
             self.recovery_email_external
         ) == normalize_email(self.gmail_email):
             raise ValueError("辅助邮箱不能与主邮箱相同")
+        if len({item.app_id for item in self.apps}) != len(self.apps):
+            raise ValueError("不能重复选择同一应用")
         return self
 
 
@@ -103,6 +124,7 @@ class AccountPatch(VersionInput):
     two_factor_status: TwoFactor | None = None
     purpose: str | None = Field(default=None, max_length=100)
     tag_ids: TagIds | None = None
+    apps: AccountApps | None = None
     last_login_at: Timestamp | None = None
     last_verified_at: Timestamp | None = None
     password_changed_at: Timestamp | None = None
@@ -117,9 +139,12 @@ class AccountPatch(VersionInput):
             "status",
             "two_factor_status",
             "tag_ids",
+            "apps",
         ):
             if field in self.model_fields_set and getattr(self, field) is None:
                 raise ValueError("必填字段不能设为空")
+        if self.apps is not None and len({item.app_id for item in self.apps}) != len(self.apps):
+            raise ValueError("不能重复选择同一应用")
         return self
 
 
@@ -131,6 +156,37 @@ class TagResponse(BaseModel):
     id: UUID
     name: str
     created_at: Timestamp
+
+
+class RegisteredAppInput(Input):
+    name: str = Field(min_length=1, max_length=64, pattern=r"\S")
+
+
+class RegisteredAppResponse(BaseModel):
+    id: UUID
+    name: str
+    sort_order: int
+    created_at: Timestamp
+
+
+class RegisteredAppUsage(BaseModel):
+    id: UUID
+    name: str
+    sort_order: int
+    total_count: int
+    active_count: int
+    restricted_count: int
+    banned_count: int
+    created_at: Timestamp
+
+
+class AccountAppItem(BaseModel):
+    app_id: UUID
+    app_name: str
+    status: AppStatus
+    note: str | None
+    banned_at: Timestamp | None
+    updated_at: Timestamp
 
 
 class AccountSummary(BaseModel):
@@ -145,6 +201,7 @@ class AccountSummary(BaseModel):
     two_factor_status: TwoFactor
     purpose: str | None
     tags: list[TagResponse]
+    apps: list[AccountAppItem] = Field(default_factory=list)
     last_login_at: Timestamp | None
     last_verified_at: Timestamp | None
     password_changed_at: Timestamp | None
@@ -186,6 +243,9 @@ class AccountQuery(Input):
     statuses: list[Status] | None = Field(default=None, max_length=6)
     purpose: str | None = Field(default=None, max_length=100)
     tag: UUID | None = None
+    app_id: UUID | None = None
+    app_status: AppStatus | None = None
+    exclude_app_id: UUID | None = None
     two_factor_status: TwoFactor | None = None
     registered_from: Timestamp | None = None
     registered_to: Timestamp | None = None
@@ -222,6 +282,8 @@ class AccountQuery(Input):
             and self.registered_from >= self.registered_to
         ):
             raise ValueError("结束边界必须晚于开始边界")
+        if self.app_id and self.exclude_app_id and self.app_id == self.exclude_app_id:
+            raise ValueError("包含与排除的应用不能相同")
         return self
 
 

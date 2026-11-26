@@ -40,6 +40,8 @@ export {
 export {
   PrimarySidebar,
   type PrimarySidebarProps,
+  type SidebarAccountStatusKey,
+  type SidebarCounts,
   type SidebarSectionKey,
   type SidebarSystemStatus,
   type SidebarTagItem,
@@ -47,6 +49,7 @@ export {
   type WorkspaceSecondaryNavConfig,
   type WorkspaceSecondaryNavItem,
 } from './primary-sidebar';
+export { useLiveSidebarData } from './use-sidebar-data';
 export { StatCard } from './stat-card';
 export { StatusPill } from './status-pill';
 export { resolveTagTone, TagPill, type TagTone } from './tag-pill';

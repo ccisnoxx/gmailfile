@@ -1,24 +1,25 @@
 import {
   AppWindowShell,
   GlassToolbar,
-  MobilePrimaryNavMenu,
   PrimarySidebar,
   type DisplaySettingsState,
+  type SidebarCounts as PrimarySidebarCounts,
+  type SidebarSectionKey,
   type SidebarSystemStatus,
+  type SidebarTagItem,
   type TopNavKey,
   type WorkspaceNavKey,
 } from '@/components/macos';
 import type { SidebarCounts, TransferSubTab } from './types';
 
 export type TransferTopNavKey =
-  | 'dashboard'
-  | 'accounts'
-  | 'tags'
-  | 'transfer'
-  | 'batch';
+  'dashboard' | 'accounts' | 'tags' | 'transfer' | 'batch';
 
 export type TransferSidebarKey =
+  | 'dashboard'
   | 'accounts'
+  | 'apps'
+  | 'recovery'
   | 'tags'
   | 'archived'
   | 'trash'
@@ -34,10 +35,14 @@ export function CsvWorkspaceShell({
   displaySettings,
   onDisplaySettingsChange,
   sidebarCounts,
+  primarySidebarCounts,
+  sidebarTags,
   systemStatus,
   notifications = [],
   onSelectTopNav,
   onSelectSidebarNav,
+  onSelectAccountSection,
+  onSelectTag,
   onOpenSecurity,
   onOpenAuditLog,
   onOpenRecoveryUsage,
@@ -50,12 +55,16 @@ export function CsvWorkspaceShell({
   onDisplaySettingsChange?: (next: DisplaySettingsState) => void;
   activeSubTab?: TransferSubTab;
   sidebarCounts: SidebarCounts;
+  primarySidebarCounts?: PrimarySidebarCounts;
+  sidebarTags?: SidebarTagItem[];
   globalSearch?: string;
   onGlobalSearchChange?: (value: string) => void;
   systemStatus?: SidebarSystemStatus;
   notifications?: readonly string[];
   onSelectTopNav: (key: TransferTopNavKey) => void;
   onSelectSidebarNav: (key: TransferSidebarKey) => void;
+  onSelectAccountSection?: (section: SidebarSectionKey) => void;
+  onSelectTag?: (tagId: string) => void;
   onOpenSecurity: () => void;
   onOpenAuditLog: () => void;
   onOpenRecoveryUsage?: () => void;
@@ -78,7 +87,7 @@ export function CsvWorkspaceShell({
 
   const handleWorkspaceSidebarNav = (key: WorkspaceNavKey) => {
     if (key === 'dashboard') {
-      onSelectTopNav('dashboard');
+      onSelectSidebarNav('dashboard');
       return;
     }
     onSelectSidebarNav(key);
@@ -107,19 +116,17 @@ export function CsvWorkspaceShell({
       animationsEnabled={displaySettings.animationsEnabled}
       compactMode={displaySettings.compactMode}
       toolbar={toolbar}
-      mobileDrawerHeader={
-        <MobilePrimaryNavMenu
-          activeNav="transfer"
-          onSelectNav={handleGlobalTopNav}
-        />
-      }
       sidebar={
         <PrimarySidebar
           mode="workspace"
           activeNav="transfer"
+          counts={primarySidebarCounts}
+          tags={sidebarTags}
           trashCount={sidebarCounts.trash}
           systemStatus={systemStatus}
           onSelectNav={handleWorkspaceSidebarNav}
+          onSelectSection={onSelectAccountSection}
+          onSelectTag={onSelectTag}
         />
       }
       mainClassName="flex-col gap-4 p-4 sm:p-5 lg:p-6"

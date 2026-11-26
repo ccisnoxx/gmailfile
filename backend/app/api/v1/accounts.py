@@ -21,6 +21,9 @@ from app.schemas.accounts import (
     PasswordResponse,
     RecoveryPage,
     RecoverySort,
+    RegisteredAppInput,
+    RegisteredAppResponse,
+    RegisteredAppUsage,
     RegistrationTrendResponse,
     Sort,
     StatusDistributionResponse,
@@ -253,4 +256,32 @@ def tag_patch(tag_id: UUID, body: TagInput, service: WriteService):
 @router.delete("/tags/{tag_id}", response_model=ActionResponse, operation_id="tagsDelete")
 def tag_delete(tag_id: UUID, service: WriteService):
     service.delete_tag(tag_id)
+    return ActionResponse()
+
+
+@router.get("/apps", response_model=list[RegisteredAppResponse], operation_id="appsList")
+def apps(service: Service):
+    return service.apps()
+
+
+@router.get("/apps/usage", response_model=list[RegisteredAppUsage], operation_id="appsUsage")
+def apps_usage(service: Service):
+    return service.apps_usage()
+
+
+@router.post(
+    "/apps", response_model=RegisteredAppResponse, status_code=201, operation_id="appsCreate"
+)
+def app_create(body: RegisteredAppInput, service: WriteService):
+    return service.save_app(body.name)
+
+
+@router.patch("/apps/{app_id}", response_model=RegisteredAppResponse, operation_id="appsPatch")
+def app_patch(app_id: UUID, body: RegisteredAppInput, service: WriteService):
+    return service.save_app(body.name, app_id)
+
+
+@router.delete("/apps/{app_id}", response_model=ActionResponse, operation_id="appsDelete")
+def app_delete(app_id: UUID, service: WriteService):
+    service.delete_app(app_id)
     return ActionResponse()

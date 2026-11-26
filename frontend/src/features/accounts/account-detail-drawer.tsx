@@ -10,6 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { AccountAppPill } from './account-app-pill';
 import {
   factorLabels,
   localDate,
@@ -119,6 +120,18 @@ export function AccountDetailDrawer({
                   ['绑定手机号', detail.phone || '—'],
                   ['二步验证', factorLabels[detail.two_factor_status]],
                   ['用途', detail.purpose || '—'],
+                  [
+                    '已注册应用',
+                    detail.apps && detail.apps.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5" key="apps">
+                        {detail.apps.map((app) => (
+                          <AccountAppPill key={app.app_id} app={app} />
+                        ))}
+                      </div>
+                    ) : (
+                      '—'
+                    ),
+                  ],
                   ['标签', detail.tags.map((t) => t.name).join('、') || '—'],
                   ['最后登录', localDate(detail.last_login_at)],
                   ['最后验证', localDate(detail.last_verified_at)],

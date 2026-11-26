@@ -12,11 +12,13 @@ class AccountError(Exception):
         self.details = details or {}
 
 
-def flush_unique(db: Session, *, tag: bool = False) -> None:
+def flush_unique(db: Session, *, tag: bool = False, app: bool = False) -> None:
     try:
         db.flush()
     except IntegrityError as exc:
         if exc.orig.sqlstate == "23505":
+            if app:
+                raise AccountError(409, "APP_DUPLICATE", "该应用已存在") from None
             raise AccountError(
                 409,
                 "TAG_DUPLICATE" if tag else "ACCOUNT_EMAIL_DUPLICATE",

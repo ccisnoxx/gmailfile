@@ -138,26 +138,27 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
       screen.getByRole('button', { name: '管理员菜单' }),
     ).toBeInTheDocument();
 
-    // 左侧统一主导航 9 项 + 回收站 3 + 当前选中“系统设置”
-    const mainNav = screen.getByRole('navigation', { name: '系统主导航' });
+    // 左侧统一主导航 + 回收站 3 + 当前选中“系统设置”
+    const sidebar = screen.getByLabelText('侧边导航栏');
     for (const label of [
       '数据概览',
-      'Gmail 账号',
+      '全部账号',
+      '已注册应用',
+      '辅助邮箱统计',
+      '回收站',
       '标签管理',
       '导入 / 导出（CSV）',
-      '归档账号',
-      '回收站',
       '审计日志',
       '备份与恢复',
       '系统设置',
     ]) {
-      expect(within(mainNav).getByText(label)).toBeInTheDocument();
+      expect(within(sidebar).getByText(label)).toBeInTheDocument();
     }
-    expect(within(mainNav).getByLabelText('回收站 3 项')).toHaveTextContent(
+    expect(within(sidebar).getByLabelText('回收站 3 项')).toHaveTextContent(
       '3',
     );
     expect(
-      within(mainNav).getByRole('button', { name: '系统设置' }),
+      within(sidebar).getByRole('button', { name: '系统设置' }),
     ).toHaveAttribute('aria-current', 'page');
 
     // 顶部 macOS segmented control
@@ -1053,9 +1054,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     // 2. 保留策略卡片不展示虚假 1.28 GB / 5.64 GB，并展示真实的回收站计数 7（非硬编码 3）
     expect(screen.queryByText(/1\.28 GB/)).not.toBeInTheDocument();
     expect(screen.queryByText(/5\.64 GB/)).not.toBeInTheDocument();
-    const mainNav = screen.getByRole('navigation', { name: '系统主导航' });
+    const sidebar = screen.getByLabelText('侧边导航栏');
     expect(
-      await within(mainNav).findByLabelText('回收站 7 项'),
+      await within(sidebar).findByLabelText('回收站 7 项'),
     ).toHaveTextContent('7');
 
     // 3. 调整策略 Sheet 中审计/备份保留天数为只读禁用，仅在线提交 idle_minutes 并携带轮换后的新 CSRF

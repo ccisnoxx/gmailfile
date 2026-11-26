@@ -1,8 +1,8 @@
-import type { TagResponse } from '@/api/generated';
+import type { RegisteredAppResponse, TagResponse } from '@/api/generated';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
-import { factorLabels, statusLabels } from './constants';
+import { appStatusLabels, factorLabels, statusLabels } from './constants';
 import type { AccountLocationChange } from './query-state';
 
 const sortFields = {
@@ -18,12 +18,16 @@ export function Filters({
   params,
   change,
   tags,
+  apps = [],
   onOpenRecoveryUsage,
+  onOpenAppsUsage,
 }: {
   params: URLSearchParams;
   change: AccountLocationChange;
   tags: TagResponse[];
+  apps?: RegisteredAppResponse[];
   onOpenRecoveryUsage?: () => void;
+  onOpenAppsUsage?: () => void;
 }) {
   const select = (
     key: string,
@@ -36,7 +40,9 @@ export function Filters({
       <NativeSelect
         aria-label={label}
         value={params.get(key) || ''}
-        onChange={(e) => change({ ...(extraClear ?? {}), [key]: e.target.value })}
+        onChange={(e) =>
+          change({ ...(extraClear ?? {}), [key]: e.target.value })
+        }
         className="h-9 rounded-xl border-white/80 bg-white/75 text-[13px] text-[var(--text-primary)]"
       >
         <option value="">全部</option>
@@ -77,6 +83,24 @@ export function Filters({
           true: '仅归档',
         })}
       </div>
+
+      {apps.length > 0 && (
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+          {select(
+            'app_id',
+            '已注册应用',
+            Object.fromEntries(apps.map((a) => [a.id, a.name])),
+            { exclude_app_id: '' },
+          )}
+          {select('app_status', '应用账号状态', appStatusLabels)}
+          {select(
+            'exclude_app_id',
+            '未注册应用（筛干净号）',
+            Object.fromEntries(apps.map((a) => [a.id, a.name])),
+            { app_id: '', app_status: '' },
+          )}
+        </div>
+      )}
 
       <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         <form
@@ -161,16 +185,65 @@ export function Filters({
               <span>
                 多状态筛选：
                 {multiStatuses
-                  .map(
-                    (s) =>
-                      statusLabels[s as keyof typeof statusLabels] ?? s,
-                  )
+                  .map((s) => statusLabels[s as keyof typeof statusLabels] ?? s)
                   .join(' / ')}
               </span>
               <button
                 type="button"
                 aria-label="清除多状态筛选"
                 onClick={() => change({ statuses: '' })}
+                className="rounded px-1 text-[11px] hover:bg-black/10"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {params.has('app_id') && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 font-medium text-[var(--accent-text)]">
+              <span>
+                已注册应用：
+                {apps.find((a) => a.id === params.get('app_id'))?.name ??
+                  params.get('app_id')}
+              </span>
+              <button
+                type="button"
+                aria-label="清除应用筛选"
+                onClick={() => change({ app_id: '' })}
+                className="rounded px-1 text-[11px] hover:bg-black/10"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {params.has('app_status') && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--badge-red-bg)] px-2.5 py-1 font-medium text-[var(--badge-red-text)]">
+              <span>
+                应用状态：
+                {appStatusLabels[
+                  params.get('app_status') as keyof typeof appStatusLabels
+                ] ?? params.get('app_status')}
+              </span>
+              <button
+                type="button"
+                aria-label="清除应用状态筛选"
+                onClick={() => change({ app_status: '' })}
+                className="rounded px-1 text-[11px] hover:bg-black/10"
+              >
+                ×
+              </button>
+            </span>
+          )}
+          {params.has('exclude_app_id') && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--badge-green-bg)] px-2.5 py-1 font-medium text-[var(--badge-green-text)]">
+              <span>
+                未注册：
+                {apps.find((a) => a.id === params.get('exclude_app_id'))
+                  ?.name ?? params.get('exclude_app_id')}
+              </span>
+              <button
+                type="button"
+                aria-label="清除未注册应用筛选"
+                onClick={() => change({ exclude_app_id: '' })}
                 className="rounded px-1 text-[11px] hover:bg-black/10"
               >
                 ×
@@ -189,6 +262,15 @@ export function Filters({
                 ×
               </button>
             </span>
+          )}
+          {onOpenAppsUsage && (
+            <button
+              type="button"
+              onClick={onOpenAppsUsage}
+              className="rounded-xl border border-white/80 bg-white/70 px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-white"
+            >
+              已注册应用统计
+            </button>
           )}
           {onOpenRecoveryUsage && (
             <button

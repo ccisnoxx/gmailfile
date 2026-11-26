@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 APP_VERSION = "0.1.0"
-SCHEMA_VERSION = "0005"
+SCHEMA_VERSION = "0006"
 
 IMAGE_NAMES: dict[str, str] = {
     "api": "gmail-manager-api",

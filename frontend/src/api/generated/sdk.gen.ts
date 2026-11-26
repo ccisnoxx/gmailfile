@@ -57,6 +57,21 @@ import type {
   AccountsUnarchiveData,
   AccountsUnarchiveErrors,
   AccountsUnarchiveResponses,
+  AppsCreateData,
+  AppsCreateErrors,
+  AppsCreateResponses,
+  AppsDeleteData,
+  AppsDeleteErrors,
+  AppsDeleteResponses,
+  AppsListData,
+  AppsListErrors,
+  AppsListResponses,
+  AppsPatchData,
+  AppsPatchErrors,
+  AppsPatchResponses,
+  AppsUsageData,
+  AppsUsageErrors,
+  AppsUsageResponses,
   AuditsIntegrityData,
   AuditsIntegrityErrors,
   AuditsIntegrityResponses,
@@ -1284,6 +1299,80 @@ export const tagsPatch = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/tags/{tag_id}',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Apps
+ */
+export const appsList = <ThrowOnError extends boolean = false>(
+  options?: Options<AppsListData, ThrowOnError>,
+): RequestResult<AppsListResponses, AppsListErrors, ThrowOnError> =>
+  (options?.client ?? client).get<
+    AppsListResponses,
+    AppsListErrors,
+    ThrowOnError
+  >({ url: '/api/v1/apps', ...options });
+
+/**
+ * App Create
+ */
+export const appsCreate = <ThrowOnError extends boolean = false>(
+  options: Options<AppsCreateData, ThrowOnError>,
+): RequestResult<AppsCreateResponses, AppsCreateErrors, ThrowOnError> =>
+  (options.client ?? client).post<
+    AppsCreateResponses,
+    AppsCreateErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/apps',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Apps Usage
+ */
+export const appsUsage = <ThrowOnError extends boolean = false>(
+  options?: Options<AppsUsageData, ThrowOnError>,
+): RequestResult<AppsUsageResponses, AppsUsageErrors, ThrowOnError> =>
+  (options?.client ?? client).get<
+    AppsUsageResponses,
+    AppsUsageErrors,
+    ThrowOnError
+  >({ url: '/api/v1/apps/usage', ...options });
+
+/**
+ * App Delete
+ */
+export const appsDelete = <ThrowOnError extends boolean = false>(
+  options: Options<AppsDeleteData, ThrowOnError>,
+): RequestResult<AppsDeleteResponses, AppsDeleteErrors, ThrowOnError> =>
+  (options.client ?? client).delete<
+    AppsDeleteResponses,
+    AppsDeleteErrors,
+    ThrowOnError
+  >({ url: '/api/v1/apps/{app_id}', ...options });
+
+/**
+ * App Patch
+ */
+export const appsPatch = <ThrowOnError extends boolean = false>(
+  options: Options<AppsPatchData, ThrowOnError>,
+): RequestResult<AppsPatchResponses, AppsPatchErrors, ThrowOnError> =>
+  (options.client ?? client).patch<
+    AppsPatchResponses,
+    AppsPatchErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/apps/{app_id}',
     ...options,
     headers: {
       'Content-Type': 'application/json',

@@ -7,6 +7,7 @@ import type {
   AccountPatchWritable,
   AuditItem,
   ErrorResponse,
+  RegisteredAppResponse,
   SessionResponse,
   TagResponse,
 } from '@/api/generated';
@@ -21,6 +22,8 @@ import {
   accountsPatch,
   accountsRestore,
   accountsUnarchive,
+  appsCreate,
+  appsList,
   auditsList,
   backupStatus,
   dashboardSummary,
@@ -39,7 +42,10 @@ import {
   subscribeDisplaySettings,
   subscribeNavAlpha,
   type DisplaySettingsState,
+  type SidebarCounts,
+  type SidebarSectionKey,
   type SidebarSystemStatus,
+  type SidebarTagItem,
   type WorkspaceNavKey,
 } from '@/components/macos';
 import {
@@ -61,7 +67,7 @@ import {
 } from '@/components/ui/dialog';
 import { AccountActionDialog } from '../account-action-dialog';
 import { AccountForm } from '../account-form';
-import type { AccountAction } from '../constants';
+import type { AccountAction, AppStatus } from '../constants';
 import {
   AccountBasicInfoForm,
   createDraftFromAccount,
@@ -275,6 +281,9 @@ function RoutedAccountDetailPage(props: AccountDetailPageProps) {
   const goRecovery = useCallback(() => {
     void navigate('/recovery-emails');
   }, [navigate]);
+  const goApps = useCallback(() => {
+    void navigate('/apps');
+  }, [navigate]);
 
   return (
     <AccountDetailLiveBody
@@ -284,6 +293,7 @@ function RoutedAccountDetailPage(props: AccountDetailPageProps) {
       onNavigateList={goList}
       onNavigateListWithQuery={goListWithQuery}
       onNavigateRecovery={goRecovery}
+      onNavigateApps={goApps}
     />
   );
 }
@@ -301,6 +311,7 @@ function AccountDetailLiveBody({
   onNavigateList,
   onNavigateListWithQuery,
   onNavigateRecovery,
+  onNavigateApps,
   defaultDisplaySettingsOpen,
 }: AccountDetailPageProps & {
   accountIdParam?: string;
@@ -308,6 +319,7 @@ function AccountDetailLiveBody({
   onNavigateList?: () => void;
   onNavigateListWithQuery?: (queryString: string) => void;
   onNavigateRecovery?: () => void;
+  onNavigateApps?: () => void;
 }) {
   const queryClient = useQueryClient();
   const headers = useMemo(
@@ -413,6 +425,14 @@ function AccountDetailLiveBody({
     queryKey: ['detail-backup-status'],
     queryFn: async ({ signal }) =>
       (await backupStatus({ signal, throwOnError: true })).data,
+  });
+
+  const appsQuery = useQuery({
+    queryKey: ['apps'],
+    queryFn: async ({ signal }) => {
+      const { data } = await appsList({ signal, throwOnError: true });
+      return Array.isArray(data) ? data : [];
+    },
   });
 
   const versionQuery = useQuery({
@@ -622,6 +642,11 @@ function AccountDetailLiveBody({
           purpose: nextDraft.purpose || null,
           notes: nextDraft.notes || null,
           tag_ids: account.tags.map((t) => t.id),
+          apps: nextDraft.apps.map((item) => ({
+            app_id: item.app_id,
+            status: item.status ?? 'active',
+            note: item.note?.trim() || null,
+          })),
         };
         if (nextDraft.password) {
           patch.password = nextDraft.password;
@@ -648,6 +673,7 @@ function AccountDetailLiveBody({
             queryKey: ['account-audits', data.id],
           }),
           queryClient.invalidateQueries({ queryKey: ['summary'] }),
+          queryClient.invalidateQueries({ queryKey: ['apps-usage'] }),
         ]);
       } catch (error) {
         const err = error as Partial<ErrorResponse>;
@@ -872,10 +898,108 @@ function AccountDetailLiveBody({
     [commitSwitchAccount, headers, onFailure, queryClient, showToast],
   );
 
+  const handleCreateApp = useCallback(
+    async (name: string): Promise<RegisteredAppResponse | null> => {
+      const { data } = await appsCreate({
+        body: { name },
+        headers,
+        throwOnError: true,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['apps'] }),
+        queryClient.invalidateQueries({ queryKey: ['apps-usage'] }),
+      ]);
+      return data;
+    },
+    [headers, queryClient],
+  );
+
+  const handleQuickToggleAppStatus = useCallback(
+    async (appId: string, nextStatus: AppStatus) => {
+      if (!account || busy) return;
+      setBusy(true);
+      setConflict(false);
+      setConflictMessage('');
+      try {
+        const nextApps = (account.apps ?? []).map((item) => ({
+          app_id: item.app_id,
+          status: item.app_id === appId ? nextStatus : item.status,
+          note: item.note ?? null,
+        }));
+        const { data } = await accountsPatch({
+          path: { account_id: account.id },
+          body: { row_version: account.row_version, apps: nextApps },
+          headers,
+          throwOnError: true,
+        });
+        queryClient.setQueryData(['account-detail', data.id], data);
+        setDraft(createDraftFromAccount(data));
+        const appName =
+          account.apps?.find((item) => item.app_id === appId)?.app_name ??
+          '应用';
+        const label =
+          nextStatus === 'banned'
+            ? '已封禁'
+            : nextStatus === 'restricted'
+              ? '受限'
+              : '正常';
+        prependLocalTimeline(data.id, `更新应用「${appName}」状态为${label}`);
+        showToast(`已将「${appName}」标记为${label}`);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['detail-accounts-list'] }),
+          queryClient.invalidateQueries({ queryKey: ['apps-usage'] }),
+          queryClient.invalidateQueries({
+            queryKey: ['account-audits', data.id],
+          }),
+        ]);
+      } catch (error) {
+        const err = error as Partial<ErrorResponse>;
+        if (err?.error?.code === 'ROW_VERSION_CONFLICT') {
+          setConflict(true);
+          setConflictMessage(
+            `版本冲突：账号已被其他页面修改（本地基于 v${account.row_version}），请重新加载后再操作。`,
+          );
+        } else {
+          showToast(err?.error?.message ?? '更新应用状态失败');
+          if (
+            ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+              err?.error?.code ?? '',
+            )
+          ) {
+            onFailure(error);
+          }
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      account,
+      busy,
+      headers,
+      onFailure,
+      prependLocalTimeline,
+      queryClient,
+      showToast,
+    ],
+  );
+
   const handleWorkspaceNav = useCallback(
     (key: WorkspaceNavKey) => {
-      if (key === 'accounts' || key === 'dashboard') {
+      if (key === 'dashboard') {
+        if (onNavigateListWithQuery) onNavigateListWithQuery('view=chart');
+        else onNavigateList?.();
+      } else if (key === 'accounts') {
         onNavigateList?.();
+      } else if (key === 'apps') {
+        if (onNavigateApps) onNavigateApps();
+        else if (onNavigateListWithQuery) onNavigateListWithQuery('view=apps');
+        else onNavigateList?.();
+      } else if (key === 'recovery') {
+        if (onNavigateRecovery) onNavigateRecovery();
+        else if (onNavigateListWithQuery)
+          onNavigateListWithQuery('view=recovery');
+        else onNavigateList?.();
       } else if (key === 'archived') {
         setFilterTab('archived');
       } else if (key === 'trash') {
@@ -894,8 +1018,60 @@ function AccountDetailLiveBody({
         onSecurity();
       }
     },
-    [onNavigateList, onNavigateListWithQuery, onOperations, onSecurity],
+    [
+      onNavigateApps,
+      onNavigateList,
+      onNavigateListWithQuery,
+      onNavigateRecovery,
+      onOperations,
+      onSecurity,
+    ],
   );
+
+  const handleSidebarSection = useCallback(
+    (section: SidebarSectionKey) => {
+      const map: Record<SidebarSectionKey, string> = {
+        all: '',
+        normal: 'status=normal',
+        pending: 'status=pending_verification',
+        risk: 'statuses=restricted,login_failed',
+        disabled: 'status=disabled',
+        archived: 'archived=true',
+        trash: 'deleted=true',
+      };
+      if (onNavigateListWithQuery) {
+        onNavigateListWithQuery(map[section]);
+      } else if (section === 'archived') {
+        setFilterTab('archived');
+      } else {
+        onNavigateList?.();
+      }
+    },
+    [onNavigateList, onNavigateListWithQuery],
+  );
+
+  const sidebarCounts: SidebarCounts | undefined = useMemo(() => {
+    const s = summaryQuery.data;
+    if (!s) return undefined;
+    return {
+      all: s.total,
+      normal: s.normal,
+      pending: s.pending_verification,
+      risk: s.risk ?? s.abnormal,
+      disabled: s.disabled ?? 0,
+      archived: s.archived ?? 0,
+      trash: s.deleted_count ?? 0,
+    };
+  }, [summaryQuery.data]);
+
+  const sidebarTags: SidebarTagItem[] = useMemo(() => {
+    const tagCounts = summaryQuery.data?.tag_counts;
+    return (tagsQuery.data ?? []).map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      count: tagCounts ? (tagCounts[tag.id] ?? 0) : undefined,
+    }));
+  }, [summaryQuery.data?.tag_counts, tagsQuery.data]);
 
   const timelineItems = useMemo(() => {
     const fromApi = mapAuditToTimeline(auditsQuery.data?.items ?? []);
@@ -960,7 +1136,9 @@ function AccountDetailLiveBody({
   const isListFiltered = Boolean(searchQuery.trim() || filterTab !== 'all');
   const totalCount = isListFiltered
     ? (accountsQuery.data?.total ?? listItems.length)
-    : (summaryQuery.data?.total ?? accountsQuery.data?.total ?? listItems.length);
+    : (summaryQuery.data?.total ??
+      accountsQuery.data?.total ??
+      listItems.length);
 
   return (
     <>
@@ -975,6 +1153,15 @@ function AccountDetailLiveBody({
         onSearchQueryChange={setSearchQuery}
         activeNav={filterTab === 'archived' ? 'archived' : 'accounts'}
         onSelectNav={handleWorkspaceNav}
+        onSelectSection={handleSidebarSection}
+        onSelectTag={(tagId) =>
+          onNavigateListWithQuery?.(
+            new URLSearchParams({ tag: tagId }).toString(),
+          )
+        }
+        onAddTag={() => onNavigateListWithQuery?.('modal=tags')}
+        sidebarCounts={sidebarCounts}
+        sidebarTags={sidebarTags}
         trashCount={summaryQuery.data?.deleted_count ?? 0}
         systemStatus={systemStatus}
         notifications={[]}
@@ -1072,6 +1259,9 @@ function AccountDetailLiveBody({
                       conflictMessage={conflictMessage}
                       secretEpoch={secretEpoch}
                       session={session}
+                      appsCatalog={appsQuery.data ?? []}
+                      onCreateApp={handleCreateApp}
+                      onQuickToggleAppStatus={handleQuickToggleAppStatus}
                       onSession={onSession}
                       onFailure={onFailure}
                       onDraftChange={setDraft}
@@ -1221,6 +1411,8 @@ function AccountDetailLiveBody({
           </DialogHeader>
           <AccountForm
             tags={tagsQuery.data ?? []}
+            appsCatalog={appsQuery.data ?? []}
+            onCreateApp={handleCreateApp}
             busy={busy}
             conflict={false}
             onFailure={onFailure}

@@ -267,45 +267,40 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
     renderPreviewRouter();
 
     // 账号列表搜索框 + ⌘K 快捷键（弹窗开启时不抢焦点，关闭后聚焦搜索框）
-    const searchInput =
-      screen.getByPlaceholderText('搜索账号或备注（⌘K）');
+    const searchInput = screen.getByPlaceholderText('搜索账号或备注（⌘K）');
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).not.toBe(searchInput);
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
 
-    // 左侧主导航 9 项入口 + 回收站徽标 3 + 底部系统运行状态
+    // 左侧统一主导航 + 全部账号可展开状态树 + 回收站徽标 3 + 底部精简系统状态条
     const sidebar = screen.getByLabelText('侧边导航栏');
     for (const label of [
       '数据概览',
-      'Gmail 账号',
+      '全部账号',
+      '已注册应用',
+      '辅助邮箱统计',
+      '回收站',
       '标签管理',
       '导入 / 导出（CSV）',
-      '归档账号',
-      '回收站',
       '审计日志',
       '备份与恢复',
       '系统设置',
     ]) {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     }
+    fireEvent.click(
+      within(sidebar).getByRole('button', { name: '展开账号状态分组' }),
+    );
+    expect(within(sidebar).getByText('已归档')).toBeInTheDocument();
     expect(within(sidebar).getByLabelText('回收站 3 项')).toHaveTextContent(
       '3',
     );
     const statusCard = within(sidebar).getByLabelText('系统运行状态');
     expect(within(statusCard).getByText('系统运行正常')).toBeInTheDocument();
     expect(
-      within(statusCard).getByText('会话与 CSRF 防护'),
-    ).toBeInTheDocument();
-    expect(
-      within(statusCard).getByText('字段加密 AES-256-GCM'),
-    ).toBeInTheDocument();
-    expect(
-      within(statusCard).getByText('TOTP 双因素认证已启用'),
-    ).toBeInTheDocument();
-    expect(
-      within(statusCard).getByText(/最近备份：2026-01-15 02:30/),
+      within(statusCard).getByText(/备份：2026-01-15 02:30/),
     ).toBeInTheDocument();
 
     // 中间账号列表：Gmail 账号（1,248）与 6 条示例账号
@@ -558,9 +553,7 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
 
     // 更多菜单：取消归档（归档后专用取消归档动作）与删除确认
     await user.click(screen.getByRole('button', { name: '更多' }));
-    await user.click(
-      await screen.findByRole('menuitem', { name: '取消归档' }),
-    );
+    await user.click(await screen.findByRole('menuitem', { name: '取消归档' }));
     const unarchiveDialog = await screen.findByRole('alertdialog');
     await user.click(
       within(unarchiveDialog).getByRole('button', { name: '确认取消归档' }),
@@ -786,9 +779,7 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
     await user.click(within(listPane).getByText(archived.gmail_email));
     await screen.findByRole('heading', { name: archived.gmail_email });
     await user.click(screen.getByRole('button', { name: '更多' }));
-    await user.click(
-      await screen.findByRole('menuitem', { name: '取消归档' }),
-    );
+    await user.click(await screen.findByRole('menuitem', { name: '取消归档' }));
     const dialog = await screen.findByRole('alertdialog');
     await user.click(
       within(dialog).getByRole('button', { name: '确认取消归档' }),

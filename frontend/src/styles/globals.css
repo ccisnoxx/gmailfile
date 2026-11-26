@@ -80,11 +80,11 @@
     0 12px 32px rgba(45, 86, 138, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.92);
   --panel-radius: 18px;
 
-  --modal-bg: rgba(250, 253, 255, 0.84);
+  --modal-bg: rgba(252, 254, 255, 0.95);
   --modal-blur: 28px;
-  --modal-border: rgba(255, 255, 255, 0.86);
+  --modal-border: rgba(255, 255, 255, 0.92);
   --modal-shadow:
-    0 28px 80px rgba(32, 64, 110, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    0 28px 80px rgba(32, 64, 110, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.96);
 
   --table-divider: rgba(148, 178, 214, 0.22);
   --table-row-hover: rgba(255, 255, 255, 0.52);
@@ -408,6 +408,25 @@
   a {
     -webkit-tap-highlight-color: transparent;
   }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  a[href],
+  select:not(:disabled),
+  summary,
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  label:has(> input:is([type='checkbox'], [type='radio']):not(:disabled)) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role='button'][aria-disabled='true'],
+  select:disabled,
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    cursor: not-allowed;
+  }
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -496,12 +515,14 @@
   box-shadow: var(--panel-shadow-hover);
 }
 
-.macos-glass-modal {
-  background: var(--modal-bg);
-  backdrop-filter: blur(var(--modal-blur)) saturate(145%);
-  -webkit-backdrop-filter: blur(var(--modal-blur)) saturate(145%);
-  border: 1px solid var(--modal-border);
-  box-shadow: var(--modal-shadow);
+@layer components {
+  .macos-glass-modal {
+    background: var(--modal-bg);
+    backdrop-filter: blur(var(--modal-blur)) saturate(145%);
+    -webkit-backdrop-filter: blur(var(--modal-blur)) saturate(145%);
+    border: 1px solid var(--modal-border);
+    box-shadow: var(--modal-shadow);
+  }
 }
 
 .macos-tooltip {

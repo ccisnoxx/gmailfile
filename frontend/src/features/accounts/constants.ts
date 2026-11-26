@@ -1,15 +1,10 @@
-import type { AccountSummary } from '@/api/generated';
+import type { AccountAppItem, AccountSummary } from '@/api/generated';
 import { localDate } from '@/lib/format';
 
 export { localDate };
 
 export type AccountAction =
-  | 'archive'
-  | 'unarchive'
-  | 'delete'
-  | 'restore'
-  | 'verified'
-  | 'logged-in';
+  'archive' | 'unarchive' | 'delete' | 'restore' | 'verified' | 'logged-in';
 
 export const actionLabels: Record<AccountAction, string> = {
   archive: '归档',
@@ -32,11 +27,20 @@ export const statusLabels: Record<AccountSummary['status'], string> = {
 export const factorLabels: Record<AccountSummary['two_factor_status'], string> =
   { unknown: '未知', disabled: '未开启', enabled: '已开启' };
 
+export type AppStatus = AccountAppItem['status'];
+
+export const appStatusLabels: Record<AppStatus, string> = {
+  active: '正常',
+  restricted: '受限',
+  banned: '已封禁',
+};
+
 export const accountColumnLabels = {
   registered: '注册时间',
   recovery: '辅助邮箱',
   status: '状态',
   factor: '二步验证',
+  apps: '已注册应用',
   purpose: '用途',
   tags: '标签',
   verified: '最后验证',
@@ -50,6 +54,7 @@ export const defaultVisibleColumns: Record<AccountColumnKey, boolean> = {
   recovery: true,
   status: true,
   factor: true,
+  apps: true,
   purpose: true,
   tags: true,
   verified: true,

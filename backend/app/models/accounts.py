@@ -103,3 +103,31 @@ gmail_account_tags = Table(
     Column("account_id", ForeignKey("gmail_accounts.id"), primary_key=True),
     Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
 )
+
+
+class RegisteredApp(IdentityMixin, CreatedMixin, Base):
+    __tablename__ = "registered_apps"
+    __table_args__ = (
+        UniqueConstraint("name_normalized"),
+        CheckConstraint("btrim(name) <> ''", name="name_nonempty"),
+        CheckConstraint("name_normalized = lower(btrim(name))", name="name_normalized"),
+    )
+
+    name: Mapped[str] = mapped_column(String(64))
+    name_normalized: Mapped[str] = mapped_column(String(64))
+    sort_order: Mapped[int] = mapped_column(SmallInteger, server_default=text("100"))
+
+
+class GmailAccountApp(UpdatedMixin, Base):
+    __tablename__ = "gmail_account_apps"
+    __table_args__ = (CheckConstraint("status IN ('active','restricted','banned')", name="status"),)
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("gmail_accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    app_id: Mapped[UUID] = mapped_column(
+        ForeignKey("registered_apps.id", ondelete="CASCADE"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(24), server_default="active")
+    note: Mapped[str | None] = mapped_column(String(200))
+    banned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

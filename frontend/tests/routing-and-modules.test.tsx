@@ -92,6 +92,8 @@ it('按统一壳层路由动态加载账号页、系统设置与导入导出页�
           page_size: 30,
           event_types: [],
         });
+      if (path === '/api/v1/apps') return json([]);
+      if (path === '/api/v1/apps/usage') return json([]);
       if (path === '/api/v1/audit-events/integrity')
         return json({
           valid: true,
@@ -111,11 +113,13 @@ it('按统一壳层路由动态加载账号页、系统设置与导入导出页�
   await screen.findByRole('heading', { name: '系统设置' });
   expect(memoryRouter.state.location.pathname).toBe('/settings/security');
 
-  await userEvent.click(screen.getByRole('button', { name: '导入 / 导出' }));
+  await userEvent.click(
+    screen.getByRole('button', { name: '导入 / 导出（CSV）' }),
+  );
   await screen.findByRole('heading', { name: 'CSV 导入 / 批量操作' });
   expect(memoryRouter.state.location.pathname).toBe('/transfers/csv');
 
-  await userEvent.click(screen.getByRole('button', { name: '账号管理' }));
+  await userEvent.click(screen.getByRole('button', { name: /全部账号/ }));
   await screen.findByRole('heading', { name: '账号管理' });
   expect(memoryRouter.state.location.pathname).toBe('/accounts');
 });

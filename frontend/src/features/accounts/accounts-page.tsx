@@ -8,21 +8,21 @@ import {
   useState,
 } from 'react';
 import { BarChart3, Filter, List, Plus, RefreshCw, Search } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useInRouterContext, useNavigate, useParams } from 'react-router-dom';
 import type {
   AccountSummary,
   ErrorResponse,
+  RegisteredAppResponse,
   SessionResponse,
 } from '@/api/generated';
-import { dashboardSummary } from '@/api/generated';
+import { appsCreate, dashboardSummary } from '@/api/generated';
 import {
   AppWindowShell,
   EmptyState,
   GlassToolbar,
   IconTooltip,
   LoadingState,
-  MobilePrimaryNavMenu,
   persistDisplaySettings,
   persistNavAlpha,
   PrimarySidebar,
@@ -53,6 +53,9 @@ import { useTagManager } from './use-tag-manager';
 const RecoveryPage = lazy(() =>
   import('./recovery-usage-view').then((m) => ({ default: m.RecoveryPage })),
 );
+const AppsUsageView = lazy(() =>
+  import('./apps-usage-view').then((m) => ({ default: m.AppsUsageView })),
+);
 const AccountDetailDrawer = lazy(() =>
   import('./account-detail-drawer').then((m) => ({
     default: m.AccountDetailDrawer,
@@ -72,6 +75,7 @@ const TagManagerDialog = lazy(() =>
 interface AccountsPageProps {
   session: SessionResponse;
   initialRecoveryView?: boolean;
+  initialAppsView?: boolean;
   onSession: (value: SessionResponse) => void;
   onFailure: (error: unknown) => void;
   onSecurity: () => void;
@@ -84,6 +88,7 @@ interface RouterSyncProps {
   navigateToAccount?: (id: string) => void;
   navigateBackToList?: () => void;
   navigateToRecovery?: () => void;
+  navigateToApps?: () => void;
   navigateToAccountsWithQuery?: (queryString: string) => void;
 }
 
@@ -116,6 +121,9 @@ function RoutedAccountsPage(props: AccountsPageProps) {
   const navigateToRecovery = useCallback(() => {
     void navigate('/recovery-emails');
   }, [navigate]);
+  const navigateToApps = useCallback(() => {
+    void navigate('/apps');
+  }, [navigate]);
   const navigateToAccountsWithQuery = useCallback(
     (queryString: string) => {
       void navigate({
@@ -132,6 +140,7 @@ function RoutedAccountsPage(props: AccountsPageProps) {
       navigateToAccount={navigateToAccount}
       navigateBackToList={navigateBackToList}
       navigateToRecovery={navigateToRecovery}
+      navigateToApps={navigateToApps}
       navigateToAccountsWithQuery={navigateToAccountsWithQuery}
     />
   );
@@ -140,6 +149,7 @@ function RoutedAccountsPage(props: AccountsPageProps) {
 function AccountsPageBody({
   session,
   initialRecoveryView = false,
+  initialAppsView = false,
   onSession,
   onFailure,
   onSecurity,
@@ -149,19 +159,30 @@ function AccountsPageBody({
   navigateToAccount,
   navigateBackToList,
   navigateToRecovery,
+  navigateToApps,
   navigateToAccountsWithQuery,
 }: AccountsPageProps & RouterSyncProps) {
+  const queryClient = useQueryClient();
   const queryState = useAccountQueryState();
   const isRecoveryView = initialRecoveryView || queryState.recoveryView;
+  const isAppsView =
+    !isRecoveryView && (initialAppsView || queryState.appsView);
+  const isStandaloneSubView = isRecoveryView || isAppsView;
 
   const [navAlpha, setNavAlpha] = useState<number>(() => readStoredNavAlpha());
   const [displaySettings, setDisplaySettings] = useState<DisplaySettingsState>(
     () => readDisplaySettings(),
   );
-  const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'chart'>(() =>
+    queryState.chartView ? 'chart' : 'list',
+  );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showcaseToggle, setShowcaseToggle] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (queryState.chartView) setViewMode('chart');
+  }, [queryState.chartView]);
 
   const handleNavAlphaChange = useCallback((next: number) => {
     setNavAlpha(next);
@@ -193,9 +214,26 @@ function AccountsPageBody({
     query: queryState.query,
     search: queryState.search,
     recoveryView: isRecoveryView,
+    appsView: isAppsView,
     onFailure: detailState.fail,
   });
   refreshRef.current = listState.refresh;
+
+  const handleCreateApp = useCallback(
+    async (name: string): Promise<RegisteredAppResponse | null> => {
+      const { data } = await appsCreate({
+        body: { name },
+        headers: detailState.headers,
+        throwOnError: true,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['apps'] }),
+        queryClient.invalidateQueries({ queryKey: ['apps-usage'] }),
+      ]);
+      return data;
+    },
+    [detailState.headers, queryClient],
+  );
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const summaryQuery = useQuery({
@@ -229,12 +267,12 @@ function AccountsPageBody({
     }
   }, [queryState, tagState]);
 
-  // ⌘K / Ctrl+K 聚焦搜索框（存在弹窗或位于辅助邮箱视图时让位）
+  // ⌘K / Ctrl+K 聚焦搜索框（存在弹窗或位于辅助邮箱/应用统计视图时让位）
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         if (
-          isRecoveryView ||
+          isStandaloneSubView ||
           document.querySelector('[role="dialog"], [role="alertdialog"]')
         ) {
           return;
@@ -245,7 +283,7 @@ function AccountsPageBody({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isRecoveryView]);
+  }, [isStandaloneSubView]);
 
   // URL /accounts/:accountId 自动同步打开对应详情抽屉
   const openedRouteIdRef = useRef<string | null>(null);
@@ -319,6 +357,7 @@ function AccountsPageBody({
 
   const handleOpenRecoveryUsage = useCallback(() => {
     handleCloseDetail();
+    setViewMode('list');
     if (navigateToRecovery) {
       navigateToRecovery();
     } else {
@@ -326,62 +365,71 @@ function AccountsPageBody({
     }
   }, [handleCloseDetail, navigateToRecovery, queryState]);
 
-  const handleOpenRecoveryAccounts = useCallback(
-    (email: string) => {
-      if (initialRecoveryView && navigateToAccountsWithQuery) {
-        const next = new URLSearchParams({ recovery_email: email });
+  const handleOpenAppsUsage = useCallback(() => {
+    handleCloseDetail();
+    setViewMode('list');
+    if (navigateToApps) {
+      navigateToApps();
+    } else {
+      queryState.openAppsView();
+    }
+  }, [handleCloseDetail, navigateToApps, queryState]);
+
+  const navigateWithAccountQuery = useCallback(
+    (values: Record<string, string>) => {
+      setViewMode('list');
+      if (
+        (initialRecoveryView || initialAppsView) &&
+        navigateToAccountsWithQuery
+      ) {
+        const next = new URLSearchParams();
+        for (const [k, v] of Object.entries(values)) {
+          if (v) next.set(k, v);
+        }
         navigateToAccountsWithQuery(next.toString());
       } else {
-        queryState.change({ recovery_email: email }, true);
-      }
-    },
-    [initialRecoveryView, navigateToAccountsWithQuery, queryState],
-  );
-
-  const handleSelectSection = useCallback(
-    (section: SidebarSectionKey) => {
-      handleCloseDetail();
-      if (initialRecoveryView && navigateToAccountsWithQuery) {
-        const map: Record<SidebarSectionKey, string> = {
-          all: '',
-          normal: 'status=normal',
-          pending: 'status=pending_verification',
-          risk: 'statuses=restricted,login_failed',
-          disabled: 'status=disabled',
-          archived: 'archived=true',
-          trash: 'deleted=true',
-        };
-        navigateToAccountsWithQuery(map[section]);
-        return;
-      }
-      if (section === 'all') {
-        queryState.change({}, true);
-      } else if (section === 'normal') {
-        queryState.change({ status: 'normal' }, true);
-      } else if (section === 'pending') {
-        queryState.change({ status: 'pending_verification' }, true);
-      } else if (section === 'risk') {
-        queryState.change({ statuses: 'restricted,login_failed' }, true);
-      } else if (section === 'disabled') {
-        queryState.change({ status: 'disabled' }, true);
-      } else if (section === 'archived') {
-        queryState.change({ archived: 'true' }, true);
-      } else {
-        queryState.change({ deleted: 'true' }, true);
+        queryState.change(values, true);
       }
     },
     [
-      handleCloseDetail,
+      initialAppsView,
       initialRecoveryView,
       navigateToAccountsWithQuery,
       queryState,
     ],
   );
 
+  const handleOpenRecoveryAccounts = useCallback(
+    (email: string) => navigateWithAccountQuery({ recovery_email: email }),
+    [navigateWithAccountQuery],
+  );
+
+  const handleSelectSection = useCallback(
+    (section: SidebarSectionKey) => {
+      handleCloseDetail();
+      setViewMode('list');
+      const map: Record<SidebarSectionKey, Record<string, string>> = {
+        all: {},
+        normal: { status: 'normal' },
+        pending: { status: 'pending_verification' },
+        risk: { statuses: 'restricted,login_failed' },
+        disabled: { status: 'disabled' },
+        archived: { archived: 'true' },
+        trash: { deleted: 'true' },
+      };
+      navigateWithAccountQuery(map[section]);
+    },
+    [handleCloseDetail, navigateWithAccountQuery],
+  );
+
   const handleSelectTag = useCallback(
     (tagId: string) => {
       handleCloseDetail();
-      if (initialRecoveryView && navigateToAccountsWithQuery) {
+      setViewMode('list');
+      if (
+        (initialRecoveryView || initialAppsView) &&
+        navigateToAccountsWithQuery
+      ) {
         navigateToAccountsWithQuery(
           new URLSearchParams({ tag: tagId }).toString(),
         );
@@ -396,6 +444,7 @@ function AccountsPageBody({
     },
     [
       handleCloseDetail,
+      initialAppsView,
       initialRecoveryView,
       navigateToAccountsWithQuery,
       queryState,
@@ -407,14 +456,20 @@ function AccountsPageBody({
       handleCloseDetail();
       if (key === 'dashboard') {
         setViewMode('chart');
-        if (initialRecoveryView && navigateToAccountsWithQuery) {
-          navigateToAccountsWithQuery('');
+        if (
+          (initialRecoveryView || initialAppsView) &&
+          navigateToAccountsWithQuery
+        ) {
+          navigateToAccountsWithQuery('view=chart');
         } else {
-          queryState.change({}, true);
+          queryState.openChartView();
         }
       } else if (key === 'accounts') {
         setViewMode('list');
-        if (initialRecoveryView && navigateToAccountsWithQuery) {
+        if (
+          (initialRecoveryView || initialAppsView) &&
+          navigateToAccountsWithQuery
+        ) {
           navigateToAccountsWithQuery('');
         } else {
           queryState.change({ view: '' });
@@ -433,6 +488,7 @@ function AccountsPageBody({
     },
     [
       handleCloseDetail,
+      initialAppsView,
       initialRecoveryView,
       navigateToAccountsWithQuery,
       onOperations,
@@ -497,6 +553,9 @@ function AccountsPageBody({
     'statuses',
     'two_factor_status',
     'tag',
+    'app_id',
+    'app_status',
+    'exclude_app_id',
     'archived',
     'purpose',
     'from',
@@ -505,6 +564,7 @@ function AccountsPageBody({
   ].filter((key) => queryState.params.has(key)).length;
 
   const selectedCount = listState.selectedItems.length;
+  const isChartView = !isStandaloneSubView && viewMode === 'chart';
 
   return (
     <AppWindowShell
@@ -512,15 +572,9 @@ function AccountsPageBody({
       flowingBackground={displaySettings.flowingBackground}
       animationsEnabled={displaySettings.animationsEnabled}
       compactMode={displaySettings.compactMode}
-      mobileDrawerHeader={
-        <MobilePrimaryNavMenu
-          activeNav="accounts"
-          onSelectNav={handleTopNav}
-        />
-      }
       toolbar={
         <GlassToolbar
-          activeNav="accounts"
+          activeNav={isChartView ? 'dashboard' : 'accounts'}
           navAlpha={navAlpha}
           onNavAlphaChange={handleNavAlphaChange}
           displaySettings={displaySettings}
@@ -548,20 +602,29 @@ function AccountsPageBody({
       }
       sidebar={
         <PrimarySidebar
-          activeSection={isRecoveryView ? null : activeSection}
+          activeSection={isStandaloneSubView ? null : activeSection}
           activeTagId={queryState.params.get('tag')}
+          dashboardActive={isChartView}
+          appsActive={isAppsView}
+          recoveryActive={isRecoveryView}
           counts={visibleCounts}
           tags={sidebarTags}
           onSelectSection={handleSelectSection}
           onSelectTag={handleSelectTag}
           onAddTag={tagState.openDialog}
+          onOpenDashboard={() => handleTopNav('dashboard')}
+          onOpenApps={handleOpenAppsUsage}
           onOpenRecoveryUsage={handleOpenRecoveryUsage}
-          recoveryActive={isRecoveryView}
+          onOpenTransfer={() => handleTopNav('transfer')}
           onOpenAudit={() => handleTopNav('audit')}
           onOpenBackup={() => {
             handleCloseDetail();
             if (onOperations) onOperations('status');
             else onSecurity();
+          }}
+          onOpenSettings={() => {
+            handleCloseDetail();
+            onSecurity();
           }}
         />
       }
@@ -572,20 +635,28 @@ function AccountsPageBody({
           <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-[var(--text-primary)]">
             {isRecoveryView
               ? '辅助邮箱统计'
-              : queryState.deleted
-                ? '回收站'
-                : '账号管理'}
+              : isAppsView
+                ? '已注册应用'
+                : isChartView
+                  ? '数据概览'
+                  : queryState.deleted
+                    ? '回收站'
+                    : '账号管理'}
           </h1>
           <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
             {isRecoveryView
               ? '统计每个辅助邮箱关联的账号规模与异常分布，快速排查集中风险'
-              : queryState.deleted
-                ? '邮箱唯一性和关联仍然保留，支持单条或批量恢复。'
-                : '集中管理 Gmail 账号资料、凭据、辅助邮箱与使用状态'}
+              : isAppsView
+                ? '统一管理各 Gmail 注册的第三方应用状态与封禁情况'
+                : isChartView
+                  ? '实时查看账号注册趋势、状态分布、二步验证覆盖与辅助邮箱占用'
+                  : queryState.deleted
+                    ? '邮箱唯一性和关联仍然保留，支持单条或批量恢复。'
+                    : '集中管理 Gmail 账号资料、凭据、辅助邮箱与使用状态'}
           </p>
         </div>
 
-        {isRecoveryView ? (
+        {isStandaloneSubView ? (
           <button
             type="button"
             onClick={() => handleSelectSection('all')}
@@ -709,8 +780,8 @@ function AccountsPageBody({
         )}
       </div>
 
-      {/* 全局统计卡片（仅在账号管理视图展示，避免与辅助邮箱统计卡重复） */}
-      {!isRecoveryView && (
+      {/* 全局统计卡片（仅在账号管理视图展示，避免与辅助邮箱/应用统计卡重复） */}
+      {!isStandaloneSubView && (
         <Summary
           stats={stats}
           activeSection={activeSection}
@@ -729,13 +800,15 @@ function AccountsPageBody({
       )}
 
       {/* 可折叠的筛选面板 + 列显示 */}
-      {filtersOpen && !isRecoveryView && (
+      {filtersOpen && !isStandaloneSubView && (
         <div className="space-y-3">
           <Filters
             params={queryState.params}
             change={queryState.change}
             tags={listState.tags.data ?? []}
+            apps={listState.apps.data ?? []}
             onOpenRecoveryUsage={handleOpenRecoveryUsage}
+            onOpenAppsUsage={handleOpenAppsUsage}
           />
           <ColumnToggle
             columns={listState.columns}
@@ -745,7 +818,7 @@ function AccountsPageBody({
       )}
 
       {/* 选中行时显示批量操作条（普通列表支持批量状态/标签，回收站支持批量恢复） */}
-      {!isRecoveryView && selectedCount > 0 && (
+      {!isStandaloneSubView && selectedCount > 0 && (
         <BatchBar
           key={queryState.search + ':' + listState.list.dataUpdatedAt}
           selected={listState.selectedItems}
@@ -762,7 +835,7 @@ function AccountsPageBody({
         />
       )}
 
-      {/* 主视图区域：辅助邮箱统计 / 图表视图 / 账号表格 */}
+      {/* 主视图区域：辅助邮箱统计 / 已注册应用统计 / 图表视图 / 账号表格 */}
       {isRecoveryView ? (
         <div className="macos-glass-panel macos-glass-panel-strong p-5">
           <Suspense fallback={<LoadingState title="正在加载辅助邮箱统计…" />}>
@@ -772,6 +845,30 @@ function AccountsPageBody({
               onFailure={detailState.fail}
               onCopy={(value) => void detailState.copy(value)}
               onOpenAccountsFilter={handleOpenRecoveryAccounts}
+            />
+          </Suspense>
+        </div>
+      ) : isAppsView ? (
+        <div className="macos-glass-panel macos-glass-panel-strong p-5">
+          <Suspense fallback={<LoadingState title="正在加载已注册应用统计…" />}>
+            <AppsUsageView
+              csrfToken={session.csrf_token}
+              onFailure={detailState.fail}
+              onOpenRegisteredAccounts={(appId) =>
+                navigateWithAccountQuery({ app_id: appId })
+              }
+              onOpenBannedAccounts={(appId) =>
+                navigateWithAccountQuery({
+                  app_id: appId,
+                  app_status: 'banned',
+                })
+              }
+              onOpenAvailableAccounts={(appId) =>
+                navigateWithAccountQuery({
+                  status: 'normal',
+                  exclude_app_id: appId,
+                })
+              }
             />
           </Suspense>
         </div>
@@ -861,6 +958,8 @@ function AccountsPageBody({
             form={detailState.form}
             detail={detailState.detail}
             tags={listState.tags.data ?? []}
+            appsCatalog={listState.apps.data ?? []}
+            onCreateApp={handleCreateApp}
             busy={detailState.busy}
             conflict={detailState.conflict}
             notice={detailState.notice}

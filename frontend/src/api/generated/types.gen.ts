@@ -5,6 +5,54 @@ export type ClientOptions = {
 };
 
 /**
+ * AccountAppInput
+ */
+export type AccountAppInput = {
+  /**
+   * App Id
+   */
+  app_id: string;
+  /**
+   * Status
+   */
+  status?: 'active' | 'restricted' | 'banned';
+  /**
+   * Note
+   */
+  note?: string | null;
+};
+
+/**
+ * AccountAppItem
+ */
+export type AccountAppItem = {
+  /**
+   * App Id
+   */
+  app_id: string;
+  /**
+   * App Name
+   */
+  app_name: string;
+  /**
+   * Status
+   */
+  status: 'active' | 'restricted' | 'banned';
+  /**
+   * Note
+   */
+  note: string | null;
+  /**
+   * Banned At
+   */
+  banned_at: string | null;
+  /**
+   * Updated At
+   */
+  updated_at: string;
+};
+
+/**
  * AccountCreate
  */
 export type AccountCreate = {
@@ -50,6 +98,10 @@ export type AccountCreate = {
    * Tag Ids
    */
   tag_ids?: Array<string>;
+  /**
+   * Apps
+   */
+  apps?: Array<AccountAppInput>;
   /**
    * Last Login At
    */
@@ -122,6 +174,10 @@ export type AccountDetail = {
    * Tags
    */
   tags: Array<TagResponse>;
+  /**
+   * Apps
+   */
+  apps?: Array<AccountAppItem>;
   /**
    * Last Login At
    */
@@ -264,6 +320,10 @@ export type AccountPatch = {
    */
   tag_ids?: Array<string> | null;
   /**
+   * Apps
+   */
+  apps?: Array<AccountAppInput> | null;
+  /**
    * Last Login At
    */
   last_login_at?: string | null;
@@ -319,6 +379,18 @@ export type AccountQuery = {
    * Tag
    */
   tag?: string | null;
+  /**
+   * App Id
+   */
+  app_id?: string | null;
+  /**
+   * App Status
+   */
+  app_status?: 'active' | 'restricted' | 'banned' | null;
+  /**
+   * Exclude App Id
+   */
+  exclude_app_id?: string | null;
   /**
    * Two Factor Status
    */
@@ -423,6 +495,10 @@ export type AccountSummary = {
    * Tags
    */
   tags: Array<TagResponse>;
+  /**
+   * Apps
+   */
+  apps?: Array<AccountAppItem>;
   /**
    * Last Login At
    */
@@ -1141,6 +1217,76 @@ export type RecoveryUsage = {
 };
 
 /**
+ * RegisteredAppInput
+ */
+export type RegisteredAppInput = {
+  /**
+   * Name
+   */
+  name: string;
+};
+
+/**
+ * RegisteredAppResponse
+ */
+export type RegisteredAppResponse = {
+  /**
+   * Id
+   */
+  id: string;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Sort Order
+   */
+  sort_order: number;
+  /**
+   * Created At
+   */
+  created_at: string;
+};
+
+/**
+ * RegisteredAppUsage
+ */
+export type RegisteredAppUsage = {
+  /**
+   * Id
+   */
+  id: string;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Sort Order
+   */
+  sort_order: number;
+  /**
+   * Total Count
+   */
+  total_count: number;
+  /**
+   * Active Count
+   */
+  active_count: number;
+  /**
+   * Restricted Count
+   */
+  restricted_count: number;
+  /**
+   * Banned Count
+   */
+  banned_count: number;
+  /**
+   * Created At
+   */
+  created_at: string;
+};
+
+/**
  * RegistrationTrendPoint
  */
 export type RegistrationTrendPoint = {
@@ -1680,6 +1826,10 @@ export type AccountCreateWritable = {
    */
   tag_ids?: Array<string>;
   /**
+   * Apps
+   */
+  apps?: Array<AccountAppInput>;
+  /**
    * Last Login At
    */
   last_login_at?: string | null;
@@ -1752,6 +1902,10 @@ export type AccountPatchWritable = {
    * Tag Ids
    */
   tag_ids?: Array<string> | null;
+  /**
+   * Apps
+   */
+  apps?: Array<AccountAppInput> | null;
   /**
    * Last Login At
    */
@@ -3208,6 +3362,18 @@ export type AccountsListData = {
      */
     tag?: string | null;
     /**
+     * App Id
+     */
+    app_id?: string | null;
+    /**
+     * App Status
+     */
+    app_status?: 'active' | 'restricted' | 'banned' | null;
+    /**
+     * Exclude App Id
+     */
+    exclude_app_id?: string | null;
+    /**
      * Two Factor Status
      */
     two_factor_status?: 'unknown' | 'disabled' | 'enabled' | null;
@@ -4618,3 +4784,242 @@ export type TagsPatchResponses = {
 };
 
 export type TagsPatchResponse = TagsPatchResponses[keyof TagsPatchResponses];
+
+export type AppsListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/apps';
+};
+
+export type AppsListErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AppsListError = AppsListErrors[keyof AppsListErrors];
+
+export type AppsListResponses = {
+  /**
+   * Response Appslist
+   *
+   * Successful Response
+   */
+  200: Array<RegisteredAppResponse>;
+};
+
+export type AppsListResponse = AppsListResponses[keyof AppsListResponses];
+
+export type AppsCreateData = {
+  body: RegisteredAppInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/apps';
+};
+
+export type AppsCreateErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AppsCreateError = AppsCreateErrors[keyof AppsCreateErrors];
+
+export type AppsCreateResponses = {
+  /**
+   * Successful Response
+   */
+  201: RegisteredAppResponse;
+};
+
+export type AppsCreateResponse = AppsCreateResponses[keyof AppsCreateResponses];
+
+export type AppsUsageData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/apps/usage';
+};
+
+export type AppsUsageErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AppsUsageError = AppsUsageErrors[keyof AppsUsageErrors];
+
+export type AppsUsageResponses = {
+  /**
+   * Response Appsusage
+   *
+   * Successful Response
+   */
+  200: Array<RegisteredAppUsage>;
+};
+
+export type AppsUsageResponse = AppsUsageResponses[keyof AppsUsageResponses];
+
+export type AppsDeleteData = {
+  body?: never;
+  path: {
+    /**
+     * App Id
+     */
+    app_id: string;
+  };
+  query?: never;
+  url: '/api/v1/apps/{app_id}';
+};
+
+export type AppsDeleteErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AppsDeleteError = AppsDeleteErrors[keyof AppsDeleteErrors];
+
+export type AppsDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  200: ActionResponse;
+};
+
+export type AppsDeleteResponse = AppsDeleteResponses[keyof AppsDeleteResponses];
+
+export type AppsPatchData = {
+  body: RegisteredAppInput;
+  path: {
+    /**
+     * App Id
+     */
+    app_id: string;
+  };
+  query?: never;
+  url: '/api/v1/apps/{app_id}';
+};
+
+export type AppsPatchErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AppsPatchError = AppsPatchErrors[keyof AppsPatchErrors];
+
+export type AppsPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: RegisteredAppResponse;
+};
+
+export type AppsPatchResponse = AppsPatchResponses[keyof AppsPatchResponses];
