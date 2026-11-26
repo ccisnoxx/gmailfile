@@ -156,7 +156,7 @@ export function NavigationOpacitySlider({
             max={MAX_NAV_ALPHA}
             step={1}
             value={clamped}
-            aria-label="导航栏毛玻璃透明度"
+            aria-label={resolvedLabel}
             aria-valuetext={`${clamped}%`}
             onChange={(e) => onChange(clampNavAlpha(Number(e.target.value)))}
             style={{
@@ -180,7 +180,7 @@ export function NavigationOpacitySlider({
       >
         <span
           aria-hidden="true"
-          className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-[#eaf3ff] text-[var(--accent)]"
+          className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-text)]"
         >
           <Layers className="size-4" />
         </span>
@@ -227,22 +227,22 @@ export function NavigationOpacitySlider({
         className,
       )}
     >
-      <label
-        htmlFor={id}
-        className="text-[11px] leading-none font-medium tracking-tight text-[var(--text-primary)]"
-      >
-        导航栏毛玻璃透明度
-      </label>
-      <div className="flex items-center gap-2">
-        <input
-          id={id}
-          type="range"
-          min={MIN_NAV_ALPHA}
-          max={MAX_NAV_ALPHA}
-          step={1}
-          value={clamped}
-          aria-label="导航栏毛玻璃透明度"
-          aria-valuetext={`${clamped}%`}
+          <label
+            htmlFor={id}
+            className="text-[11px] leading-none font-medium tracking-tight text-[var(--text-primary)]"
+          >
+            {resolvedLabel}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id={id}
+              type="range"
+              min={MIN_NAV_ALPHA}
+              max={MAX_NAV_ALPHA}
+              step={1}
+              value={clamped}
+              aria-label={resolvedLabel}
+              aria-valuetext={`${clamped}%`}
           onChange={(e) => onChange(clampNavAlpha(Number(e.target.value)))}
           style={{
             background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${progress}%, rgba(148, 178, 214, 0.38) ${progress}%, rgba(148, 178, 214, 0.38) 100%)`,

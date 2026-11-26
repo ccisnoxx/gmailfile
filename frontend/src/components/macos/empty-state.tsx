@@ -1,4 +1,4 @@
-import { Plus, Upload } from 'lucide-react';
+import { Plus, RefreshCw, Upload } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function EmptyState({
@@ -7,6 +7,7 @@ export function EmptyState({
   onCreate,
   onImportCsv,
   createLabel = '新建账号',
+  actionIcon,
   role,
   className,
 }: {
@@ -15,9 +16,17 @@ export function EmptyState({
   onCreate?: () => void;
   onImportCsv?: () => void;
   createLabel?: string;
+  actionIcon?: 'plus' | 'refresh' | 'none';
   role?: 'alert' | 'status';
   className?: string;
 }) {
+  const resolvedIcon =
+    actionIcon ??
+    (createLabel.includes('重试')
+      ? 'refresh'
+      : createLabel.includes('清空')
+        ? 'none'
+        : 'plus');
   return (
     <div
       data-slot="empty-state"
@@ -92,9 +101,14 @@ export function EmptyState({
             <button
               type="button"
               onClick={onCreate}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.26)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.26)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
             >
-              <Plus className="size-4" aria-hidden="true" />
+              {resolvedIcon === 'plus' && (
+                <Plus className="size-4" aria-hidden="true" />
+              )}
+              {resolvedIcon === 'refresh' && (
+                <RefreshCw className="size-3.5" aria-hidden="true" />
+              )}
               <span>{createLabel}</span>
             </button>
           )}
@@ -102,7 +116,7 @@ export function EmptyState({
             <button
               type="button"
               onClick={onImportCsv}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/80 bg-white/70 px-4 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/90"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-4 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--surface-control-hover)]"
             >
               <Upload className="size-3.5" aria-hidden="true" />
               <span>导入 CSV</span>

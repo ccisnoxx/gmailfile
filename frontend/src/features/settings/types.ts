@@ -190,6 +190,12 @@ export type SettingsActionResult =
   | { ok: true; message?: string; csrfToken?: string }
   | { ok: false; error: string; requireReauth?: boolean };
 
+export type TotpSetupChallenge = {
+  secret: string;
+  qrDataUrl: string;
+  expiresAt: string;
+};
+
 export type SettingsMutationHandlers = {
   reverify: (
     password: string,
@@ -208,6 +214,18 @@ export type SettingsMutationHandlers = {
     credentialId: string,
     verify?: SensitiveVerifyPayload,
   ) => Promise<SettingsActionResult>;
+  startTotpSetup: (payload: {
+    currentPassword: string;
+    totpCode?: string;
+    recoveryCode?: string;
+  }) => Promise<
+    | { ok: true; setup: TotpSetupChallenge }
+    | { ok: false; error: string; requireReauth?: boolean }
+  >;
+  confirmTotpSetup: (code: string) => Promise<
+    | { ok: true; codes: string[]; message?: string }
+    | { ok: false; error: string; requireReauth?: boolean }
+  >;
   disableTotp: (
     verify?: SensitiveVerifyPayload,
   ) => Promise<SettingsActionResult>;

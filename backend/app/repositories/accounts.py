@@ -68,6 +68,8 @@ class AccountRepository:
         for field in ("status", "purpose", "two_factor_status"):
             if (value := getattr(params, field)) is not None:
                 query = query.where(getattr(GmailAccount, field) == value)
+        if params.statuses:
+            query = query.where(GmailAccount.status.in_(params.statuses))
         if params.tag is not None:
             query = query.where(
                 GmailAccount.id.in_(

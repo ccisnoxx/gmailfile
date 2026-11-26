@@ -26,6 +26,7 @@ export function AccountHeaderCard({
   onCopyEmail,
   onEdit,
   onArchive,
+  onUnarchive,
   onDelete,
   onRestore,
   onViewAudit,
@@ -41,6 +42,7 @@ export function AccountHeaderCard({
   onCopyEmail: (email: string) => void;
   onEdit: () => void;
   onArchive: () => void;
+  onUnarchive?: () => void;
   onDelete: () => void;
   onRestore: () => void;
   onViewAudit: () => void;
@@ -84,8 +86,8 @@ export function AccountHeaderCard({
   const menuItemClass =
     'flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] outline-none transition-colors data-[highlighted]:bg-[var(--accent-soft)] focus:bg-[var(--accent-soft)]';
 
-  const canRestore =
-    Boolean(account.deleted_at) || account.status === 'archived';
+  const canRestore = Boolean(account.deleted_at);
+  const canUnarchive = !account.deleted_at && account.status === 'archived';
 
   return (
     <GlassPanel
@@ -212,10 +214,10 @@ export function AccountHeaderCard({
                       aria-label="新标签名称"
                       placeholder="输入新标签名称…"
                       value={newTagInput}
-                      maxLength={32}
+                      maxLength={50}
                       onChange={(e) => setNewTagInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                           e.preventDefault();
                           const trimmed = newTagInput.trim();
                           if (trimmed) {
@@ -225,10 +227,11 @@ export function AccountHeaderCard({
                           }
                         }
                       }}
-                      className="h-8 min-w-0 flex-1 rounded-lg border border-[#c6daf2] bg-white/85 px-2.5 text-xs outline-none focus:border-[var(--accent)]"
+                      className="h-8 min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-white/85 px-2.5 text-xs outline-none focus:border-[var(--accent)]"
                     />
                     <button
                       type="button"
+                      aria-label="确认添加标签"
                       disabled={!newTagInput.trim()}
                       onClick={() => {
                         const trimmed = newTagInput.trim();
@@ -237,7 +240,7 @@ export function AccountHeaderCard({
                         setNewTagInput('');
                         setTagMenuOpen(false);
                       }}
-                      className="inline-flex h-8 items-center justify-center rounded-lg bg-[var(--accent)] px-2.5 text-xs font-medium text-white disabled:opacity-50"
+                      className="inline-flex h-8 items-center justify-center rounded-lg bg-[var(--accent)] px-2.5 text-xs font-medium text-[var(--primary-foreground)] disabled:opacity-50"
                     >
                       <Check className="size-3.5" aria-hidden="true" />
                     </button>
@@ -258,30 +261,42 @@ export function AccountHeaderCard({
             className={cn(
               'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-[13px] font-medium backdrop-blur-md transition-all duration-[180ms] ease-out disabled:opacity-50',
               isEditing
-                ? 'border-[#1677ff]/45 bg-[#1677ff]/20 text-[#0d50b8] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]'
-                : 'border-[#1677ff]/30 bg-[#1677ff]/12 text-[#1158c7] shadow-[0_4px_12px_rgba(22,119,255,0.1),inset_0_1px_0_rgba(255,255,255,0.85)] hover:-translate-y-[1px] hover:bg-[#1677ff]/18',
+                ? 'border-[var(--accent)]/45 bg-[var(--accent-soft)] text-[var(--accent-text)] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]'
+                : 'border-[var(--accent)]/30 bg-[var(--accent-soft)] text-[var(--accent-text)] shadow-[0_4px_12px_rgba(22,119,255,0.1)] hover:-translate-y-[1px]',
             )}
           >
             <Pencil className="size-3.5" aria-hidden="true" />
             <span>{isEditing ? '编辑中' : '编辑'}</span>
           </button>
 
-          <button
-            type="button"
-            disabled={
-              busy ||
-              Boolean(account.deleted_at) ||
-              account.status === 'archived'
-            }
-            onClick={onArchive}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/82 bg-white/62 px-3.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur-md transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/85 disabled:opacity-50"
-          >
-            <Archive
-              className="size-3.5 text-[var(--text-secondary)]"
-              aria-hidden="true"
-            />
-            <span>归档</span>
-          </button>
+          {canUnarchive && onUnarchive ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onUnarchive}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/82 bg-white/62 px-3.5 text-[13px] font-medium text-[var(--accent-text)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur-md transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/85 disabled:opacity-50"
+            >
+              <RotateCcw className="size-3.5" aria-hidden="true" />
+              <span>取消归档</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={
+                busy ||
+                Boolean(account.deleted_at) ||
+                account.status === 'archived'
+              }
+              onClick={onArchive}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/82 bg-white/62 px-3.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.88)] backdrop-blur-md transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/85 disabled:opacity-50"
+            >
+              <Archive
+                className="size-3.5 text-[var(--text-secondary)]"
+                aria-hidden="true"
+              />
+              <span>归档</span>
+            </button>
+          )}
 
           <DropdownMenuPrimitive.Root
             onOpenChange={(open) => {
@@ -331,6 +346,15 @@ export function AccountHeaderCard({
                     <span>标记今天已验证</span>
                   </DropdownMenuPrimitive.Item>
                 )}
+                {canUnarchive && onUnarchive && (
+                  <DropdownMenuPrimitive.Item
+                    onSelect={onUnarchive}
+                    className={cn(menuItemClass, 'text-[var(--accent-text)]')}
+                  >
+                    <RotateCcw className="size-4" />
+                    <span>取消归档</span>
+                  </DropdownMenuPrimitive.Item>
+                )}
                 <DropdownMenuPrimitive.Item
                   disabled={!canRestore}
                   onSelect={onRestore}
@@ -340,13 +364,13 @@ export function AccountHeaderCard({
                   )}
                 >
                   <RotateCcw className="size-4 text-[var(--text-secondary)]" />
-                  <span>恢复</span>
+                  <span>从回收站恢复</span>
                 </DropdownMenuPrimitive.Item>
                 <DropdownMenuPrimitive.Separator className="my-1 h-px bg-[var(--table-divider)]" />
                 <DropdownMenuPrimitive.Item
                   disabled={Boolean(account.deleted_at)}
                   onSelect={onDelete}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] text-[var(--danger)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-45"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[13px] text-[var(--danger-text)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <Trash2 className="size-4" />
                   <span>删除</span>

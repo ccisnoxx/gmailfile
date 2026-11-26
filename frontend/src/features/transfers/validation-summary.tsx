@@ -12,6 +12,7 @@ export function ValidationSummary({
   onAnomaliesOnlyChange,
   onExportPreview,
   exportDisabled = false,
+  exportLabel = '导出预览',
   className,
 }: {
   counts: ValidationCounts;
@@ -21,6 +22,7 @@ export function ValidationSummary({
   onAnomaliesOnlyChange: (checked: boolean) => void;
   onExportPreview: () => void;
   exportDisabled?: boolean;
+  exportLabel?: string;
   className?: string;
 }) {
   const switchId = useId();
@@ -37,7 +39,7 @@ export function ValidationSummary({
       label: '全部',
       count: counts.all,
       activeClass:
-        'border-[#1677ff]/28 bg-[#eaf3ff] text-[#1158c7] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+        'border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] text-[var(--badge-blue-text)]',
     },
     {
       key: 'valid',
@@ -45,7 +47,7 @@ export function ValidationSummary({
       count: counts.valid,
       dotClass: 'bg-[var(--success)]',
       activeClass:
-        'border-[#2fbf71]/30 bg-[#e7f8ef] text-[#116b3b] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+        'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]',
     },
     {
       key: 'warning',
@@ -53,7 +55,7 @@ export function ValidationSummary({
       count: counts.warning,
       dotClass: 'bg-[var(--warning)]',
       activeClass:
-        'border-[#f5a623]/34 bg-[#fef6df] text-[#8a5000] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+        'border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]',
     },
     {
       key: 'error',
@@ -61,7 +63,7 @@ export function ValidationSummary({
       count: counts.error,
       dotClass: 'bg-[var(--danger)]',
       activeClass:
-        'border-[#e45d5d]/30 bg-[#fdecec] text-[#b93838] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+        'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]',
     },
   ];
 
@@ -136,7 +138,7 @@ export function ValidationSummary({
             className="size-3.5 text-[var(--accent)]"
             aria-hidden="true"
           />
-          <span>导出预览</span>
+          <span>{exportLabel}</span>
         </button>
       </div>
     </div>

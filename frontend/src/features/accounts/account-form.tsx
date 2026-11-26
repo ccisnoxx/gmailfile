@@ -21,6 +21,7 @@ import {
   NativeSelectOption,
 } from '@/components/ui/native-select';
 import { factorLabels, localDate, statusLabels } from './constants';
+import { isMaskedPasswordPlaceholder } from './detail/use-password-secret';
 
 export { factorLabels, localDate, statusLabels };
 const inputDate = (value?: string | null) => {
@@ -104,6 +105,24 @@ export function AccountForm({
           return `${local}@${domain}`;
         };
         if (
+          values.password &&
+          isMaskedPasswordPlaceholder(values.password)
+        ) {
+          setError('password', {
+            message: '请填写真实密码，不要填写星号或圆点掩码占位符。',
+          });
+          return;
+        }
+        if (values.phone) {
+          const digits = values.phone.replace(/\D/g, '');
+          if (digits.length < 6 || digits.length > 20) {
+            setError('phone', {
+              message: '绑定手机号需包含 6 至 20 位数字。',
+            });
+            return;
+          }
+        }
+        if (
           mode === 'external' &&
           normalize(values.gmail_email) ===
             normalize(values.recovery_email_external)
@@ -151,7 +170,7 @@ export function AccountForm({
             {...register('gmail_email')}
           />
         </Field>
-        <Field>
+        <Field data-invalid={!!errors.password}>
           <FieldLabel htmlFor="account-password">
             Gmail 登录密码{account ? '（留空保留原值）' : ''}
           </FieldLabel>
@@ -161,8 +180,19 @@ export function AccountForm({
             required={!account}
             maxLength={1024}
             autoComplete="new-password"
+            aria-invalid={!!errors.password}
+            aria-describedby={errors.password ? 'password-error' : undefined}
             {...register('password')}
           />
+          {errors.password && (
+            <p
+              id="password-error"
+              role="alert"
+              className="text-sm text-[var(--danger-text)]"
+            >
+              {errors.password.message}
+            </p>
+          )}
           <FieldDescription>
             不会读取现有密码，也不要填写掩码占位符。
           </FieldDescription>
@@ -226,16 +256,27 @@ export function AccountForm({
             />
           </Field>
         )}
-        <Field>
+        <Field data-invalid={!!errors.phone}>
           <FieldLabel htmlFor="phone">绑定手机号</FieldLabel>
           <Input
             id="phone"
             type="tel"
             maxLength={32}
-            pattern={String.raw`\+?[0-9 \(\)\-]{5,31}`}
+            pattern={String.raw`\+?[0-9 \(\)\-]{6,31}`}
             autoComplete="off"
+            aria-invalid={!!errors.phone}
+            aria-describedby={errors.phone ? 'phone-error' : undefined}
             {...register('phone')}
           />
+          {errors.phone && (
+            <p
+              id="phone-error"
+              role="alert"
+              className="text-sm text-[var(--danger-text)]"
+            >
+              {errors.phone.message}
+            </p>
+          )}
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field>

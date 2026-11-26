@@ -43,7 +43,7 @@ export function AccountFormDialog({
     <Dialog
       open={form !== null}
       onOpenChange={(value) => {
-        if (!value) onClose();
+        if (!value && !busy) onClose();
       }}
     >
       <DialogContent

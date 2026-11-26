@@ -132,6 +132,12 @@ class AccountQueryService:
                 ),
                 func.count().filter(
                     active,
+                    GmailAccount.status.in_(["restricted", "login_failed"]),
+                ),
+                func.count().filter(active, GmailAccount.status == "disabled"),
+                func.count().filter(active, GmailAccount.status == "archived"),
+                func.count().filter(
+                    active,
                     GmailAccount.registered_at >= start,
                     GmailAccount.registered_at < end,
                 ),
@@ -144,6 +150,16 @@ class AccountQueryService:
                 func.count().filter(GmailAccount.deleted_at.is_not(None)),
             )
         ).one()
+        tag_count_rows = self.db.execute(
+            select(
+                gmail_account_tags.c.tag_id,
+                func.count(gmail_account_tags.c.account_id),
+            )
+            .join(GmailAccount, GmailAccount.id == gmail_account_tags.c.account_id)
+            .where(active)
+            .group_by(gmail_account_tags.c.tag_id)
+        ).all()
+        tag_counts = {str(tag_id): int(cnt) for tag_id, cnt in tag_count_rows}
         return DashboardSummary(
             **dict(
                 zip(
@@ -152,6 +168,9 @@ class AccountQueryService:
                         "normal",
                         "pending_verification",
                         "abnormal",
+                        "risk",
+                        "disabled",
+                        "archived",
                         "added_this_month",
                         "unverified_over_30_days",
                         "deleted_count",
@@ -160,6 +179,7 @@ class AccountQueryService:
                     strict=True,
                 )
             ),
+            tag_counts=tag_counts,
             timezone=timezone,
             month_from=start,
             month_to=end,

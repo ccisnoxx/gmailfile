@@ -548,3 +548,40 @@ it('未知服务器错误不能宣称整批未提交', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('提交结果未知');
   expect(screen.getByRole('alert')).not.toHaveTextContent('整批未提交');
 });
+
+it('辅助邮箱快速预览单次编码路径参数，不产生 %2540 双重编码', async () => {
+  const mock = stub([row()]);
+  const requestedPaths: string[] = [];
+  const baseImpl = mock.getMockImplementation()!;
+  mock.mockImplementation(async (req: Request) => {
+    const url = new URL(req.url);
+    requestedPaths.push(url.pathname);
+    if (url.pathname.startsWith('/api/v1/recovery-emails/') && url.pathname.endsWith('/accounts')) {
+      return json({
+        items: [row()],
+        total: 1,
+        page: 1,
+        page_size: 20,
+      });
+    }
+    return baseImpl(req);
+  });
+
+  page();
+  await userEvent.click(await screen.findByRole('button', { name: /筛选/ }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: '辅助邮箱使用情况' }),
+  );
+  await screen.findByRole('table', { name: '辅助邮箱统计' });
+  await userEvent.click(
+    screen.getByRole('button', { name: '快速预览 shared@example.test 关联账号' }),
+  );
+  await waitFor(() =>
+    expect(
+      requestedPaths.some(
+        (p) => p === '/api/v1/recovery-emails/shared%40example.test/accounts',
+      ),
+    ).toBe(true),
+  );
+  expect(requestedPaths.some((p) => p.includes('%2540'))).toBe(false);
+});

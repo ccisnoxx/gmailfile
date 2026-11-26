@@ -226,12 +226,20 @@ export function AuditLogCard({
             className="w-full min-w-[480px] border-collapse text-left text-[13px]"
           >
             <thead>
-              <tr className="border-b border-[var(--table-divider)] bg-white/40 text-[11.5px] font-semibold text-[#475467]">
-                <th className="px-3 py-2.5 font-semibold">时间</th>
-                <th className="px-3 py-2.5 font-semibold">事件</th>
-                <th className="px-3 py-2.5 font-semibold">对象</th>
-                <th className="px-3 py-2.5 font-semibold">结果</th>
-                <th className="px-3 py-2.5 text-right font-semibold">
+              <tr className="border-b border-[var(--table-divider)] bg-[var(--surface-table-head)] text-[11.5px] font-semibold text-[var(--text-secondary)]">
+                <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                  时间
+                </th>
+                <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                  事件
+                </th>
+                <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                  对象
+                </th>
+                <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                  结果
+                </th>
+                <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
                   IP 地址
                 </th>
               </tr>
@@ -244,19 +252,19 @@ export function AuditLogCard({
                 >
                   <td
                     data-dynamic="timestamp"
-                    className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[#475467]"
+                    className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
                   >
                     {item.createdAt}
                   </td>
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap text-[var(--text-primary)]">
                     {item.eventLabel}
                   </td>
-                  <td className="max-w-[180px] truncate px-3 py-2.5 text-[12.5px] text-[#475467]">
+                  <td className="max-w-[180px] truncate px-3 py-2.5 text-[12.5px] text-[var(--text-secondary)]">
                     {item.objectLabel}
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     {item.result === 'success' ? (
-                      <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[#147240]">
+                      <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--success-text)]">
                         <CheckCircle2
                           className="size-3.5 shrink-0 text-[var(--success)]"
                           aria-hidden="true"
@@ -264,7 +272,7 @@ export function AuditLogCard({
                         <span>成功</span>
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[#b43636]">
+                      <span className="inline-flex items-center gap-1 text-[12.5px] font-medium text-[var(--danger-text)]">
                         <XCircle
                           className="size-3.5 shrink-0 text-[var(--danger)]"
                           aria-hidden="true"
@@ -273,7 +281,7 @@ export function AuditLogCard({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-[12px] whitespace-nowrap tabular-nums text-[#475467]">
+                  <td className="px-3 py-2.5 text-right font-mono text-[12px] whitespace-nowrap tabular-nums text-[var(--text-secondary)]">
                     {item.ipAddress}
                   </td>
                 </tr>

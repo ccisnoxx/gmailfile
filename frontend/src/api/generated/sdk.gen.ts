@@ -54,6 +54,9 @@ import type {
   AccountsRevealPasswordData,
   AccountsRevealPasswordErrors,
   AccountsRevealPasswordResponses,
+  AccountsUnarchiveData,
+  AccountsUnarchiveErrors,
+  AccountsUnarchiveResponses,
   AuditsIntegrityData,
   AuditsIntegrityErrors,
   AuditsIntegrityResponses,
@@ -1081,6 +1084,29 @@ export const accountsArchive = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/accounts/{account_id}/archive',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Unarchive
+ */
+export const accountsUnarchive = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsUnarchiveData, ThrowOnError>,
+): RequestResult<
+  AccountsUnarchiveResponses,
+  AccountsUnarchiveErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsUnarchiveResponses,
+    AccountsUnarchiveErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/{account_id}/unarchive',
     ...options,
     headers: {
       'Content-Type': 'application/json',

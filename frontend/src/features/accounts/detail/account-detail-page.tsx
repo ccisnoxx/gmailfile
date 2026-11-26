@@ -20,6 +20,7 @@ import {
   accountsMarkVerified,
   accountsPatch,
   accountsRestore,
+  accountsUnarchive,
   auditsList,
   backupStatus,
   dashboardSummary,
@@ -101,6 +102,7 @@ const auditEventLabels: Record<string, string> = {
   account_created: '创建账号',
   account_updated: '更新账号信息',
   account_archived: '归档账号',
+  account_unarchived: '取消归档账号',
   account_deleted: '删除账号',
   account_restored: '恢复账号',
   account_batch_status: '批量修改状态',
@@ -116,6 +118,7 @@ const auditOperationLabels: Record<string, string> = {
   'mark-logged-in': '标记今天已登录',
   'reveal-password': '查看凭据（密码）',
   'copy-password-event': '复制凭据（密码）',
+  unarchive: '取消归档账号',
 };
 
 function mapAuditToTimeline(items: AuditItem[]): ActivityTimelineItem[] {
@@ -260,6 +263,18 @@ function RoutedAccountDetailPage(props: AccountDetailPageProps) {
       search: window.location.search,
     });
   }, [navigate]);
+  const goListWithQuery = useCallback(
+    (queryString: string) => {
+      void navigate({
+        pathname: '/accounts',
+        search: queryString ? `?${queryString}` : '',
+      });
+    },
+    [navigate],
+  );
+  const goRecovery = useCallback(() => {
+    void navigate('/recovery-emails');
+  }, [navigate]);
 
   return (
     <AccountDetailLiveBody
@@ -267,6 +282,8 @@ function RoutedAccountDetailPage(props: AccountDetailPageProps) {
       accountIdParam={params.accountId}
       onNavigateAccount={goAccount}
       onNavigateList={goList}
+      onNavigateListWithQuery={goListWithQuery}
+      onNavigateRecovery={goRecovery}
     />
   );
 }
@@ -282,11 +299,15 @@ function AccountDetailLiveBody({
   accountIdParam,
   onNavigateAccount,
   onNavigateList,
+  onNavigateListWithQuery,
+  onNavigateRecovery,
   defaultDisplaySettingsOpen,
 }: AccountDetailPageProps & {
   accountIdParam?: string;
   onNavigateAccount?: (id: string) => void;
   onNavigateList?: () => void;
+  onNavigateListWithQuery?: (queryString: string) => void;
+  onNavigateRecovery?: () => void;
 }) {
   const queryClient = useQueryClient();
   const headers = useMemo(
@@ -441,6 +462,15 @@ function AccountDetailLiveBody({
     }
   }, [accountsQuery.error, detailQuery.error, onFailure, tagsQuery.error]);
 
+  useEffect(() => {
+    if (!effectiveAccountId || !auditsQuery.data) return;
+    setLocalTimelineAdditions((prev) =>
+      prev[effectiveAccountId]?.length
+        ? { ...prev, [effectiveAccountId]: [] }
+        : prev,
+    );
+  }, [auditsQuery.data, auditsQuery.dataUpdatedAt, effectiveAccountId]);
+
   useEffect(
     () => () => {
       queryClient.removeQueries({ queryKey: ['detail-accounts-list'] });
@@ -576,8 +606,7 @@ function AccountDetailLiveBody({
         const trimmedRecovery = nextDraft.recovery_email_external.trim();
         const keepLinkedRecovery =
           Boolean(account.recovery_account_id) &&
-          (!trimmedRecovery ||
-            trimmedRecovery === (account.recovery_email ?? ''));
+          trimmedRecovery === (account.recovery_email ?? '');
         const patch: AccountPatchWritable = {
           row_version: account.row_version,
           gmail_email: nextDraft.gmail_email,
@@ -681,6 +710,7 @@ function AccountDetailLiveBody({
       try {
         const fn = {
           archive: accountsArchive,
+          unarchive: accountsUnarchive,
           delete: accountsDelete,
           restore: accountsRestore,
           verified: accountsMarkVerified,
@@ -700,13 +730,15 @@ function AccountDetailLiveBody({
         const label =
           action === 'archive'
             ? '归档账号'
-            : action === 'delete'
-              ? '删除账号'
-              : action === 'restore'
-                ? '恢复账号'
-                : action === 'logged-in'
-                  ? '标记今天已登录'
-                  : '标记今天已验证';
+            : action === 'unarchive'
+              ? '取消归档账号'
+              : action === 'delete'
+                ? '删除账号'
+                : action === 'restore'
+                  ? '恢复账号'
+                  : action === 'logged-in'
+                    ? '标记今天已登录'
+                    : '标记今天已验证';
         prependLocalTimeline(data.id, label);
         showToast(`${label}成功（v${data.row_version}）`);
         await Promise.all([
@@ -842,14 +874,16 @@ function AccountDetailLiveBody({
 
   const handleWorkspaceNav = useCallback(
     (key: WorkspaceNavKey) => {
-      if (key === 'accounts') {
-        onNavigateList?.();
-      } else if (key === 'dashboard') {
+      if (key === 'accounts' || key === 'dashboard') {
         onNavigateList?.();
       } else if (key === 'archived') {
         setFilterTab('archived');
       } else if (key === 'trash') {
-        onNavigateList?.();
+        if (onNavigateListWithQuery) onNavigateListWithQuery('deleted=true');
+        else onNavigateList?.();
+      } else if (key === 'tags') {
+        if (onNavigateListWithQuery) onNavigateListWithQuery('modal=tags');
+        else onNavigateList?.();
       } else if (key === 'audit') {
         onOperations?.('audit');
       } else if (key === 'transfer') {
@@ -858,11 +892,9 @@ function AccountDetailLiveBody({
         onOperations?.('status');
       } else if (key === 'settings') {
         onSecurity();
-      } else if (key === 'tags') {
-        onNavigateList?.();
       }
     },
-    [onNavigateList, onOperations, onSecurity],
+    [onNavigateList, onNavigateListWithQuery, onOperations, onSecurity],
   );
 
   const timelineItems = useMemo(() => {
@@ -890,21 +922,45 @@ function AccountDetailLiveBody({
     ? formatDetailDateTime(backupQuery.data.last_success_at, false)
     : '未配置';
 
+  const backupState = backupQuery.data?.state;
+  const backupHealthy =
+    backupState === 'success' || backupState === 'running'
+      ? true
+      : backupState === 'failed' || backupState === 'stale'
+        ? false
+        : undefined;
+
   const systemStatus: SidebarSystemStatus = {
-    healthy: backupQuery.data?.state !== 'failed',
-    headline: '系统运行正常',
-    httpsEnabled: true,
-    csrfEnabled: true,
+    healthy: backupHealthy ?? true,
+    headline:
+      backupState === 'failed'
+        ? '备份状态异常'
+        : backupState === 'stale'
+          ? '备份已过期'
+          : backupState === 'unconfigured'
+            ? '未配置自动备份'
+            : backupState === 'never_run'
+              ? '尚未执行备份'
+              : backupState === 'running'
+                ? '正在执行备份'
+                : backupState === 'success'
+                  ? '系统运行正常'
+                  : '状态同步中',
+    httpsEnabled:
+      typeof window !== 'undefined' && window.location.protocol === 'https:',
+    csrfEnabled: Boolean(session.csrf_token),
     encryptionLabel: '字段加密 AES-256-GCM',
-    totpEnabled: true,
+    totpEnabled: Boolean(session.totp_enabled),
     lastBackupLabel,
     version: versionQuery.data?.version
       ? `v${versionQuery.data.version}`
-      : 'v1.1.0',
+      : undefined,
   };
 
-  const totalCount =
-    summaryQuery.data?.total ?? accountsQuery.data?.total ?? listItems.length;
+  const isListFiltered = Boolean(searchQuery.trim() || filterTab !== 'all');
+  const totalCount = isListFiltered
+    ? (accountsQuery.data?.total ?? listItems.length)
+    : (summaryQuery.data?.total ?? accountsQuery.data?.total ?? listItems.length);
 
   return (
     <>
@@ -917,12 +973,13 @@ function AccountDetailLiveBody({
         onDisplaySettingsOpenChange={setDisplaySettingsOpen}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
-        activeNav="accounts"
+        activeNav={filterTab === 'archived' ? 'archived' : 'accounts'}
         onSelectNav={handleWorkspaceNav}
-        trashCount={0}
+        trashCount={summaryQuery.data?.deleted_count ?? 0}
         systemStatus={systemStatus}
-        notifications={['已启用防篡改哈希链审计与高风险操作 TOTP 二次验证。']}
+        notifications={[]}
         onOpenSecurity={onSecurity}
+        onOpenRecoveryUsage={onNavigateRecovery}
         onOpenOperations={
           onOperations ? () => onOperations('status') : undefined
         }
@@ -933,6 +990,8 @@ function AccountDetailLiveBody({
             accounts={listItems}
             totalCount={totalCount}
             selectedAccountId={effectiveAccountId || null}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             filterTab={filterTab}
             onFilterTabChange={setFilterTab}
             favorites={favorites}
@@ -960,6 +1019,7 @@ function AccountDetailLiveBody({
               title="账号详情加载失败"
               description="无法从服务器获取账号资料，请检查网络连接与服务状态后重试。"
               createLabel="重试加载"
+              actionIcon="refresh"
               onCreate={() => void detailQuery.refetch()}
             />
           ) : !account || !effectiveDraft ? (
@@ -983,6 +1043,7 @@ function AccountDetailLiveBody({
                   setIsEditing(true);
                 }}
                 onArchive={() => setConfirmAction('archive')}
+                onUnarchive={() => setConfirmAction('unarchive')}
                 onDelete={() => setConfirmAction('delete')}
                 onRestore={() => setConfirmAction('restore')}
                 onViewAudit={() => setActiveTab('audit')}
@@ -1031,6 +1092,7 @@ function AccountDetailLiveBody({
                     <div className="macos-detail-side-cards">
                       <AccountOverviewCard
                         account={account}
+                        updateSource={timelineItems[0]?.source}
                         onCopyId={(id) => void copyField('记录 ID', id)}
                       />
                       <ActivityTimeline
@@ -1080,6 +1142,8 @@ function AccountDetailLiveBody({
                   <BackupsTabPanel
                     account={account}
                     lastBackupLabel={lastBackupLabel}
+                    backupHealthy={backupHealthy ?? null}
+                    backupHeadline={systemStatus.headline}
                     onOpenBackupPage={
                       onOperations ? () => onOperations('status') : undefined
                     }
@@ -1142,8 +1206,13 @@ function AccountDetailLiveBody({
       </AlertDialog>
 
       {/* 新建账号弹窗 */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="macos-glass-modal flex max-h-[90vh] flex-col rounded-[22px] sm:max-w-2xl">
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !busy) setCreateDialogOpen(false);
+        }}
+      >
+        <DialogContent className="macos-glass-modal flex max-h-[90vh] min-h-0 flex-col overflow-hidden rounded-[22px] sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>新建账号</DialogTitle>
             <DialogDescription>
@@ -1482,6 +1551,19 @@ function AccountDetailPreviewBody({
         );
         prependTimeline(account.id, '归档账号');
         showToast(`${account.gmail_email} 已归档（v${nextVersion}）`);
+      } else if (action === 'unarchive') {
+        const updated: AccountDetail = {
+          ...account,
+          status: 'normal',
+          archived_at: null,
+          updated_at: now,
+          row_version: nextVersion,
+        };
+        setAccounts((prev) =>
+          prev.map((item) => (item.id === account.id ? updated : item)),
+        );
+        prependTimeline(account.id, '取消归档账号');
+        showToast(`${account.gmail_email} 已取消归档（v${nextVersion}）`);
       } else if (action === 'delete') {
         const updated: AccountDetail = {
           ...account,
@@ -1499,8 +1581,6 @@ function AccountDetailPreviewBody({
         const wasDeleted = Boolean(account.deleted_at);
         const updated: AccountDetail = {
           ...account,
-          status: account.status === 'archived' ? 'normal' : account.status,
-          archived_at: null,
           deleted_at: null,
           updated_at: now,
           row_version: nextVersion,
@@ -1671,9 +1751,13 @@ function AccountDetailPreviewBody({
           <AccountListPane
             accounts={filteredAccounts}
             totalCount={
-              DETAIL_MOCK_TOTAL_COUNT + Math.max(0, accounts.length - 6)
+              searchQuery.trim() || filterTab !== 'all'
+                ? filteredAccounts.length
+                : DETAIL_MOCK_TOTAL_COUNT + Math.max(0, accounts.length - 6)
             }
             selectedAccountId={account?.id ?? null}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             filterTab={filterTab}
             onFilterTabChange={setFilterTab}
             favorites={favorites}
@@ -1703,6 +1787,7 @@ function AccountDetailPreviewBody({
                   setIsEditing(true);
                 }}
                 onArchive={() => setConfirmAction('archive')}
+                onUnarchive={() => setConfirmAction('unarchive')}
                 onDelete={() => setConfirmAction('delete')}
                 onRestore={() => setConfirmAction('restore')}
                 onViewAudit={() => setActiveTab('audit')}
@@ -1788,6 +1873,7 @@ function AccountDetailPreviewBody({
                   <BackupsTabPanel
                     account={account}
                     lastBackupLabel={DETAIL_MOCK_LAST_BACKUP}
+                    backupHealthy={true}
                   />
                 )}
               </div>

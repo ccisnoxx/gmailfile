@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -47,6 +47,8 @@ export function ChangePasswordModal({
   onOpenChange,
   isRecentlyVerified,
   requireStepUpTotp,
+  canUsePasskey = false,
+  onPasskeyVerify,
   onSubmit,
   onSuccess,
 }: {
@@ -54,6 +56,8 @@ export function ChangePasswordModal({
   onOpenChange: (open: boolean) => void;
   isRecentlyVerified: boolean;
   requireStepUpTotp: boolean;
+  canUsePasskey?: boolean;
+  onPasskeyVerify?: () => Promise<SettingsActionResult>;
   onSubmit: (
     currentPassword: string,
     newPassword: string,
@@ -70,6 +74,7 @@ export function ChangePasswordModal({
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [passkeyVerified, setPasskeyVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,6 +84,7 @@ export function ChangePasswordModal({
       setNewPassword('');
       setConfirmPassword('');
       setTotpCode('');
+      setPasskeyVerified(false);
       setError('');
       setBusy(false);
       return;
@@ -97,7 +103,8 @@ export function ChangePasswordModal({
 
   const lenOk = newPassword.length >= 16;
   const matchOk = newPassword.length > 0 && newPassword === confirmPassword;
-  const needsStepUpTotp = requireStepUpTotp && !isRecentlyVerified;
+  const verifiedRecently = isRecentlyVerified || passkeyVerified;
+  const needsStepUpTotp = requireStepUpTotp && !verifiedRecently;
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -129,6 +136,9 @@ export function ChangePasswordModal({
         needsStepUpTotp ? totpCode.trim() : undefined,
       );
       if (!result.ok) {
+        if (result.requireReauth) {
+          setPasskeyVerified(false);
+        }
         setError(result.error);
         return;
       }
@@ -171,7 +181,7 @@ export function ChangePasswordModal({
         </DialogHeader>
 
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3.5">
-          <div className="flex items-start gap-2 rounded-2xl border border-[#e45d5d]/25 bg-[#e45d5d]/[0.07] px-3.5 py-2.5 text-[12px] leading-5 text-[#8f2e2e]">
+          <div className="flex items-start gap-2 rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-2.5 text-[12px] leading-5 text-[var(--badge-red-text)]">
             <AlertTriangle
               className="mt-0.5 size-4 shrink-0"
               aria-hidden="true"
@@ -180,6 +190,38 @@ export function ChangePasswordModal({
               高风险操作：修改密码后将立即撤销全部现有会话，需使用新密码重新登录。失败时不会自动重试。
             </span>
           </div>
+
+          {!verifiedRecently && canUsePasskey && onPasskeyVerify && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                setError('');
+                setBusy(true);
+                try {
+                  const res = await onPasskeyVerify();
+                  if (!res.ok) {
+                    setError(res.error);
+                    return;
+                  }
+                  setPasskeyVerified(true);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3 text-[12.5px] font-medium text-[var(--badge-blue-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+            >
+              <KeyRound className="size-3.5" aria-hidden="true" />
+              <span>使用通行密钥（Passkey）完成二次验证</span>
+            </button>
+          )}
+
+          {passkeyVerified && (
+            <div className="flex items-center gap-2 rounded-xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3 py-2 text-[12px] text-[var(--badge-green-text)]">
+              <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+              <span>已完成通行密钥二次验证，请输入密码后提交。</span>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label
@@ -196,7 +238,7 @@ export function ChangePasswordModal({
               disabled={busy}
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             />
           </div>
 
@@ -221,7 +263,7 @@ export function ChangePasswordModal({
                   setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
                 }
                 placeholder="输入 6 位动态验证码"
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 font-mono text-[13px] tracking-widest placeholder:font-sans placeholder:tracking-normal focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 font-mono text-[13px] tracking-widest text-[var(--text-primary)] placeholder:font-sans placeholder:tracking-normal focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
             </div>
           )}
@@ -243,7 +285,7 @@ export function ChangePasswordModal({
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="建议使用 4 个以上独立词汇组成的密码短语"
-              className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             />
           </div>
 
@@ -262,7 +304,7 @@ export function ChangePasswordModal({
               disabled={busy}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             />
           </div>
 
@@ -270,7 +312,7 @@ export function ChangePasswordModal({
             <span
               className={cn(
                 'inline-flex items-center gap-1',
-                lenOk && 'font-medium text-[#116b3b]',
+                lenOk && 'font-medium text-[var(--success-text)]',
               )}
             >
               <Check className="size-3.5" aria-hidden="true" />
@@ -279,7 +321,7 @@ export function ChangePasswordModal({
             <span
               className={cn(
                 'inline-flex items-center gap-1',
-                matchOk && 'font-medium text-[#116b3b]',
+                matchOk && 'font-medium text-[var(--success-text)]',
               )}
             >
               <Check className="size-3.5" aria-hidden="true" />
@@ -290,7 +332,7 @@ export function ChangePasswordModal({
           {error && (
             <div
               role="alert"
-              className="rounded-xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.09] px-3 py-2 text-[12.5px] text-[#a83838]"
+              className="rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12.5px] text-[var(--badge-red-text)]"
             >
               {error}
             </div>
@@ -301,14 +343,14 @@ export function ChangePasswordModal({
               type="button"
               disabled={busy}
               onClick={() => onOpenChange(false)}
-              className="inline-flex h-9 items-center justify-center rounded-xl border border-white/85 bg-white/72 px-4 text-[13px] font-medium hover:bg-white"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-white/85 bg-white/72 px-4 text-[13px] font-medium text-[var(--text-primary)] hover:bg-white"
             >
               取消
             </button>
             <button
               type="submit"
               disabled={busy}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
             >
               {busy && (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -441,7 +483,12 @@ export function RecoveryCodesModal({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!busy) onOpenChange(next);
+        if (busy) return;
+        if (!next && generatedCodes !== null && !savedChecked) {
+          setError('请先复制或下载新恢复码并勾选确认框后再关闭窗口。');
+          return;
+        }
+        onOpenChange(next);
       }}
     >
       <DialogContent
@@ -471,7 +518,7 @@ export function RecoveryCodesModal({
 
         {!generatedCodes ? (
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3.5">
-            <div className="flex items-start gap-2 rounded-2xl border border-[#e45d5d]/25 bg-[#e45d5d]/[0.07] px-3.5 py-2.5 text-[12px] leading-5 text-[#8f2e2e]">
+            <div className="flex items-start gap-2 rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-2.5 text-[12px] leading-5 text-[var(--badge-red-text)]">
               <AlertTriangle
                 className="mt-0.5 size-4 shrink-0"
                 aria-hidden="true"
@@ -498,7 +545,7 @@ export function RecoveryCodesModal({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="输入当前管理员密码"
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
             </div>
 
@@ -522,14 +569,14 @@ export function RecoveryCodesModal({
                   setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
                 }
                 placeholder="输入认证应用中的 6 位验证码"
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 font-mono text-[13px] tracking-widest placeholder:font-sans placeholder:tracking-normal focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 font-mono text-[13px] tracking-widest text-[var(--text-primary)] placeholder:font-sans placeholder:tracking-normal focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
             </div>
 
             {error && (
               <div
                 role="alert"
-                className="rounded-xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.09] px-3 py-2 text-[12.5px] text-[#a83838]"
+                className="rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12.5px] text-[var(--badge-red-text)]"
               >
                 {error}
               </div>
@@ -540,7 +587,7 @@ export function RecoveryCodesModal({
                 type="button"
                 disabled={busy}
                 onClick={() => onOpenChange(false)}
-                className="inline-flex h-9 items-center justify-center rounded-xl border border-white/85 bg-white/72 px-4 text-[13px] font-medium hover:bg-white"
+                className="inline-flex h-9 items-center justify-center rounded-xl border border-white/85 bg-white/72 px-4 text-[13px] font-medium text-[var(--text-primary)] hover:bg-white"
               >
                 取消
               </button>
@@ -561,7 +608,7 @@ export function RecoveryCodesModal({
           </form>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.07] px-3.5 py-2.5 text-[12px] text-[#116b3b]">
+            <div className="rounded-2xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3.5 py-2.5 text-[12px] text-[var(--badge-green-text)]">
               以下恢复码仅在本次会话内存中展示一次，关闭窗口或切换标签页后自动清空。
             </div>
 
@@ -583,7 +630,7 @@ export function RecoveryCodesModal({
               <button
                 type="button"
                 onClick={() => void handleCopyAll()}
-                className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-white/85 bg-white/75 px-3 text-[12.5px] font-medium hover:bg-white"
+                className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-white/85 bg-white/75 px-3 text-[12.5px] font-medium text-[var(--text-primary)] hover:bg-white"
               >
                 <Copy className="size-3.5" aria-hidden="true" />
                 <span>复制全部</span>
@@ -591,7 +638,7 @@ export function RecoveryCodesModal({
               <button
                 type="button"
                 onClick={handleDownload}
-                className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-white/85 bg-white/75 px-3 text-[12.5px] font-medium hover:bg-white"
+                className="inline-flex h-8.5 items-center gap-1.5 rounded-xl border border-white/85 bg-white/75 px-3 text-[12.5px] font-medium text-[var(--text-primary)] hover:bg-white"
               >
                 <Download className="size-3.5" aria-hidden="true" />
                 <span>下载为 TXT</span>
@@ -607,6 +654,15 @@ export function RecoveryCodesModal({
               </p>
             )}
 
+            {error && (
+              <div
+                role="alert"
+                className="rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12.5px] text-[var(--badge-red-text)]"
+              >
+                {error}
+              </div>
+            )}
+
             <label
               htmlFor={savedId}
               className="flex cursor-pointer items-center gap-2 text-[12.5px] text-[var(--text-primary)]"
@@ -615,10 +671,15 @@ export function RecoveryCodesModal({
                 id={savedId}
                 type="checkbox"
                 checked={savedChecked}
-                onChange={(e) => setSavedChecked(e.target.checked)}
+                onChange={(e) => {
+                  setSavedChecked(e.target.checked);
+                  if (e.target.checked) setError('');
+                }}
                 className="size-4 rounded accent-[var(--accent)]"
               />
-              <span>我已将上述 10 个恢复码离线保存</span>
+              <span>
+                我已将上述 {generatedCodes.length} 个恢复码离线保存
+              </span>
             </label>
 
             <DialogFooter>
@@ -629,7 +690,7 @@ export function RecoveryCodesModal({
                   setGeneratedCodes(null);
                   onOpenChange(false);
                 }}
-                className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 完成并清除展示
               </button>
@@ -656,12 +717,14 @@ export function RestoreVerifyModal({
   open,
   onOpenChange,
   archives,
+  initialArchiveId,
   onRunVerification,
   onComplete,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   archives: BackupArchiveItem[];
+  initialArchiveId?: string | null;
   onRunVerification: (
     archive: BackupArchiveItem,
   ) => Promise<RestoreVerifyReport>;
@@ -669,19 +732,21 @@ export function RestoreVerifyModal({
 }) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedArchiveId, setSelectedArchiveId] = useState<string>(
-    archives[0]?.id ?? '',
+    initialArchiveId ?? archives[0]?.id ?? '',
   );
   const [report, setReport] = useState<RestoreVerifyReport | null>(null);
   const [running, setRunning] = useState(false);
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpenRef.current) {
       setStep(1);
-      setSelectedArchiveId(archives[0]?.id ?? '');
+      setSelectedArchiveId(initialArchiveId ?? archives[0]?.id ?? '');
       setReport(null);
       setRunning(false);
     }
-  }, [archives, open]);
+    wasOpenRef.current = open;
+  }, [archives, initialArchiveId, open]);
 
   const selectedArchive =
     archives.find((item) => item.id === selectedArchiveId) ?? archives[0];
@@ -742,9 +807,9 @@ export function RestoreVerifyModal({
                 className={cn(
                   'flex items-center justify-center gap-1.5 rounded-xl px-2 py-1.5 font-medium transition-colors',
                   active
-                    ? 'bg-[var(--accent)] text-white shadow-[0_4px_10px_rgba(22,119,255,0.22)]'
+                    ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_4px_10px_rgba(22,119,255,0.22)]'
                     : done
-                      ? 'bg-[#2fbf71]/12 text-[#116b3b]'
+                      ? 'bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
                       : 'text-[var(--text-secondary)]',
                 )}
               >
@@ -876,8 +941,8 @@ export function RestoreVerifyModal({
               className={cn(
                 'flex items-start gap-2.5 rounded-2xl border px-3.5 py-3 text-[13px]',
                 report.passed
-                  ? 'border-[#2fbf71]/28 bg-[#2fbf71]/[0.08] text-[#116b3b]'
-                  : 'border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] text-[#a83838]',
+                  ? 'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
+                  : 'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]',
               )}
             >
               {report.passed ? (
@@ -955,7 +1020,7 @@ export function RestoreVerifyModal({
                 type="button"
                 disabled={!selectedArchive}
                 onClick={() => setStep(2)}
-                className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-45"
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-45"
               >
                 下一步：查看校验清单
               </button>
@@ -974,7 +1039,7 @@ export function RestoreVerifyModal({
               <button
                 type="button"
                 onClick={() => void handleStartVerify()}
-                className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)]"
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)]"
               >
                 开始验证
               </button>
@@ -985,7 +1050,7 @@ export function RestoreVerifyModal({
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)]"
+              className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)]"
             >
               完成关闭
             </button>
@@ -1009,6 +1074,8 @@ export function RetentionPolicySheet({
   isRecentlyVerified,
   requireStepUpTotp,
   readOnlyRetentionDays = false,
+  canUsePasskey = false,
+  onPasskeyVerify,
   onSave,
   onSuccess,
 }: {
@@ -1020,6 +1087,8 @@ export function RetentionPolicySheet({
   isRecentlyVerified: boolean;
   requireStepUpTotp: boolean;
   readOnlyRetentionDays?: boolean;
+  canUsePasskey?: boolean;
+  onPasskeyVerify?: () => Promise<SettingsActionResult>;
   onSave: (
     next: {
       auditRetentionDays: number;
@@ -1036,26 +1105,38 @@ export function RetentionPolicySheet({
   const passId = useId();
   const totpId = useId();
 
-  const [auditDays, setAuditDays] = useState(policy.auditRetentionDays);
-  const [backupDays, setBackupDays] = useState(
-    policy.backupRetentionDays ?? 90,
+  const [auditDaysInput, setAuditDaysInput] = useState(
+    String(policy.auditRetentionDays),
   );
-  const [idle, setIdle] = useState(idleMinutes);
+  const [backupDaysInput, setBackupDaysInput] = useState(
+    policy.backupRetentionDays !== null
+      ? String(policy.backupRetentionDays)
+      : '',
+  );
+  const [idleInput, setIdleInput] = useState(String(idleMinutes));
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [passkeyVerified, setPasskeyVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const wasOpenRef = useRef(false);
 
   useEffect(() => {
-    if (open) {
-      setAuditDays(policy.auditRetentionDays);
-      setBackupDays(policy.backupRetentionDays ?? 90);
-      setIdle(idleMinutes);
+    if (open && !wasOpenRef.current) {
+      setAuditDaysInput(String(policy.auditRetentionDays));
+      setBackupDaysInput(
+        policy.backupRetentionDays !== null
+          ? String(policy.backupRetentionDays)
+          : '',
+      );
+      setIdleInput(String(idleMinutes));
       setPassword('');
       setTotpCode('');
+      setPasskeyVerified(false);
       setError('');
       setBusy(false);
     }
+    wasOpenRef.current = open;
   }, [
     idleMinutes,
     open,
@@ -1075,17 +1156,56 @@ export function RetentionPolicySheet({
     return () => document.removeEventListener('visibilitychange', onHide);
   }, [open]);
 
+  const parsedAuditDays = Number(auditDaysInput);
+  const parsedBackupDays = Number(backupDaysInput);
+  const parsedIdle = Number(idleInput);
+
   const shorteningRetention =
     !readOnlyRetentionDays &&
-    (auditDays < policy.auditRetentionDays ||
+    ((Number.isFinite(parsedAuditDays) &&
+      auditDaysInput.trim() !== '' &&
+      parsedAuditDays < policy.auditRetentionDays) ||
       (policy.backupRetentionDays !== null &&
-        backupDays < policy.backupRetentionDays));
-  const needsCredentials = !isRecentlyVerified;
+        Number.isFinite(parsedBackupDays) &&
+        backupDaysInput.trim() !== '' &&
+        parsedBackupDays < policy.backupRetentionDays));
+  const needsCredentials = !isRecentlyVerified && !passkeyVerified;
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (busy) return;
     setError('');
+
+    if (
+      !readOnlyRetentionDays &&
+      (!auditDaysInput.trim() ||
+        !Number.isInteger(parsedAuditDays) ||
+        parsedAuditDays < 30 ||
+        parsedAuditDays > 3650)
+    ) {
+      setError('审计日志保留天数必须为 30–3650 之间的整数。');
+      return;
+    }
+    if (
+      !readOnlyRetentionDays &&
+      (!backupDaysInput.trim() ||
+        !Number.isInteger(parsedBackupDays) ||
+        parsedBackupDays < 7 ||
+        parsedBackupDays > 1095)
+    ) {
+      setError('备份文件保留天数必须为 7–1095 之间的整数。');
+      return;
+    }
+    if (
+      !idleInput.trim() ||
+      !Number.isInteger(parsedIdle) ||
+      parsedIdle < 1 ||
+      parsedIdle > maxIdleMinutes
+    ) {
+      setError(`会话空闲自动锁定时间必须为 1–${maxIdleMinutes} 之间的整数。`);
+      return;
+    }
+
     if (needsCredentials && !password.trim()) {
       setError('修改保留与锁定策略需最近重新验证，请输入当前管理员密码。');
       return;
@@ -1103,9 +1223,13 @@ export function RetentionPolicySheet({
     try {
       const result = await onSave(
         {
-          auditRetentionDays: auditDays,
-          backupRetentionDays: backupDays,
-          idleMinutes: idle,
+          auditRetentionDays: readOnlyRetentionDays
+            ? policy.auditRetentionDays
+            : parsedAuditDays,
+          backupRetentionDays: readOnlyRetentionDays
+            ? (policy.backupRetentionDays ?? 0)
+            : parsedBackupDays,
+          idleMinutes: parsedIdle,
         },
         needsCredentials
           ? {
@@ -1115,6 +1239,9 @@ export function RetentionPolicySheet({
           : undefined,
       );
       if (!result.ok) {
+        if (result.requireReauth) {
+          setPasskeyVerified(false);
+        }
         setError(result.error);
         return;
       }
@@ -1172,11 +1299,11 @@ export function RetentionPolicySheet({
                 type="number"
                 min={30}
                 max={3650}
-                required
+                required={!readOnlyRetentionDays}
                 disabled={busy || readOnlyRetentionDays}
-                value={auditDays}
-                onChange={(e) => setAuditDays(Number(e.target.value))}
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-65"
+                value={auditDaysInput}
+                onChange={(e) => setAuditDaysInput(e.target.value)}
+                className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] tabular-nums text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-65"
               />
               <p className="text-[11.5px] text-[var(--text-secondary)]">
                 {readOnlyRetentionDays
@@ -1192,17 +1319,28 @@ export function RetentionPolicySheet({
               >
                 备份文件保留天数（7–1095 天）
               </label>
-              <input
-                id={backupDaysId}
-                type="number"
-                min={7}
-                max={1095}
-                required
-                disabled={busy || readOnlyRetentionDays}
-                value={backupDays}
-                onChange={(e) => setBackupDays(Number(e.target.value))}
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-65"
-              />
+              {readOnlyRetentionDays && policy.backupRetentionDays === null ? (
+                <input
+                  id={backupDaysId}
+                  type="text"
+                  readOnly
+                  disabled
+                  value="由部署主机备份脚本管理"
+                  className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/60 px-3 text-[13px] text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-75"
+                />
+              ) : (
+                <input
+                  id={backupDaysId}
+                  type="number"
+                  min={7}
+                  max={1095}
+                  required={!readOnlyRetentionDays}
+                  disabled={busy || readOnlyRetentionDays}
+                  value={backupDaysInput}
+                  onChange={(e) => setBackupDaysInput(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] tabular-nums text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-65"
+                />
+              )}
               {readOnlyRetentionDays && (
                 <p className="text-[11.5px] text-[var(--text-secondary)]">
                   由部署主机备份轮替脚本控制，不支持在 Web 端直接更改。
@@ -1224,14 +1362,14 @@ export function RetentionPolicySheet({
                 max={maxIdleMinutes}
                 required
                 disabled={busy}
-                value={idle}
-                onChange={(e) => setIdle(Number(e.target.value))}
-                className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] tabular-nums focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                value={idleInput}
+                onChange={(e) => setIdleInput(e.target.value)}
+                className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] tabular-nums text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
             </div>
 
             {shorteningRetention && (
-              <div className="flex items-start gap-2 rounded-2xl border border-[#e45d5d]/25 bg-[#e45d5d]/[0.07] px-3.5 py-2.5 text-[12px] leading-5 text-[#8f2e2e]">
+              <div className="flex items-start gap-2 rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-2.5 text-[12px] leading-5 text-[var(--badge-red-text)]">
                 <AlertTriangle
                   className="mt-0.5 size-4 shrink-0"
                   aria-hidden="true"
@@ -1247,6 +1385,30 @@ export function RetentionPolicySheet({
                 <p className="text-[12px] font-medium text-[var(--text-secondary)]">
                   策略调整属于高风险操作，请验证当前管理员身份：
                 </p>
+                {canUsePasskey && onPasskeyVerify && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={async () => {
+                      setError('');
+                      setBusy(true);
+                      try {
+                        const res = await onPasskeyVerify();
+                        if (!res.ok) {
+                          setError(res.error);
+                          return;
+                        }
+                        setPasskeyVerified(true);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                    className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3 text-[12.5px] font-medium text-[var(--badge-blue-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+                  >
+                    <KeyRound className="size-3.5" aria-hidden="true" />
+                    <span>使用通行密钥（Passkey）完成二次验证</span>
+                  </button>
+                )}
                 <div className="space-y-1.5">
                   <label
                     htmlFor={passId}
@@ -1262,7 +1424,7 @@ export function RetentionPolicySheet({
                     disabled={busy}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                   />
                 </div>
                 {requireStepUpTotp && (
@@ -1287,13 +1449,13 @@ export function RetentionPolicySheet({
                           e.target.value.replace(/\D/g, '').slice(0, 6),
                         )
                       }
-                      className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 font-mono text-[13px] tracking-widest focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                      className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 font-mono text-[13px] tracking-widest text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                     />
                   </div>
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 rounded-xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.08] px-3 py-2 text-[12px] text-[#116b3b]">
+              <div className="flex items-center gap-2 rounded-xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3 py-2 text-[12px] text-[var(--badge-green-text)]">
                 <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
                 <span>最近已完成重新验证，可直接保存策略。</span>
               </div>
@@ -1302,7 +1464,7 @@ export function RetentionPolicySheet({
             {error && (
               <div
                 role="alert"
-                className="rounded-xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.09] px-3 py-2 text-[12.5px] text-[#a83838]"
+                className="rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12.5px] text-[var(--badge-red-text)]"
               >
                 {error}
               </div>
@@ -1314,14 +1476,14 @@ export function RetentionPolicySheet({
               type="button"
               disabled={busy}
               onClick={() => onOpenChange(false)}
-              className="inline-flex h-9 items-center justify-center rounded-xl border border-white/85 bg-white/72 px-4 text-[13px] font-medium hover:bg-white"
+              className="inline-flex h-9 items-center justify-center rounded-xl border border-white/85 bg-white/72 px-4 text-[13px] font-medium text-[var(--text-primary)] hover:bg-white"
             >
               取消
             </button>
             <button
               type="submit"
               disabled={busy}
-              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
             >
               {busy && (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />

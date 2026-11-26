@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { QueryClientContext } from '@tanstack/react-query';
 import {
   ArrowRight,
@@ -15,25 +16,37 @@ import {
   Layers,
   Upload,
 } from 'lucide-react';
-import { useInRouterContext, useNavigate } from 'react-router-dom';
-import type {
-  AccountSummary,
-  SessionResponse,
-  TagResponse,
+import { useInRouterContext, useLocation, useNavigate } from 'react-router-dom';
+import {
+  authReverify,
+  type AccountQuery,
+  type AccountSummary,
+  type ErrorResponse,
+  type SessionResponse,
+  type TagResponse,
 } from '@/api/generated';
 import { Providers } from '@/app/providers';
 import {
   DEFAULT_NAV_ALPHA,
   GlassPanel,
   LoadingState,
+  persistDisplaySettings,
   persistNavAlpha,
   readDisplaySettings,
   readStoredNavAlpha,
   subscribeDisplaySettings,
   subscribeNavAlpha,
   type DisplaySettingsState,
+  type SidebarSystemStatus,
 } from '@/components/macos';
+import { SensitiveActionDialog } from '@/features/settings/sensitive-action-dialog';
+import {
+  formatWebAuthnError,
+  isWebAuthnSupported,
+  performPasskeyStepUp,
+} from '@/lib/webauthn';
 import { cn } from '@/lib/utils';
+import { DataExportPanel } from './encrypted-export-panel';
 import { AtomicCommitPanel } from './atomic-commit-panel';
 import { BatchOperationsPanel } from './batch-operations-panel';
 import {
@@ -100,6 +113,7 @@ export type CsvImportPageProps = {
   mode?: 'live' | 'mock';
   initialSubTab?: TransferSubTab;
   session?: SessionResponse;
+  onSession?: (next: SessionResponse) => void;
   onFailure?: (error: unknown) => void;
   onLogout?: () => void;
   onNavigate?: (path: string) => void;
@@ -122,14 +136,22 @@ const EMPTY_SUMMARY: CommitSummaryCounts = {
   error: 0,
 };
 
+function parseSubTabFromSearch(search: string): TransferSubTab | null {
+  const tab = new URLSearchParams(search).get('tab');
+  if (tab === 'import' || tab === 'batch' || tab === 'export') return tab;
+  return null;
+}
+
 function triggerBlobDownload(blob: Blob, filename: string) {
   if (typeof URL.createObjectURL !== 'function') return;
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  document.body.appendChild(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function CsvImportPage(props: CsvImportPageProps) {
@@ -154,6 +176,8 @@ export function CsvImportPreviewPage(
 
 function RoutedCsvImportPage(props: CsvImportPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const tabFromUrl = parseSubTabFromSearch(location.search);
   const handleNavigate = useCallback(
     (path: string) => {
       if (props.onNavigate) {
@@ -164,20 +188,44 @@ function RoutedCsvImportPage(props: CsvImportPageProps) {
     },
     [navigate, props.onNavigate],
   );
-  return <CsvImportPageBody {...props} onNavigate={handleNavigate} />;
+  return (
+    <CsvImportPageBody
+      {...props}
+      initialSubTab={tabFromUrl ?? props.initialSubTab}
+      urlTab={tabFromUrl}
+      onNavigate={handleNavigate}
+    />
+  );
 }
 
 function CsvImportPageBody({
   mode = 'mock',
   initialSubTab = 'import',
+  urlTab,
   session,
+  onSession,
   onFailure,
   onLogout,
   onNavigate,
   mockCommitBehavior,
   mockCommitDelayMs,
-}: CsvImportPageProps) {
-  const isMock = mode === 'mock' || !session;
+}: CsvImportPageProps & { urlTab?: TransferSubTab | null }) {
+  const [liveSession, setLiveSession] = useState<SessionResponse | undefined>(
+    session,
+  );
+  useEffect(() => {
+    setLiveSession(session);
+  }, [session]);
+
+  const handleSessionUpdate = useCallback(
+    (next: SessionResponse) => {
+      setLiveSession(next);
+      onSession?.(next);
+    },
+    [onSession],
+  );
+
+  const isMock = mode === 'mock' || !liveSession;
 
   // 共享界面透明度（默认 60%，写入 localStorage 与其他页面同步）
   const [navAlpha, setNavAlpha] = useState<number>(() =>
@@ -201,6 +249,14 @@ function CsvImportPageBody({
     persistNavAlpha(next);
   }, []);
 
+  const handleDisplaySettingsChange = useCallback(
+    (next: DisplaySettingsState) => {
+      setDisplaySettings(next);
+      persistDisplaySettings(next);
+    },
+    [],
+  );
+
   const adapter = useMemo(
     () =>
       isMock
@@ -208,16 +264,32 @@ function CsvImportPageBody({
             commitBehavior: mockCommitBehavior,
             commitDelayMs: mockCommitDelayMs,
           })
-        : createLiveCsvAdapter({ session, onFailure }),
-    [isMock, mockCommitBehavior, mockCommitDelayMs, onFailure, session],
+        : createLiveCsvAdapter({ session: liveSession, onFailure }),
+    [isMock, liveSession, mockCommitBehavior, mockCommitDelayMs, onFailure],
   );
 
   // 顶部与子标签、全局搜索、侧边栏统计
-  const [subTab, setSubTab] = useState<TransferSubTab>(initialSubTab);
-  const [globalSearch, setGlobalSearch] = useState('');
-  const [sidebarCounts, setSidebarCounts] = useState<SidebarCounts>(
-    DEFAULT_SIDEBAR_COUNTS,
+  const [subTab, setSubTab] = useState<TransferSubTab>(
+    () =>
+      urlTab ??
+      (typeof window !== 'undefined'
+        ? parseSubTabFromSearch(window.location.search)
+        : null) ??
+      initialSubTab,
   );
+  useEffect(() => {
+    if (urlTab) setSubTab(urlTab);
+  }, [urlTab]);
+
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [sidebarCounts, setSidebarCounts] = useState<SidebarCounts>(() =>
+    isMock
+      ? DEFAULT_SIDEBAR_COUNTS
+      : { accounts: 0, tags: 0, archived: 0, trash: 0 },
+  );
+  const [systemStatus, setSystemStatus] = useState<
+    SidebarSystemStatus | undefined
+  >(undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
@@ -226,8 +298,17 @@ function CsvImportPageBody({
   );
   const [toastMessage, setToastMessage] = useState('');
 
+  // 页内二次验证弹窗（避免 REAUTH_REQUIRED 跳走丢失内存中的 CSV 文件）
+  const [reauthPending, setReauthPending] = useState<
+    null | 'preview' | 'commit'
+  >(null);
+  const [pendingResume, setPendingResume] = useState<
+    null | 'preview' | 'commit'
+  >(null);
+
   // 批量操作工作区状态
   const [batchAccounts, setBatchAccounts] = useState<BatchAccountItem[]>([]);
+  const [batchTotal, setBatchTotal] = useState<number | undefined>(undefined);
   const [batchTags, setBatchTags] = useState<TagResponse[]>([]);
   const [batchBusy, setBatchBusy] = useState(false);
 
@@ -307,21 +388,30 @@ function CsvImportPageBody({
     }, 3400);
   }, []);
 
-  // 初始化加载侧边栏计数、历史记录与批量操作数据
+  // 初始化加载侧边栏计数、系统状态、历史记录与批量操作数据
   useEffect(() => {
     let active = true;
     void adapter.loadSidebarCounts().then((counts) => {
       if (active) setSidebarCounts(counts);
     });
+    void adapter.loadSystemStatus().then((status) => {
+      if (active) setSystemStatus(status);
+    });
     void adapter.loadImportHistory().then((items) => {
       if (active) setHistoryRecords(items);
     });
-    void adapter.loadBatchWorkspace().then(({ accounts, tags }) => {
-      if (active) {
-        setBatchAccounts(accounts);
-        setBatchTags(tags);
-      }
-    });
+    void adapter
+      .loadBatchWorkspace()
+      .then(({ accounts, tags, total }) => {
+        if (active) {
+          setBatchAccounts(accounts);
+          setBatchTags(tags);
+          setBatchTotal(total);
+        }
+      })
+      .catch(() => {
+        /* 保持当前列表为空，由用户切换或重试触发 */
+      });
     return () => {
       active = false;
     };
@@ -408,6 +498,7 @@ function CsvImportPageBody({
       useCustomMapping,
       nextStrategy,
       nextConflict,
+      nextSkipEmpty,
     }: {
       file: File;
       parsed: ParsedCsvDataset;
@@ -415,6 +506,7 @@ function CsvImportPageBody({
       useCustomMapping: boolean;
       nextStrategy: ImportStrategyOption;
       nextConflict: ConflictResolutionOption;
+      nextSkipEmpty: boolean;
     }) => {
       const ticket = ++generationRef.current;
       setPreviewBusy(true);
@@ -429,6 +521,7 @@ function CsvImportPageBody({
           useCustomMapping,
           strategy: nextStrategy,
           conflictResolution: nextConflict,
+          skipEmptyFields: nextSkipEmpty,
         });
         if (ticket !== generationRef.current) return;
         setMapping(payload.mapping);
@@ -445,6 +538,18 @@ function CsvImportPageBody({
       } catch (error) {
         if (ticket !== generationRef.current) return;
         setReceiptId(null);
+        const errCode = (error as Partial<ErrorResponse> | undefined)?.error
+          ?.code;
+        if (errCode === 'REAUTH_REQUIRED' && !isMock) {
+          setReauthPending('preview');
+          const msg =
+            (error as Partial<ErrorResponse> | undefined)?.error?.message ||
+            '请先重新验证管理员身份';
+          setClientNotice(
+            `${msg}（请在弹窗中完成二次验证，验证通过后将自动继续校验）`,
+          );
+          return;
+        }
         const msg =
           error &&
           typeof error === 'object' &&
@@ -460,7 +565,7 @@ function CsvImportPageBody({
         }
       }
     },
-    [adapter, onFailure],
+    [adapter, isMock, onFailure],
   );
 
   const handleFileSelected = useCallback(
@@ -487,9 +592,10 @@ function CsvImportPageBody({
         useCustomMapping: false,
         nextStrategy: strategy,
         nextConflict: conflictResolution,
+        nextSkipEmpty: skipEmptyFields,
       });
     },
-    [conflictResolution, runPreviewAnalysis, strategy],
+    [conflictResolution, runPreviewAnalysis, skipEmptyFields, strategy],
   );
 
   // 策略与冲突联动
@@ -513,6 +619,7 @@ function CsvImportPageBody({
           mapping,
           strategy: next,
           conflictResolution: syncedConflict,
+          skipEmptyFields,
         });
         setUploadedPreviewRows(evaluated.rows);
         setUploadedCounts(evaluated.counts);
@@ -527,7 +634,7 @@ function CsvImportPageBody({
         setNeedsRepreview(true);
       }
     },
-    [isMock, mapping, parsedDataset],
+    [isMock, mapping, parsedDataset, skipEmptyFields],
   );
 
   const handleConflictChange = useCallback(
@@ -550,6 +657,7 @@ function CsvImportPageBody({
           mapping,
           strategy: syncedStrategy,
           conflictResolution: next,
+          skipEmptyFields,
         });
         setUploadedPreviewRows(evaluated.rows);
         setUploadedCounts(evaluated.counts);
@@ -564,7 +672,38 @@ function CsvImportPageBody({
         setNeedsRepreview(true);
       }
     },
-    [isMock, mapping, parsedDataset],
+    [isMock, mapping, parsedDataset, skipEmptyFields],
+  );
+
+  const handleSkipEmptyFieldsChange = useCallback(
+    (checked: boolean) => {
+      setSkipEmptyFields(checked);
+      setConfirmed(false);
+      setOutcome(null);
+      setPage(1);
+
+      if (parsedDataset && isMock) {
+        const evaluated = evaluateParsedRows({
+          rawRows: parsedDataset.rows,
+          mapping,
+          strategy,
+          conflictResolution,
+          skipEmptyFields: checked,
+        });
+        setUploadedPreviewRows(evaluated.rows);
+        setUploadedCounts(evaluated.counts);
+        setUploadedSummary(evaluated.summary);
+        setReceiptId(
+          evaluated.summary.error === 0 && parsedDataset.validation.passed
+            ? `rcpt_${Date.now().toString(36)}`
+            : null,
+        );
+      } else if (!isMock && rawFileRef.current) {
+        setReceiptId(null);
+        setNeedsRepreview(true);
+      }
+    },
+    [conflictResolution, isMock, mapping, parsedDataset, strategy],
   );
 
   // 互斥字段映射变更
@@ -604,6 +743,7 @@ function CsvImportPageBody({
           mapping: nextMapping,
           strategy,
           conflictResolution,
+          skipEmptyFields,
         });
         setUploadedPreviewRows(evaluated.rows);
         setUploadedCounts(evaluated.counts);
@@ -618,7 +758,14 @@ function CsvImportPageBody({
         setNeedsRepreview(true);
       }
     },
-    [conflictResolution, isMock, mapping, parsedDataset, strategy],
+    [
+      conflictResolution,
+      isMock,
+      mapping,
+      parsedDataset,
+      skipEmptyFields,
+      strategy,
+    ],
   );
 
   const handleAutoMatch = useCallback(() => {
@@ -633,6 +780,7 @@ function CsvImportPageBody({
         mapping: autoMap,
         strategy,
         conflictResolution,
+        skipEmptyFields,
       });
       setUploadedPreviewRows(evaluated.rows);
       setUploadedCounts(evaluated.counts);
@@ -647,7 +795,15 @@ function CsvImportPageBody({
       setNeedsRepreview(true);
     }
     showToast('已按标准列名重新自动匹配字段。');
-  }, [columns, conflictResolution, isMock, parsedDataset, showToast, strategy]);
+  }, [
+    columns,
+    conflictResolution,
+    isMock,
+    parsedDataset,
+    showToast,
+    skipEmptyFields,
+    strategy,
+  ]);
 
   const handleRepreview = useCallback(() => {
     if (rawFileRef.current && parsedDataset) {
@@ -658,6 +814,7 @@ function CsvImportPageBody({
         useCustomMapping: true,
         nextStrategy: strategy,
         nextConflict: conflictResolution,
+        nextSkipEmpty: skipEmptyFields,
       });
       return;
     }
@@ -676,6 +833,7 @@ function CsvImportPageBody({
     parsedDataset,
     runPreviewAnalysis,
     showToast,
+    skipEmptyFields,
     strategy,
   ]);
 
@@ -797,10 +955,10 @@ function CsvImportPageBody({
     [],
   );
 
-  // 导出预览（仅导出脱敏安全列，不含密码明文）
+  // 导出预览（仅导出脱敏安全列，不含密码明文；若有勾选行则优先导出所选行）
   const handleExportPreview = useCallback(() => {
     if (!fileMeta) return;
-    const rowsToExport = isSampleMode
+    const baseRows = isSampleMode
       ? getSampleExportPreviewRows(
           statusFilter,
           anomaliesOnly,
@@ -816,6 +974,11 @@ function CsvImportPageBody({
           return true;
         });
 
+    const rowsToExport =
+      selectedRows.size > 0
+        ? baseRows.filter((row) => selectedRows.has(row.rowNumber))
+        : baseRows;
+
     const csvText = buildPreviewExportCsv(rowsToExport);
     const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
     triggerBlobDownload(blob, `preview-${fileMeta.name}`);
@@ -826,6 +989,7 @@ function CsvImportPageBody({
     fileMeta,
     isSampleMode,
     mapping,
+    selectedRows,
     showToast,
     statusFilter,
     strategy,
@@ -834,10 +998,13 @@ function CsvImportPageBody({
 
   // 导出非敏感账号 CSV
   const handleExportAccounts = useCallback(
-    async (scope: 'all' | 'filtered') => {
+    async (scope: 'all' | 'filtered', filters?: AccountQuery) => {
       setExportBusy(true);
       try {
-        const { blob, filename } = await adapter.exportAccountsCsv(scope);
+        const { blob, filename } = await adapter.exportAccountsCsv(
+          scope,
+          filters,
+        );
         triggerBlobDownload(blob, filename);
         setExportOpen(false);
         showToast(`非敏感账号 CSV（${filename}）已开始下载。`);
@@ -939,9 +1106,24 @@ function CsvImportPageBody({
         setCompletedSteps([1, 2, 3, 4]);
         setReceiptId(null);
         setConfirmed(false);
-        const latestHistory = await adapter.loadImportHistory();
+        const [latestHistory, latestCounts, latestBatch] =
+          await Promise.allSettled([
+            adapter.loadImportHistory(),
+            adapter.loadSidebarCounts(),
+            adapter.loadBatchWorkspace(),
+          ]);
         if (ticket === generationRef.current) {
-          setHistoryRecords(latestHistory);
+          if (latestHistory.status === 'fulfilled') {
+            setHistoryRecords(latestHistory.value);
+          }
+          if (latestCounts.status === 'fulfilled') {
+            setSidebarCounts(latestCounts.value);
+          }
+          if (latestBatch.status === 'fulfilled') {
+            setBatchAccounts(latestBatch.value.accounts);
+            setBatchTags(latestBatch.value.tags);
+            setBatchTotal(latestBatch.value.total);
+          }
         }
       } else if (result.kind === 'conflict') {
         // 服务端返回冲突时必须重新预览
@@ -953,8 +1135,15 @@ function CsvImportPageBody({
         setReceiptId(null);
         setConfirmed(false);
       }
-    } catch {
+    } catch (error) {
       if (ticket !== generationRef.current) return;
+      const errCode = (error as Partial<ErrorResponse> | undefined)?.error
+        ?.code;
+      if (errCode === 'REAUTH_REQUIRED' && !isMock) {
+        setReauthPending('commit');
+        showToast('二次验证窗口已过期，请完成身份验证后重新点击“开始导入”。');
+        return;
+      }
       const unknownOutcome: CommitOutcome = {
         kind: 'unknown',
         message: '结果未知，请刷新确认',
@@ -969,7 +1158,46 @@ function CsvImportPageBody({
         setSubmitting(false);
       }
     }
-  }, [activeSummary, adapter, confirmed, fileMeta, needsRepreview, receiptId]);
+  }, [
+    activeSummary,
+    adapter,
+    confirmed,
+    fileMeta,
+    isMock,
+    needsRepreview,
+    receiptId,
+    showToast,
+  ]);
+
+  // 页内二次验证完成后自动恢复挂起的预览任务（提交动作交由用户确认触发，遵守不自动重放原则）
+  useEffect(() => {
+    if (!pendingResume || isMock) return;
+    const action = pendingResume;
+    setPendingResume(null);
+    if (action === 'preview' && rawFileRef.current && parsedDataset) {
+      void runPreviewAnalysis({
+        file: rawFileRef.current,
+        parsed: parsedDataset,
+        nextMapping: mapping,
+        useCustomMapping: Object.keys(mapping).length > 0,
+        nextStrategy: strategy,
+        nextConflict: conflictResolution,
+        nextSkipEmpty: skipEmptyFields,
+      });
+    } else if (action === 'commit') {
+      showToast('管理员身份验证已刷新，请再次点击“开始导入”提交事务。');
+    }
+  }, [
+    conflictResolution,
+    isMock,
+    mapping,
+    parsedDataset,
+    pendingResume,
+    runPreviewAnalysis,
+    showToast,
+    skipEmptyFields,
+    strategy,
+  ]);
 
   const handleRefreshAfterUnknown = useCallback(() => {
     void adapter.loadSidebarCounts().then(setSidebarCounts);
@@ -1002,7 +1230,9 @@ function CsvImportPageBody({
         setSubTab('import');
       } else if (key === 'batch') {
         setSubTab('batch');
-      } else if (key === 'dashboard' || key === 'accounts' || key === 'tags') {
+      } else if (key === 'tags') {
+        navigateTo('/accounts?modal=tags', '/preview/accounts');
+      } else if (key === 'dashboard' || key === 'accounts') {
         navigateTo('/accounts', '/preview/accounts');
       }
     },
@@ -1015,8 +1245,10 @@ function CsvImportPageBody({
         setSubTab('import');
       } else if (key === 'batch') {
         setSubTab('batch');
-      } else if (key === 'accounts' || key === 'tags') {
+      } else if (key === 'accounts') {
         navigateTo('/accounts', '/preview/accounts');
+      } else if (key === 'tags') {
+        navigateTo('/accounts?modal=tags', '/preview/accounts');
       } else if (key === 'archived') {
         navigateTo('/accounts?archived=true', '/preview/accounts');
       } else if (key === 'trash') {
@@ -1040,10 +1272,16 @@ function CsvImportPageBody({
       setBatchBusy(true);
       try {
         await adapter.applyBatchStatus(targets, status);
-        const latest = await adapter.loadBatchWorkspace();
+        const [latest, counts] = await Promise.all([
+          adapter.loadBatchWorkspace(),
+          adapter.loadSidebarCounts(),
+        ]);
         setBatchAccounts(latest.accounts);
+        setBatchTotal(latest.total);
+        setSidebarCounts(counts);
       } catch (error) {
         onFailure?.(error);
+        throw error;
       } finally {
         setBatchBusy(false);
       }
@@ -1058,8 +1296,10 @@ function CsvImportPageBody({
         await adapter.applyBatchTags(targets, tagIds);
         const latest = await adapter.loadBatchWorkspace();
         setBatchAccounts(latest.accounts);
+        setBatchTotal(latest.total);
       } catch (error) {
         onFailure?.(error);
+        throw error;
       } finally {
         setBatchBusy(false);
       }
@@ -1074,20 +1314,29 @@ function CsvImportPageBody({
             '最近一次 CSV 导入（1,248 条）已完成防篡改哈希链记录。',
             '上传限制：≤10 MB、≤10,000 行、≤256 列，所有敏感字段自动掩码。',
           ]
-        : [
-            '所有 CSV 导入提交均写入防篡改哈希链审计日志，支持单事务原子回滚。',
-            '上传限制：≤10 MB、≤10,000 行、≤256 列，所有敏感字段自动掩码。',
-          ],
+        : [],
     [isMock],
   );
+
+  const subTabs: readonly {
+    key: TransferSubTab;
+    label: string;
+    icon: typeof Upload;
+  }[] = [
+    { key: 'import', label: 'CSV 导入', icon: Upload },
+    { key: 'batch', label: '批量操作', icon: Layers },
+    { key: 'export', label: '数据导出', icon: Download },
+  ];
 
   return (
     <CsvWorkspaceShell
       navAlpha={navAlpha}
       onNavAlphaChange={handleNavAlphaChange}
       displaySettings={displaySettings}
+      onDisplaySettingsChange={handleDisplaySettingsChange}
       activeSubTab={subTab}
       sidebarCounts={sidebarCounts}
+      systemStatus={systemStatus}
       globalSearch={globalSearch}
       onGlobalSearchChange={(value) => {
         setGlobalSearch(value);
@@ -1100,6 +1349,9 @@ function CsvImportPageBody({
         navigateTo('/settings/security', '/preview/settings/security')
       }
       onOpenAuditLog={handleOpenAuditLog}
+      onOpenRecoveryUsage={() =>
+        navigateTo('/recovery-emails', '/preview/accounts')
+      }
       onLogout={() => {
         clearUploadedFile();
         if (onLogout) onLogout();
@@ -1114,8 +1366,8 @@ function CsvImportPageBody({
               CSV 导入 / 批量操作
             </h1>
             <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
-              批量导入、更新或管理 Gmail
-              账号，支持严格校验、字段映射与原子提交。
+              批量导入、更新、导出或管理 Gmail
+              账号，支持严格校验、字段映射、加密导出与原子提交。
             </p>
           </div>
 
@@ -1150,47 +1402,46 @@ function CsvImportPageBody({
         <div
           role="tablist"
           aria-label="数据处理子模块"
-          className="inline-flex items-center gap-1 rounded-2xl border border-white/78 bg-white/46 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]"
+          className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-white/78 bg-white/46 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]"
         >
-          {(
-            [
-              { key: 'import', label: 'CSV 导入', icon: Upload },
-              { key: 'batch', label: '批量操作', icon: Layers },
-            ] as const
-          ).map(({ key, label, icon: Icon }, idx) => {
+          {subTabs.map(({ key, label, icon: Icon }, idx) => {
             const selected = subTab === key;
             return (
               <button
                 key={key}
+                id={`transfer-tab-${key}`}
                 ref={(el) => {
                   subTabRefs.current[idx] = el;
                 }}
                 type="button"
                 role="tab"
                 aria-selected={selected}
+                aria-controls={`transfer-tabpanel-${key}`}
                 tabIndex={selected ? 0 : -1}
                 onClick={() => setSubTab(key)}
                 onKeyDown={(event) => {
                   if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                     event.preventDefault();
-                    const nextIdx = idx === 0 ? 1 : 0;
-                    const nextKey = nextIdx === 0 ? 'import' : 'batch';
-                    setSubTab(nextKey);
+                    const step = event.key === 'ArrowRight' ? 1 : -1;
+                    const nextIdx =
+                      (idx + step + subTabs.length) % subTabs.length;
+                    setSubTab(subTabs[nextIdx].key);
                     subTabRefs.current[nextIdx]?.focus();
                   } else if (event.key === 'Home') {
                     event.preventDefault();
-                    setSubTab('import');
+                    setSubTab(subTabs[0].key);
                     subTabRefs.current[0]?.focus();
                   } else if (event.key === 'End') {
                     event.preventDefault();
-                    setSubTab('batch');
-                    subTabRefs.current[1]?.focus();
+                    const last = subTabs.length - 1;
+                    setSubTab(subTabs[last].key);
+                    subTabRefs.current[last]?.focus();
                   }
                 }}
                 className={cn(
                   'inline-flex h-8.5 items-center gap-1.5 rounded-xl px-4 text-[13px] font-medium transition-all duration-[180ms] ease-out',
                   selected
-                    ? 'border border-[#1677ff]/24 bg-white/92 font-semibold text-[#1158c7] shadow-[0_3px_10px_rgba(22,119,255,0.12),inset_0_1px_0_rgba(255,255,255,0.95)]'
+                    ? 'border border-[var(--badge-blue-border)] bg-[var(--surface-selected)] font-semibold text-[var(--accent-text)] shadow-[0_3px_10px_rgba(22,119,255,0.12)]'
                     : 'text-[var(--text-secondary)] hover:bg-white/55 hover:text-[var(--text-primary)]',
                 )}
               >
@@ -1211,16 +1462,45 @@ function CsvImportPageBody({
       </div>
 
       {subTab === 'batch' ? (
-        <BatchOperationsPanel
-          accounts={batchAccounts}
-          tags={batchTags}
-          searchQuery={globalSearch}
-          busy={batchBusy}
-          onApplyStatus={handleBatchStatus}
-          onApplyTags={handleBatchTags}
-        />
+        <div
+          role="tabpanel"
+          id="transfer-tabpanel-batch"
+          aria-labelledby="transfer-tab-batch"
+        >
+          <BatchOperationsPanel
+            accounts={batchAccounts}
+            totalAccounts={batchTotal}
+            tags={batchTags}
+            searchQuery={globalSearch}
+            onSearchQueryChange={setGlobalSearch}
+            busy={batchBusy}
+            onApplyStatus={handleBatchStatus}
+            onApplyTags={handleBatchTags}
+          />
+        </div>
+      ) : subTab === 'export' ? (
+        <div
+          role="tabpanel"
+          id="transfer-tabpanel-export"
+          aria-labelledby="transfer-tab-export"
+        >
+          <DataExportPanel
+            mode={isMock ? 'mock' : 'live'}
+            session={liveSession}
+            exportBusy={exportBusy}
+            onSession={handleSessionUpdate}
+            onFailure={onFailure}
+            onExportCsv={handleExportAccounts}
+            onToast={showToast}
+          />
+        </div>
       ) : (
-        <div className="space-y-4">
+        <div
+          role="tabpanel"
+          id="transfer-tabpanel-import"
+          aria-labelledby="transfer-tab-import"
+          className="space-y-4"
+        >
           {/* 五、四步流程指示器 */}
           <ImportStepper
             currentStep={currentStep}
@@ -1302,10 +1582,7 @@ function CsvImportPageBody({
                 disabled={submitting || previewBusy || !fileMeta}
                 onStrategyChange={handleStrategyChange}
                 onConflictResolutionChange={handleConflictChange}
-                onSkipEmptyFieldsChange={(checked) => {
-                  setSkipEmptyFields(checked);
-                  setConfirmed(false);
-                }}
+                onSkipEmptyFieldsChange={handleSkipEmptyFieldsChange}
               />
 
               {fileMeta ? (
@@ -1382,6 +1659,11 @@ function CsvImportPageBody({
               }}
               onExportPreview={handleExportPreview}
               exportDisabled={!fileMeta}
+              exportLabel={
+                selectedRows.size > 0
+                  ? `导出所选预览 (${selectedRows.size})`
+                  : '导出预览'
+              }
             />
 
             {previewBusy ? (
@@ -1458,17 +1740,81 @@ function CsvImportPageBody({
         onConfirmExport={(scope) => void handleExportAccounts(scope)}
       />
 
-      {/* 屏幕阅读器与轻量玻璃 Toast */}
-      {toastMessage && (
-        <div
-          role="status"
-          aria-live="polite"
-          data-slot="transfer-toast"
-          className="fixed right-6 bottom-6 z-[60] rounded-2xl border border-white/88 bg-[rgba(250,253,255,0.94)] px-4 py-2.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_16px_40px_rgba(32,68,118,0.2),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl"
-        >
-          {toastMessage}
-        </div>
+      {/* 页内高风险二次验证弹窗（保留已上传 CSV 文件不丢失） */}
+      {!isMock && liveSession && (
+        <SensitiveActionDialog
+          open={reauthPending !== null}
+          onOpenChange={(open) => {
+            if (!open) setReauthPending(null);
+          }}
+          title="完成管理员二次验证"
+          description="CSV 预览校验与原子导入属于高敏感操作，需验证近期管理员身份。"
+          riskSummary="已保留当前内存中的 CSV 文件与字段映射，验证通过后无需重新上传。"
+          confirmLabel="验证并继续"
+          tone="primary"
+          isRecentlyVerified={false}
+          alwaysRequireCredentials
+          requireTotp={Boolean(
+            liveSession.step_up_totp_required && liveSession.totp_enabled,
+          )}
+          canUsePasskey={Boolean(
+            liveSession.webauthn_enabled && isWebAuthnSupported(),
+          )}
+          onPasskeyVerify={async () => {
+            try {
+              const updated = await performPasskeyStepUp(
+                liveSession.csrf_token,
+              );
+              handleSessionUpdate(updated);
+              return { ok: true, message: '通行密钥验证通过' };
+            } catch (error) {
+              return { ok: false, error: formatWebAuthnError(error) };
+            }
+          }}
+          onConfirm={async (verify) => {
+            if (!verify?.password) {
+              return { ok: false, error: '请输入当前管理员密码。' };
+            }
+            try {
+              const { data } = await authReverify({
+                body: verify.totpCode
+                  ? { password: verify.password, totp_code: verify.totpCode }
+                  : { password: verify.password },
+                headers: { 'X-CSRF-Token': liveSession.csrf_token },
+                throwOnError: true,
+              });
+              handleSessionUpdate(data);
+              return { ok: true, message: '管理员身份验证通过' };
+            } catch (error) {
+              const err = error as Partial<ErrorResponse> | undefined;
+              return {
+                ok: false,
+                error: err?.error?.message ?? '验证失败，请检查凭据后重试。',
+              };
+            }
+          }}
+          onSuccess={() => {
+            const pending = reauthPending;
+            setReauthPending(null);
+            if (pending) setPendingResume(pending);
+          }}
+        />
       )}
+
+      {/* 屏幕阅读器与轻量玻璃 Toast（Portal 渲染于 body，z-[70] 置于弹窗之上） */}
+      {toastMessage &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="status"
+            aria-live="polite"
+            data-slot="transfer-toast"
+            className="pointer-events-none fixed right-6 bottom-6 z-[70] rounded-2xl border border-[var(--modal-border)] bg-[var(--surface-toast)] px-4 py-2.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_16px_40px_rgba(15,30,58,0.28)] backdrop-blur-xl"
+          >
+            {toastMessage}
+          </div>,
+          document.body,
+        )}
     </CsvWorkspaceShell>
   );
 }

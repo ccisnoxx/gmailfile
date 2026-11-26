@@ -51,7 +51,8 @@ export function RecoveryPage({
   onCopy?: (value: string) => void;
   onOpenAccountsFilter?: (email: string) => void;
 }) {
-  const page = Number(params.get('recovery_page') || 1);
+  const rawPage = Number(params.get('recovery_page') || 1);
+  const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
   const search = params.get('recovery_search') || '';
   const sort = (params.get('recovery_sort') ||
     '-account_count') as RecoverySortKey;
@@ -79,7 +80,8 @@ export function RecoveryPage({
     queryFn: async ({ signal }) =>
       (
         await recoveryEmailAccounts({
-          path: { encoded_email: encodeURIComponent(inspectEmail!) },
+          // SDK 内部会按 RFC3986 对 path 参数编码，这里不能重复 encodeURIComponent。
+          path: { encoded_email: inspectEmail! },
           query: { page: 1, page_size: 20 },
           signal,
           throwOnError: true,
@@ -139,12 +141,16 @@ export function RecoveryPage({
               placeholder="筛选辅助邮箱…"
               value={search}
               onChange={(e) =>
-                change({
-                  view: params.get('view') || '',
-                  recovery_search: e.target.value,
-                  recovery_sort: sort || '',
-                  recovery_page: '1',
-                })
+                change(
+                  {
+                    view: params.get('view') || '',
+                    recovery_search: e.target.value,
+                    recovery_sort: sort || '',
+                    recovery_page: '1',
+                  },
+                  false,
+                  true,
+                )
               }
               maxLength={254}
               className="h-9 w-52 rounded-xl border border-white/80 bg-white/65 pr-3 pl-8 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
@@ -230,7 +236,9 @@ export function RecoveryPage({
                   '最近关联时间',
                   '操作',
                 ].map((title) => (
-                  <TableHead key={title}>{title}</TableHead>
+                  <TableHead key={title} className="whitespace-nowrap">
+                    {title}
+                  </TableHead>
                 ))}
               </TableRow>
             </TableHeader>
@@ -289,7 +297,12 @@ export function RecoveryPage({
                       <Button
                         variant="ghost"
                         size="sm"
-                        aria-label={`快速预览 ${row.email} 关联账号`}
+                        aria-expanded={inspectEmail === row.email}
+                        aria-label={
+                          inspectEmail === row.email
+                            ? `收起 ${row.email} 关联账号预览`
+                            : `快速预览 ${row.email} 关联账号`
+                        }
                         onClick={() =>
                           setInspectEmail((prev) =>
                             prev === row.email ? null : row.email,
@@ -350,9 +363,19 @@ export function RecoveryPage({
                   正在加载关联账号…
                 </p>
               ) : linkedAccounts.isError ? (
-                <p role="alert" className="text-xs text-[var(--danger)]">
-                  加载关联账号失败，请重试。
-                </p>
+                <div
+                  role="alert"
+                  className="flex flex-wrap items-center gap-2 text-xs text-[var(--danger-text)]"
+                >
+                  <span>加载关联账号失败，请重试。</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void linkedAccounts.refetch()}
+                  >
+                    重试
+                  </Button>
+                </div>
               ) : (
                 <ul className="divide-y divide-[var(--table-divider)] rounded-xl border border-[var(--border)] bg-white/45">
                   {linkedAccounts.data?.items.map((acc) => (

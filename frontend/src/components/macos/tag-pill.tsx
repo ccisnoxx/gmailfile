@@ -3,11 +3,14 @@ import { cn } from '@/lib/utils';
 export type TagTone = 'blue' | 'purple' | 'green' | 'yellow' | 'gray';
 
 const toneClasses: Record<TagTone, string> = {
-  blue: 'bg-[#e8f2ff] text-[#0f52ba] border-[#1677ff]/18',
-  purple: 'bg-[#efeafd] text-[#5637cf] border-[#8468f5]/20',
-  green: 'bg-[#e6f7ee] text-[#116b3b] border-[#2fbf71]/22',
-  yellow: 'bg-[#fef6df] text-[#8a5000] border-[#f5a623]/25',
-  gray: 'bg-[#eef2f6] text-[#475467] border-[#98a2b3]/25',
+  blue: 'bg-[var(--badge-blue-bg)] text-[var(--badge-blue-text)] border-[var(--badge-blue-border)]',
+  purple:
+    'bg-[var(--badge-purple-bg)] text-[var(--badge-purple-text)] border-[var(--badge-purple-border)]',
+  green:
+    'bg-[var(--badge-green-bg)] text-[var(--badge-green-text)] border-[var(--badge-green-border)]',
+  yellow:
+    'bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)] border-[var(--badge-orange-border)]',
+  gray: 'bg-[var(--badge-gray-bg)] text-[var(--badge-gray-text)] border-[var(--badge-gray-border)]',
 };
 
 const cycleTones: readonly TagTone[] = ['blue', 'purple', 'green', 'yellow'];
@@ -38,13 +41,14 @@ export function TagPill({
   return (
     <span
       data-slot="tag-pill"
+      title={name}
       className={cn(
-        'inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap',
+        'inline-flex max-w-[140px] items-center truncate rounded-md border px-2 py-0.5 text-[11px] font-medium whitespace-nowrap',
         toneClasses[resolved],
         className,
       )}
     >
-      {name}
+      <span className="truncate">{name}</span>
     </span>
   );
 }

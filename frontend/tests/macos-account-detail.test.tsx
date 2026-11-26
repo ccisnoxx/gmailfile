@@ -266,16 +266,19 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
 
     renderPreviewRouter();
 
-    // 顶部全局搜索框 + ⌘K 快捷键
+    // 账号列表搜索框 + ⌘K 快捷键（弹窗开启时不抢焦点，关闭后聚焦搜索框）
     const searchInput =
-      screen.getByPlaceholderText('搜索账号、标签或备注（⌘K）');
+      screen.getByPlaceholderText('搜索账号或备注（⌘K）');
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    expect(document.activeElement).not.toBe(searchInput);
+    fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
 
     // 左侧主导航 9 项入口 + 回收站徽标 3 + 底部系统运行状态
-    const sidebar = screen.getByLabelText('主导航');
+    const sidebar = screen.getByLabelText('侧边导航栏');
     for (const label of [
-      '控制台',
+      '数据概览',
       'Gmail 账号',
       '标签管理',
       '导入 / 导出（CSV）',
@@ -293,15 +296,14 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
     const statusCard = within(sidebar).getByLabelText('系统运行状态');
     expect(within(statusCard).getByText('系统运行正常')).toBeInTheDocument();
     expect(
-      within(statusCard).getByText('HTTPS / HSTS 已启用'),
-    ).toBeInTheDocument();
-    expect(
       within(statusCard).getByText('会话与 CSRF 防护'),
     ).toBeInTheDocument();
     expect(
       within(statusCard).getByText('字段加密 AES-256-GCM'),
     ).toBeInTheDocument();
-    expect(within(statusCard).getByText('TOTP 双因素认证')).toBeInTheDocument();
+    expect(
+      within(statusCard).getByText('TOTP 双因素认证已启用'),
+    ).toBeInTheDocument();
     expect(
       within(statusCard).getByText(/最近备份：2026-01-15 02:30/),
     ).toBeInTheDocument();
@@ -320,13 +322,13 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
       expect(within(listPane).getByText(email)).toBeInTheDocument();
     }
 
-    // 账号详情头部、标签页、表单字数 29 / 500、右侧概览与时间线
+    // 账号详情头部、标签页、表单字数、右侧概览与时间线
     expect(
       screen.getByRole('heading', { name: 'example.account@gmail.com' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('开发环境')).toBeInTheDocument();
-    expect(screen.getByText('工具账号')).toBeInTheDocument();
-    expect(screen.getByText('长期保留')).toBeInTheDocument();
+    expect(screen.getAllByText('开发环境').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('工具账号').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('长期保留').length).toBeGreaterThanOrEqual(1);
 
     const tablist = screen.getByRole('tablist', { name: '账号详情分区' });
     expect(
@@ -554,12 +556,14 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
       screen.getByRole('tab', { name: '审计与活动', selected: true }),
     ).toBeInTheDocument();
 
-    // 更多菜单：恢复（归档后可恢复）与删除确认
+    // 更多菜单：取消归档（归档后专用取消归档动作）与删除确认
     await user.click(screen.getByRole('button', { name: '更多' }));
-    await user.click(await screen.findByRole('menuitem', { name: '恢复' }));
-    const restoreDialog = await screen.findByRole('alertdialog');
     await user.click(
-      within(restoreDialog).getByRole('button', { name: '确认恢复' }),
+      await screen.findByRole('menuitem', { name: '取消归档' }),
+    );
+    const unarchiveDialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(unarchiveDialog).getByRole('button', { name: '确认取消归档' }),
     );
 
     await user.click(screen.getByRole('button', { name: '更多' }));
@@ -735,5 +739,63 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
 
     await waitFor(() => expect(patchPayloads).toHaveLength(1));
     expect(patchPayloads[0].notes).toBe(longNotes);
+  });
+
+  it('真实 API 模式下：已归档账号调用专用 /unarchive 动作而非 /restore，且切换账号时联系方式页重置手机号脱敏状态', async () => {
+    const user = userEvent.setup();
+    const archived = makeLiveAccount({
+      status: 'archived',
+      archived_at: '2026-01-12T08:00:00Z',
+    });
+    const unarchiveCalls: string[] = [];
+    const restoreCalls: string[] = [];
+
+    const { fetchMock } = renderLiveDetail(archived);
+    const origImpl = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (req: Request) => {
+      const url = new URL(req.url);
+      if (req.method === 'POST' && url.pathname.endsWith('/unarchive')) {
+        unarchiveCalls.push(url.pathname);
+        return json({
+          ...archived,
+          status: 'normal',
+          archived_at: null,
+          row_version: archived.row_version + 1,
+        });
+      }
+      if (req.method === 'POST' && url.pathname.endsWith('/restore')) {
+        restoreCalls.push(url.pathname);
+        return json(archived);
+      }
+      return origImpl(req);
+    });
+
+    await screen.findByRole('heading', { name: archived.gmail_email });
+
+    // 1. 切到「关联账号与联系方式」展开手机号，再切换到另一账号，手机号必须恢复掩码
+    await user.click(screen.getByRole('tab', { name: '关联账号与联系方式' }));
+    await user.click(screen.getByRole('button', { name: '显示手机号' }));
+    expect(screen.getByText('+86 139 8420 6728')).toBeInTheDocument();
+
+    const listPane = screen.getByLabelText('账号列表面板');
+    await user.click(within(listPane).getByText('dev.tools@gmail.com'));
+    await screen.findByRole('heading', { name: 'dev.tools@gmail.com' });
+    expect(screen.queryByText('+86 139 8420 6728')).not.toBeInTheDocument();
+
+    // 切回已归档账号并执行「取消归档」
+    await user.click(within(listPane).getByText(archived.gmail_email));
+    await screen.findByRole('heading', { name: archived.gmail_email });
+    await user.click(screen.getByRole('button', { name: '更多' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: '取消归档' }),
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: '确认取消归档' }),
+    );
+
+    await waitFor(() => expect(unarchiveCalls).toHaveLength(1));
+    expect(unarchiveCalls[0]).toBe(`/api/v1/accounts/${archived.id}/unarchive`);
+    expect(restoreCalls).toHaveLength(0);
   });
 });

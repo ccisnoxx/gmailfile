@@ -9,42 +9,55 @@ const statusConfig: Record<
   {
     label: string;
     className: string;
-    kind: 'dot-green' | 'dot-orange' | 'dot-amber' | 'archive' | 'disabled';
+    kind:
+      | 'dot-green'
+      | 'dot-orange'
+      | 'dot-red'
+      | 'dot-amber'
+      | 'archive'
+      | 'disabled';
   }
 > = {
   normal: {
     label: '正常',
-    className: 'bg-[#e7f8ef] text-[#116b3b] border-[#2fbf71]/25',
+    className:
+      'bg-[var(--badge-green-bg)] text-[var(--badge-green-text)] border-[var(--badge-green-border)]',
     kind: 'dot-green',
   },
   restricted: {
-    label: '风险',
-    className: 'bg-[#fef3df] text-[#8a5000] border-[#f5a623]/30',
+    label: '受限',
+    className:
+      'bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)] border-[var(--badge-orange-border)]',
     kind: 'dot-orange',
   },
   login_failed: {
-    label: '风险',
-    className: 'bg-[#fef3df] text-[#8a5000] border-[#f5a623]/30',
-    kind: 'dot-orange',
+    label: '无法登录',
+    className:
+      'bg-[var(--badge-red-bg)] text-[var(--badge-red-text)] border-[var(--badge-red-border)]',
+    kind: 'dot-red',
   },
   risk: {
     label: '风险',
-    className: 'bg-[#fef3df] text-[#8a5000] border-[#f5a623]/30',
+    className:
+      'bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)] border-[var(--badge-orange-border)]',
     kind: 'dot-orange',
   },
   pending_verification: {
     label: '待验证',
-    className: 'bg-[#fff7e6] text-[#8a5000] border-[#f5a623]/25',
+    className:
+      'bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)] border-[var(--badge-orange-border)]',
     kind: 'dot-amber',
   },
   archived: {
     label: '已归档',
-    className: 'bg-[#eef2f6] text-[#526074] border-[#98a2b3]/25',
+    className:
+      'bg-[var(--badge-gray-bg)] text-[var(--badge-gray-text)] border-[var(--badge-gray-border)]',
     kind: 'archive',
   },
   disabled: {
     label: '停用',
-    className: 'bg-[#eef2f6] text-[#526074] border-[#98a2b3]/25',
+    className:
+      'bg-[var(--badge-gray-bg)] text-[var(--badge-gray-text)] border-[var(--badge-gray-border)]',
     kind: 'disabled',
   },
 };
@@ -76,6 +89,12 @@ export function StatusPill({
         <span
           aria-hidden="true"
           className="size-1.5 rounded-full bg-[var(--warning)]"
+        />
+      )}
+      {item.kind === 'dot-red' && (
+        <span
+          aria-hidden="true"
+          className="size-1.5 rounded-full bg-[var(--danger)]"
         />
       )}
       {item.kind === 'dot-amber' && (

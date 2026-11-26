@@ -52,7 +52,7 @@ export function SettingsSegmentedTabs({
       <div
         role="tablist"
         aria-label="系统设置分类"
-        className="inline-flex min-w-max items-center gap-1 rounded-[14px] border border-white/80 bg-white/46 p-1 shadow-[inset_0_1px_2px_rgba(45,86,138,0.08),0_4px_14px_rgba(45,86,138,0.05)] backdrop-blur-md"
+        className="inline-flex min-w-max items-center gap-1 rounded-[14px] border border-[var(--surface-control-border)] bg-[var(--surface-control)] p-1 backdrop-blur-md"
       >
         {SETTINGS_SECTIONS.map((section, index) => {
           const active = activeSection === section.key;
@@ -71,10 +71,10 @@ export function SettingsSegmentedTabs({
               onClick={() => onChange(section.key)}
               onKeyDown={(e) => handleKeyDown(e, index)}
               className={cn(
-                'inline-flex h-[34px] items-center justify-center rounded-[10px] px-4 text-[13px] whitespace-nowrap transition-all duration-[180ms] ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
+                'inline-flex h-[34px] items-center justify-center rounded-[10px] px-3 text-[12.5px] whitespace-nowrap transition-all duration-[180ms] ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:px-4 sm:text-[13px]',
                 active
-                  ? 'border border-white/45 bg-[linear-gradient(180deg,rgba(47,139,255,0.92),rgba(22,119,255,0.96))] font-semibold text-white shadow-[0_5px_14px_rgba(22,119,255,0.28),inset_0_1px_0_rgba(255,255,255,0.38)]'
-                  : 'font-medium text-[var(--text-secondary)] hover:bg-white/60 hover:text-[var(--text-primary)]',
+                  ? 'bg-[var(--accent)] font-semibold text-[var(--primary-foreground)] shadow-[0_5px_14px_rgba(22,119,255,0.28)]'
+                  : 'font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]',
               )}
             >
               {section.label}

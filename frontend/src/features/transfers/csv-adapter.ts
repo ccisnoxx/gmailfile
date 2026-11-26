@@ -3,10 +3,12 @@ import {
   accountsBatchTags,
   accountsList,
   auditsList,
+  backupStatus,
   csvCommit,
   csvExport,
   csvPreview,
   dashboardSummary,
+  systemVersion,
   tagsList,
   type AccountQuery,
   type AccountSummary,
@@ -17,6 +19,7 @@ import {
   type SessionResponse,
   type TagResponse,
 } from '@/api/generated';
+import type { SidebarSystemStatus } from '@/components/macos';
 import {
   evaluateParsedRows,
   indexToColumnLetter,
@@ -68,6 +71,7 @@ export type CsvTransferAdapter = {
     useCustomMapping: boolean;
     strategy: ImportStrategyOption;
     conflictResolution: ConflictResolutionOption;
+    skipEmptyFields: boolean;
   }) => Promise<ServerPreviewPayload>;
   commitCsv: (args: {
     file: File | null;
@@ -82,10 +86,12 @@ export type CsvTransferAdapter = {
     filename: string;
   }>;
   loadSidebarCounts: () => Promise<SidebarCounts>;
+  loadSystemStatus: () => Promise<SidebarSystemStatus>;
   loadImportHistory: () => Promise<ImportHistoryRecord[]>;
   loadBatchWorkspace: () => Promise<{
     accounts: BatchAccountItem[];
     tags: TagResponse[];
+    total: number;
   }>;
   applyBatchStatus: (
     accounts: { id: string; rowVersion: number }[],
@@ -109,12 +115,14 @@ function mergeServerPreviewWithClientRows(
   mapping: FieldMappingState,
   strategy: ImportStrategyOption,
   conflictResolution: ConflictResolutionOption,
+  skipEmptyFields: boolean,
 ): ServerPreviewPayload {
   const clientEval = evaluateParsedRows({
     rawRows: parsed.rows,
     mapping,
     strategy,
     conflictResolution,
+    skipEmptyFields,
   });
 
   // 服务端按逻辑行号计数：表头为第 1 行，数据行从第 2 行开始
@@ -273,6 +281,7 @@ export function createLiveCsvAdapter({
       useCustomMapping,
       strategy,
       conflictResolution,
+      skipEmptyFields,
     }) {
       const apiStrategy = toApiStrategy(strategy, conflictResolution);
       const numericMapping: Record<string, number> = {};
@@ -290,6 +299,7 @@ export function createLiveCsvAdapter({
         query: {
           options: JSON.stringify({
             strategy: apiStrategy,
+            skip_empty_fields: skipEmptyFields,
             ...(useCustomMapping ? { mapping: numericMapping } : {}),
           }),
         },
@@ -307,6 +317,7 @@ export function createLiveCsvAdapter({
         resolvedMapping,
         strategy,
         conflictResolution,
+        skipEmptyFields,
       );
     },
 
@@ -356,6 +367,15 @@ export function createLiveCsvAdapter({
           errBody &&
           'error' in errBody &&
           errBody.error &&
+          errBody.error.code === 'REAUTH_REQUIRED'
+        ) {
+          throw errBody;
+        }
+
+        if (
+          errBody &&
+          'error' in errBody &&
+          errBody.error &&
           !['INTERNAL_ERROR', 'DECRYPTION_FAILED'].includes(errBody.error.code)
         ) {
           onFailure?.(errBody);
@@ -372,6 +392,14 @@ export function createLiveCsvAdapter({
           message: '结果未知，请刷新确认',
         };
       } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          'error' in error &&
+          (error as Partial<ErrorResponse>).error?.code === 'REAUTH_REQUIRED'
+        ) {
+          throw error;
+        }
         onFailure?.(error);
         return {
           kind: 'unknown',
@@ -400,51 +428,81 @@ export function createLiveCsvAdapter({
     async loadSidebarCounts() {
       try {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const [summaryRes, tagsRes, archivedRes, trashRes] = await Promise.all([
+        const [summaryRes, tagsRes] = await Promise.all([
           dashboardSummary({ query: { timezone: tz }, throwOnError: true }),
           tagsList({ throwOnError: true }),
-          accountsList({
-            query: { archived: true, page: 1, page_size: 1 },
-            throwOnError: true,
-          }),
-          accountsList({
-            query: { deleted: true, page: 1, page_size: 1 },
-            throwOnError: true,
-          }),
         ]);
         return {
           accounts: summaryRes.data.total,
           tags: tagsRes.data.length,
-          archived: archivedRes.data.total,
-          trash: trashRes.data.total,
+          archived: summaryRes.data.archived ?? 0,
+          trash: summaryRes.data.deleted_count ?? 0,
         };
       } catch {
         return { accounts: 0, tags: 0, archived: 0, trash: 0 };
       }
     },
 
+    async loadSystemStatus() {
+      const [verRes, bakRes] = await Promise.allSettled([
+        systemVersion({ throwOnError: true }),
+        backupStatus({ throwOnError: true }),
+      ]);
+      const version =
+        verRes.status === 'fulfilled' && verRes.value.data?.version
+          ? `v${verRes.value.data.version}`
+          : undefined;
+      const bak = bakRes.status === 'fulfilled' ? bakRes.value.data : undefined;
+      const state = bak?.state;
+      return {
+        healthy:
+          state !== 'failed' && state !== 'stale',
+        headline:
+          state === 'failed'
+            ? '备份状态异常'
+            : state === 'stale'
+              ? '备份已过期'
+              : state === 'unconfigured'
+                ? '未配置自动备份'
+                : state === 'never_run'
+                  ? '尚未执行备份'
+                  : state === 'running'
+                    ? '正在执行备份'
+                    : state === 'success'
+                      ? '系统运行正常'
+                      : '状态同步中',
+        httpsEnabled:
+          typeof window !== 'undefined' &&
+          window.location.protocol === 'https:',
+        csrfEnabled: Boolean(session.csrf_token),
+        encryptionLabel: '字段加密 AES-256-GCM',
+        totpEnabled: Boolean(session.totp_enabled),
+        lastBackupLabel: bak?.last_success_at
+          ? bak.last_success_at.replace('T', ' ').slice(0, 16)
+          : '未配置',
+        version,
+      };
+    },
+
     async loadImportHistory() {
       try {
         const res = await auditsList({
-          query: { page: 1, page_size: 20 },
+          query: { page: 1, page_size: 30, event_type: 'csv_imported' },
           throwOnError: true,
         });
         return res.data.items
-          .filter(
-            (item) =>
-              item.event_type.includes('import') ||
-              item.event_type.includes('csv'),
-          )
+          .filter((item) => item.event_type === 'csv_imported')
           .map((item) => ({
             id: item.id,
-            fileName: item.operation ?? 'CSV 批量导入',
-            executedAt: item.created_at,
-            strategyLabel: item.event_type,
-            created: 0,
-            updated: 0,
-            skipped: 0,
+            fileName: item.operation || 'CSV 批量导入',
+            executedAt: item.created_at.replace('T', ' ').slice(0, 19),
+            strategyLabel: '原子事务提交',
+            created: null,
+            updated: null,
+            skipped: null,
+            summaryText: '详见审计日志',
             status: 'committed' as const,
-            operator: 'admin',
+            operator: item.ip_address || '管理员',
           }));
       } catch {
         return [];
@@ -453,7 +511,7 @@ export function createLiveCsvAdapter({
 
     async loadBatchWorkspace() {
       const [accountsRes, tagsRes] = await Promise.all([
-        accountsList({ query: { page: 1, page_size: 30 }, throwOnError: true }),
+        accountsList({ query: { page: 1, page_size: 100 }, throwOnError: true }),
         tagsList({ throwOnError: true }),
       ]);
       return {
@@ -469,6 +527,7 @@ export function createLiveCsvAdapter({
           updatedAt: item.updated_at,
         })),
         tags: tagsRes.data,
+        total: accountsRes.data.total,
       };
     },
 
@@ -521,12 +580,19 @@ export function createMockCsvAdapter(options?: {
 
   return {
     mode: 'mock',
-    async previewCsv({ parsed, mapping, strategy, conflictResolution }) {
+    async previewCsv({
+      parsed,
+      mapping,
+      strategy,
+      conflictResolution,
+      skipEmptyFields,
+    }) {
       const evaluated = evaluateParsedRows({
         rawRows: parsed.rows,
         mapping,
         strategy,
         conflictResolution,
+        skipEmptyFields,
         existingEmails: KNOWN_MOCK_EXISTING_EMAILS,
       });
 
@@ -650,6 +716,19 @@ export function createMockCsvAdapter(options?: {
       return DEFAULT_SIDEBAR_COUNTS;
     },
 
+    async loadSystemStatus() {
+      return {
+        healthy: true,
+        headline: '演示模式',
+        httpsEnabled: true,
+        csrfEnabled: true,
+        encryptionLabel: '字段加密 AES-256-GCM',
+        totpEnabled: true,
+        lastBackupLabel: '演示数据',
+        version: 'v1.1.0',
+      };
+    },
+
     async loadImportHistory() {
       return [...historyStore];
     },
@@ -658,6 +737,7 @@ export function createMockCsvAdapter(options?: {
       return {
         accounts: [...mockAccounts],
         tags: [...mockTags],
+        total: mockAccounts.length,
       };
     },
 

@@ -29,13 +29,14 @@ export function Filters({
     key: string,
     label: string,
     values: Record<string, string>,
+    extraClear?: Record<string, string>,
   ) => (
     <label className="flex flex-col gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
       <span>{label}</span>
       <NativeSelect
         aria-label={label}
         value={params.get(key) || ''}
-        onChange={(e) => change({ [key]: e.target.value })}
+        onChange={(e) => change({ ...(extraClear ?? {}), [key]: e.target.value })}
         className="h-9 rounded-xl border-white/80 bg-white/75 text-[13px] text-[var(--text-primary)]"
       >
         <option value="">全部</option>
@@ -51,13 +52,20 @@ export function Filters({
     </label>
   );
 
+  const fromDate = params.get('from') || '';
+  const toDate = params.get('to') || '';
+  const multiStatuses = (params.get('statuses') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
   return (
     <section
       aria-label="查询条件"
       className="macos-glass-panel space-y-3.5 p-4"
     >
       <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {select('status', '筛选状态', statusLabels)}
+        {select('status', '筛选状态', statusLabels, { statuses: '' })}
         {select('two_factor_status', '筛选二步验证', factorLabels)}
         {select(
           'tag',
@@ -107,7 +115,8 @@ export function Filters({
           <Input
             type="date"
             aria-label="注册开始日期"
-            value={params.get('from') || ''}
+            value={fromDate}
+            max={toDate || undefined}
             onChange={(e) => change({ from: e.target.value })}
             className="h-9 rounded-xl border-white/80 bg-white/75 text-[13px]"
           />
@@ -118,7 +127,8 @@ export function Filters({
           <Input
             type="date"
             aria-label="注册结束日期"
-            value={params.get('to') || ''}
+            value={toDate}
+            min={fromDate || undefined}
             onChange={(e) => change({ to: e.target.value })}
             className="h-9 rounded-xl border-white/80 bg-white/75 text-[13px]"
           />
@@ -146,9 +156,38 @@ export function Filters({
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--table-divider)] pt-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-secondary)]">
+          {multiStatuses.length > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--badge-orange-bg)] px-2.5 py-1 font-medium text-[var(--badge-orange-text)]">
+              <span>
+                多状态筛选：
+                {multiStatuses
+                  .map(
+                    (s) =>
+                      statusLabels[s as keyof typeof statusLabels] ?? s,
+                  )
+                  .join(' / ')}
+              </span>
+              <button
+                type="button"
+                aria-label="清除多状态筛选"
+                onClick={() => change({ statuses: '' })}
+                className="rounded px-1 text-[11px] hover:bg-black/10"
+              >
+                ×
+              </button>
+            </span>
+          )}
           {params.has('recovery_email') && (
-            <span className="rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 font-medium text-[var(--accent)]">
-              辅助邮箱：{params.get('recovery_email')}
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--accent-soft)] px-2.5 py-1 font-medium text-[var(--accent-text)]">
+              <span>辅助邮箱：{params.get('recovery_email')}</span>
+              <button
+                type="button"
+                aria-label="清除辅助邮箱筛选"
+                onClick={() => change({ recovery_email: '' })}
+                className="rounded px-1 text-[11px] hover:bg-black/10"
+              >
+                ×
+              </button>
             </span>
           )}
           {onOpenRecoveryUsage && (

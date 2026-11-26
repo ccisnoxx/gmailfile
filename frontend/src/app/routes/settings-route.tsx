@@ -25,11 +25,24 @@ export default function SettingsRoute({
           void navigate('/accounts?archived=true');
         } else if (filter === 'trash') {
           void navigate('/accounts?deleted=true');
+        } else if (filter === 'tags') {
+          void navigate('/accounts?modal=tags');
         } else {
           workspace.onNavigate('accounts');
         }
       }}
-      onNavigateOperations={(tab) => workspace.onNavigate('operations', tab)}
+      onNavigateOperations={(tab) => {
+        if (tab === 'import') {
+          void navigate('/transfers/csv');
+        } else if (tab === 'export') {
+          void navigate('/transfers/csv?tab=export');
+        } else if (tab === 'audit') {
+          void navigate('/settings/audit');
+        } else {
+          void navigate('/settings/backup');
+        }
+      }}
+      onNavigateRecoveryUsage={() => void navigate('/recovery-emails')}
       onLogout={() => workspace.onLogout(true)}
     />
   );

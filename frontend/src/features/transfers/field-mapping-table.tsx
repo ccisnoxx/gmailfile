@@ -120,7 +120,7 @@ export function FieldMappingTable({
               type="button"
               disabled={disabled || repreviewBusy}
               onClick={onRepreview}
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#1677ff]/25 bg-[#eaf3ff] px-3 text-[12px] font-semibold text-[#1158c7] transition-colors hover:bg-[#dcebff] disabled:opacity-55"
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3 text-[12px] font-semibold text-[var(--badge-blue-text)] transition-colors hover:brightness-95 disabled:opacity-55"
             >
               <RefreshCw
                 className={cn('size-3.5', repreviewBusy && 'macos-spinner')}
@@ -152,7 +152,7 @@ export function FieldMappingTable({
       {mappingWarning && (
         <div
           role="alert"
-          className="flex items-center gap-2 rounded-xl border border-[#e45d5d]/30 bg-[#fdecec]/90 px-3 py-2 text-[12px] text-[#a83838]"
+          className="flex items-center gap-2 rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12px] text-[var(--badge-red-text)]"
         >
           <AlertCircle className="size-4 shrink-0 text-[var(--danger)]" />
           <span>{mappingWarning}</span>
@@ -224,7 +224,7 @@ export function FieldMappingTable({
                       {field.sensitive && (
                         <span
                           title="敏感字段始终掩码显示"
-                          className="inline-flex items-center gap-0.5 rounded-md bg-[#eef4fc] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]"
+                          className="inline-flex items-center gap-0.5 rounded-md border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--badge-blue-text)]"
                         >
                           <Lock className="size-2.5" aria-hidden="true" />
                           掩码
@@ -250,10 +250,10 @@ export function FieldMappingTable({
                         );
                       }}
                       className={cn(
-                        'h-8.5 w-full min-w-[156px] rounded-xl border bg-white/88 px-2.5 text-[12.5px] font-medium text-[var(--text-primary)] transition-colors focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60',
+                        'h-8.5 w-full min-w-[156px] rounded-xl border px-2.5 text-[12.5px] font-medium text-[var(--text-primary)] transition-colors focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60',
                         isMissingRequired || isDuplicate
-                          ? 'border-[#e45d5d]/65 bg-[#fff8f8]'
-                          : 'border-[#b9d0ec]/80',
+                          ? 'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)]'
+                          : 'border-[#b9d0ec]/80 bg-white/88',
                       )}
                     >
                       <option value="">不导入此字段</option>
@@ -295,17 +295,17 @@ export function FieldMappingTable({
 
                   <td className="px-3.5 py-2.5 text-right align-middle whitespace-nowrap">
                     {isDuplicate ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#b93838]">
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--danger-text)]">
                         <AlertCircle className="size-3.5 text-[var(--danger)]" />
                         列映射冲突
                       </span>
                     ) : isMissingRequired ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#b93838]">
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--danger-text)]">
                         <AlertCircle className="size-3.5 text-[var(--danger)]" />
                         必填项未映射
                       </span>
                     ) : selectedCol ? (
-                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[#116b3b]">
+                      <span className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--success-text)]">
                         <CheckCircle2
                           className="size-3.5 text-[var(--success)]"
                           aria-hidden="true"

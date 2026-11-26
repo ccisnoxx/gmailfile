@@ -206,6 +206,12 @@ class AccountDetailService:
             if row.deleted_at is None:
                 raise AccountError(409, "ACCOUNT_NOT_DELETED", "该账号未被删除")
             values, event = {"deleted_at": None}, "account_restored"
+        elif action == "unarchive":
+            if row.deleted_at is not None:
+                raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再操作")
+            if row.status != "archived":
+                raise AccountError(409, "ACCOUNT_NOT_ARCHIVED", "该账号未归档")
+            values, event = {"status": "normal", "archived_at": None}, "account_unarchived"
         else:
             if row.deleted_at is not None:
                 raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再操作")

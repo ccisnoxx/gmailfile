@@ -91,10 +91,10 @@ export function ImportStepper({
                     className={cn(
                       'mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold tabular-nums transition-all duration-[180ms] ease-out',
                       isCompleted
-                        ? 'border-[#2fbf71]/35 bg-[#e7f8ef] text-[#116b3b]'
+                        ? 'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
                         : isActive
-                          ? 'border-[var(--accent)] bg-[#eaf3ff] text-[var(--accent)] ring-4 ring-[#1677ff]/12'
-                          : 'border-[#c6d8ee] bg-white/70 text-[var(--text-secondary)]',
+                          ? 'border-[var(--accent)] bg-[var(--badge-blue-bg)] text-[var(--accent-text)] ring-4 ring-[var(--accent)]/12'
+                          : 'border-[var(--border)] bg-white/70 text-[var(--text-secondary)]',
                     )}
                   >
                     {isCompleted ? (
@@ -109,7 +109,7 @@ export function ImportStepper({
                       className={cn(
                         'block truncate text-[13px] leading-tight font-semibold',
                         isActive
-                          ? 'text-[#1158c7]'
+                          ? 'text-[var(--accent-text)]'
                           : isCompleted
                             ? 'text-[var(--text-primary)]'
                             : 'text-[var(--text-secondary)]',

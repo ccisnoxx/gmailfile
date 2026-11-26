@@ -35,11 +35,6 @@ const OperationsPage = lazy(() =>
   })),
 );
 
-const routePaths: Record<WorkspaceView, string> = {
-  accounts: '/',
-  security: '/security',
-  operations: '/operations',
-};
 
 type CredentialValues = Credentials &
   Partial<Pick<ChangePasswordInput, 'new_password'>>;
@@ -115,6 +110,10 @@ function AuthWorkspace({
       onSignedOut: auth.handleSignedOut,
       onSelectPanel: selectPanel,
       onSecuritySubmit: handleSecuritySubmit,
+      onReverifyWithPasskey:
+        auth.session.webauthn_enabled && webauthnSupported
+          ? auth.reverifyWithPasskey
+          : undefined,
     };
 
     if (inRouter) {
@@ -201,9 +200,16 @@ function AuthWorkspace({
       onLogout={() => auth.logout(false)}
     >
       {!auth.session ? (
-        <p role="status" className="text-muted-foreground">
-          {auth.notice.message ? '刷新页面以重新连接。' : '正在建立安全连接…'}
-        </p>
+        <div role="status" className="flex flex-col items-start gap-4">
+          <p className="text-muted-foreground">
+            {auth.notice.message ? '请刷新页面以重新建立安全会话。' : '正在建立安全连接…'}
+          </p>
+          {auth.notice.message && (
+            <Button type="button" onClick={() => window.location.reload()}>
+              刷新页面
+            </Button>
+          )}
+        </div>
       ) : totp.codes ? (
         <RecoveryCodesCard
           codes={totp.codes}
@@ -308,14 +314,36 @@ function RoutedAuthWorkspace() {
   const navigate = useNavigate();
   const handleNavigate = useCallback(
     (next: WorkspaceView, tab?: OperationsTabKey) => {
-      const searchParams = new URLSearchParams(window.location.search);
-      if (next === 'operations' && tab) searchParams.set('tab', tab);
-      else searchParams.delete('tab');
-      const search = searchParams.toString();
-      void navigate({
-        pathname: routePaths[next],
-        search: search ? `?${search}` : '',
-      });
+      if (next === 'accounts') {
+        void navigate('/accounts');
+        return;
+      }
+      if (next === 'security') {
+        void navigate('/settings/security');
+        return;
+      }
+      if (tab === 'audit') {
+        void navigate('/settings/audit');
+        return;
+      }
+      if (tab === 'sessions') {
+        void navigate('/settings/security');
+        return;
+      }
+      if (tab === 'status') {
+        void navigate('/settings/backup');
+        return;
+      }
+      if (tab === 'export') {
+        const searchParams = new URLSearchParams(window.location.search);
+        searchParams.set('tab', 'export');
+        void navigate({
+          pathname: '/transfers/csv',
+          search: `?${searchParams.toString()}`,
+        });
+        return;
+      }
+      void navigate('/transfers/csv');
     },
     [navigate],
   );

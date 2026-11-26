@@ -225,3 +225,129 @@ def test_csv_analyzer_mapping_and_tag_validation():
     analyzer._parse_tags(3, "|".join(f"t{i}" for i in range(101)), too_many_errors)
     assert len(too_many_errors) == 1
     assert too_many_errors[0].field == "tags"
+
+
+def test_account_query_statuses_parsing_and_validation():
+    from pydantic import ValidationError
+
+    from app.schemas.accounts import AccountQuery, DashboardSummary
+
+    parsed_csv = AccountQuery(statuses="restricted,login_failed")
+    assert parsed_csv.statuses == ["restricted", "login_failed"]
+
+    parsed_list = AccountQuery(statuses=["restricted", "login_failed", "restricted"])
+    assert parsed_list.statuses == ["restricted", "login_failed"]
+
+    assert AccountQuery(statuses=" , ").statuses is None
+
+    with pytest.raises(ValidationError):
+        AccountQuery(statuses="restricted,not_a_status")
+
+    summary = DashboardSummary(
+        total=10,
+        normal=4,
+        pending_verification=1,
+        abnormal=4,
+        risk=3,
+        disabled=1,
+        archived=1,
+        deleted_count=2,
+        tag_counts={"tag-1": 3},
+        added_this_month=2,
+        unverified_over_30_days=1,
+        timezone="UTC",
+        month_from="2026-11-01T00:00:00Z",
+        month_to="2026-12-01T00:00:00Z",
+    )
+    assert summary.risk == 3
+    assert summary.disabled == 1
+    assert summary.archived == 1
+    assert summary.tag_counts == {"tag-1": 3}
+
+
+def test_account_detail_unarchive_action_rules():
+    assert "account_unarchived" in AUDIT_EVENTS
+    assert "unarchive" in AUDIT_OPERATIONS
+
+    account_id = uuid4()
+    now = datetime(2026, 11, 26, 12, 0, tzinfo=UTC)
+    cas_calls = []
+    audit_calls = []
+
+    def make_service(row):
+        auth = SimpleNamespace(db=SimpleNamespace(), now=now)
+        svc = AccountDetailService(auth, SimpleNamespace(), SimpleNamespace())
+        svc.record = lambda _id: row
+        svc.cas = lambda r, v, vals: cas_calls.append((r.id, v, vals))
+        svc.audit = lambda ev, aid, operation=None: audit_calls.append((ev, aid, operation))
+        svc.detail = lambda aid: SimpleNamespace(id=aid, status="normal", archived_at=None)
+        return svc
+
+    # 1. 已归档账号 -> 成功取消归档并写入 account_unarchived / unarchive 审计
+    archived_row = SimpleNamespace(id=account_id, status="archived", deleted_at=None, row_version=3)
+    res = make_service(archived_row).action(account_id, 3, "unarchive")
+    assert res.status == "normal"
+    assert cas_calls == [(account_id, 3, {"status": "normal", "archived_at": None})]
+    assert audit_calls == [("account_unarchived", account_id, "unarchive")]
+
+    # 2. 非归档账号 -> 409 ACCOUNT_NOT_ARCHIVED
+    normal_row = SimpleNamespace(id=account_id, status="normal", deleted_at=None, row_version=1)
+    with pytest.raises(AccountError) as not_archived:
+        make_service(normal_row).action(account_id, 1, "unarchive")
+    assert not_archived.value.status == 409
+    assert not_archived.value.code == "ACCOUNT_NOT_ARCHIVED"
+
+    # 3. 已软删除账号 -> 409 ACCOUNT_DELETED
+    deleted_row = SimpleNamespace(id=account_id, status="archived", deleted_at=now, row_version=2)
+    with pytest.raises(AccountError) as deleted_err:
+        make_service(deleted_row).action(account_id, 2, "unarchive")
+    assert deleted_err.value.status == 409
+    assert deleted_err.value.code == "ACCOUNT_DELETED"
+
+
+def test_csv_skip_empty_fields_preserves_existing_values_on_update():
+    from app.schemas.operations import CsvOptions
+
+    assert CsvOptions().skip_empty_fields is False
+    opts_skip = CsvOptions(strategy="update", skip_empty_fields=True)
+    opts_overwrite = CsvOptions(strategy="update", skip_empty_fields=False)
+
+    existing = SimpleNamespace(
+        id=uuid4(),
+        gmail_email="alice@gmail.com",
+        gmail_email_normalized="alice@gmail.com",
+        recovery_account_id=None,
+        recovery_email_external="existing.recovery@example.test",
+        row_version=4,
+        deleted_at=None,
+    )
+    stub_accounts = SimpleNamespace(
+        db=SimpleNamespace(scalars=lambda *a, **k: [existing]),
+        recovery=lambda *a, **k: None,
+    )
+    analyzer = CsvImportAnalyzer(stub_accounts)
+    csv_content = (
+        "gmail_email,password,recovery_email,phone,purpose,notes,status,two_factor_status,tags\n"
+        "alice@gmail.com,,,,新用途,,,,\n"
+    ).encode()
+    now = datetime(2026, 11, 26, 12, 0, tzinfo=UTC)
+
+    # skip_empty_fields=True: 空白列全部跳过，仅更新非空 purpose，且 tags 保持 None（不清空原标签）
+    _, _, rows_skip, errors_skip, plans_skip, _ = analyzer.analyze(
+        csv_content, opts_skip, default_time=now
+    )
+    assert errors_skip == []
+    assert [r.action for r in rows_skip] == ["update"]
+    _, _, patch_model, tag_names = plans_skip[0]
+    assert patch_model.model_fields_set == {"row_version", "gmail_email", "purpose"}
+    assert patch_model.purpose == "新用途"
+    assert tag_names is None
+
+    # skip_empty_fields=False: 空白必填字段（recovery_email/status/two_factor_status）应报错阻止清空
+    _, _, rows_ow, errors_ow, plans_ow, _ = analyzer.analyze(
+        csv_content, opts_overwrite, default_time=now
+    )
+    assert [r.action for r in rows_ow] == ["error"]
+    assert plans_ow == []
+    error_fields = {e.field for e in errors_ow}
+    assert {"recovery_email", "status", "two_factor_status"} <= error_fields

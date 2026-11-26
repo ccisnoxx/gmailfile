@@ -32,8 +32,8 @@ export function AdminSecurityCard({
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] font-medium whitespace-nowrap',
             info.healthy
-              ? 'border-[#2fbf71]/28 bg-[#2fbf71]/[0.09] text-[#147240]'
-              : 'border-[#e45d5d]/28 bg-[#e45d5d]/[0.09] text-[#b43636]',
+              ? 'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
+              : 'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]',
           )}
         >
           <span
@@ -61,7 +61,7 @@ export function AdminSecurityCard({
             <dt className="text-[12px] text-[var(--text-secondary)]">
               密码强度
             </dt>
-            <dd className="mt-0.5 inline-flex items-center gap-1.5 font-medium text-[#147240]">
+            <dd className="mt-0.5 inline-flex items-center gap-1.5 font-medium text-[var(--success-text)]">
               <span
                 aria-hidden="true"
                 className="size-1.5 rounded-full bg-[var(--success)]"
@@ -97,7 +97,9 @@ export function AdminSecurityCard({
 
       {/* 密码策略 */}
       <div className="space-y-2">
-        <p className="text-[12.5px] font-semibold text-[#475467]">密码策略</p>
+        <p className="text-[12.5px] font-semibold text-[var(--text-secondary)]">
+          密码策略
+        </p>
         <ul className="flex flex-wrap gap-2">
           {info.policies.map((policy) => (
             <li

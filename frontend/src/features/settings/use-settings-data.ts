@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   accountsList,
@@ -7,7 +7,9 @@ import {
   authChangePassword,
   authRegenerateRecoveryCodes,
   authReverify,
+  authTotpConfirm,
   authTotpDisable,
+  authTotpSetup,
   authWebauthnCredentialDelete,
   authWebauthnCredentialRename,
   authWebauthnCredentialsList,
@@ -61,6 +63,7 @@ import type {
   SettingsMutationHandlers,
   SystemRuntimeInfo,
   TotpSecurityInfo,
+  TotpSetupChallenge,
   WebAuthnCredentialRow,
 } from './types';
 
@@ -128,10 +131,12 @@ export type SettingsDataBundle = {
   auditsState: CardStateMode;
   auditsError: string | null;
   auditIntegrity: AuditIntegrityInfo | null;
+  auditIntegrityState: CardStateMode;
   retention: RetentionPolicyInfo;
   retentionState: CardStateMode;
   retentionError: string | null;
   runtime: SystemRuntimeInfo;
+  runtimeState: CardStateMode;
   isRecentlyVerified: boolean;
   handlers: SettingsMutationHandlers;
 };
@@ -179,6 +184,12 @@ export function useSettingsData({
   const [liveTotpRemaining, setLiveTotpRemaining] = useState<number | null>(
     null,
   );
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const latestCsrfRef = useRef<string | undefined>(session?.csrf_token);
   latestCsrfRef.current = session?.csrf_token ?? latestCsrfRef.current;
@@ -261,7 +272,7 @@ export function useSettingsData({
           signal,
           throwOnError: true,
         })
-      ).data.total,
+      ).data.total ?? 0,
   });
 
   const webauthnQuery = useQuery({
@@ -276,6 +287,40 @@ export function useSettingsData({
         })
       ).data,
   });
+
+  // 将只读查询中出现的会话失效 / MFA / CSRF 致命错误转发给全局认证状态机
+  const reportedQueryErrorRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (!isLive || !onFailure) return;
+    const firstError =
+      sessionsQuery.error ??
+      auditsQuery.error ??
+      integrityQuery.error ??
+      backupQuery.error ??
+      systemQuery.error ??
+      trashQuery.error ??
+      webauthnQuery.error;
+    if (!firstError || firstError === reportedQueryErrorRef.current) return;
+    const info = extractErrorInfo(firstError);
+    if (
+      ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+        info.code ?? '',
+      )
+    ) {
+      reportedQueryErrorRef.current = firstError;
+      onFailure(firstError);
+    }
+  }, [
+    auditsQuery.error,
+    backupQuery.error,
+    integrityQuery.error,
+    isLive,
+    onFailure,
+    sessionsQuery.error,
+    systemQuery.error,
+    trashQuery.error,
+    webauthnQuery.error,
+  ]);
 
   const prependMockAudit = useCallback(
     (
@@ -389,7 +434,9 @@ export function useSettingsData({
         ? session?.step_up_totp_required
           ? session.mfa_reauthenticated_until
           : session?.reauthenticated_until
-        : mockAdmin.reverifiedUntil;
+        : mockAdmin.stepUpTotpRequired && mockTotp.enabled
+          ? mockAdmin.mfaReverifiedUntil
+          : mockAdmin.reverifiedUntil;
 
       if (isReauthActive(currentUntil)) {
         return {
@@ -406,7 +453,15 @@ export function useSettingsData({
       }
       return reverify(verify.password, verify.totpCode);
     },
-    [isLive, mockAdmin.reverifiedUntil, reverify, session],
+    [
+      isLive,
+      mockAdmin.mfaReverifiedUntil,
+      mockAdmin.reverifiedUntil,
+      mockAdmin.stepUpTotpRequired,
+      mockTotp.enabled,
+      reverify,
+      session,
+    ],
   );
 
   const passkeyReverify = useCallback(async (): Promise<
@@ -728,6 +783,218 @@ export function useSettingsData({
       onFailure,
       onSession,
       prependMockAudit,
+    ],
+  );
+
+  const startTotpSetup = useCallback(
+    async ({
+      currentPassword,
+      totpCode,
+      recoveryCode,
+    }: {
+      currentPassword: string;
+      totpCode?: string;
+      recoveryCode?: string;
+    }): Promise<
+      | { ok: true; setup: TotpSetupChallenge }
+      | { ok: false; error: string; requireReauth?: boolean }
+    > => {
+      if (busyRef.current) {
+        return { ok: false, error: '正在处理其他安全操作，请稍候。' };
+      }
+      if (!currentPassword.trim()) {
+        return { ok: false, error: '请输入当前管理员密码。' };
+      }
+      if (simulateActionFailure) {
+        return {
+          ok: false,
+          error: '生成 TOTP 绑定密钥失败：认证服务拒绝请求（未自动重试）。',
+        };
+      }
+
+      busyRef.current = true;
+      try {
+        if (isLive && session) {
+          let freshCsrf = latestCsrfRef.current ?? session.csrf_token;
+          const recentUntil = session.step_up_totp_required
+            ? session.mfa_reauthenticated_until
+            : session.reauthenticated_until;
+          if (!isReauthActive(recentUntil)) {
+            if (session.step_up_totp_required) {
+              return {
+                ok: false,
+                requireReauth: true,
+                error: session.totp_enabled
+                  ? '高风险操作要求 5 分钟内完成二次验证，请先点击通行密钥验证或通过「重新验证」完成校验，待动态验证码刷新后再重绑。'
+                  : '请先使用通行密钥（Passkey）完成二次验证，再启用 TOTP 验证器。',
+              };
+            }
+            const reauth = await reverify(currentPassword);
+            if (!reauth.ok) return reauth;
+            freshCsrf = reauth.csrfToken ?? freshCsrf;
+          }
+          const nextHeaders = headersWithCsrf(freshCsrf);
+          if (!nextHeaders) {
+            return { ok: false, error: '缺少有效的安全令牌，请刷新后重试。' };
+          }
+          const result = await authTotpSetup({
+            body: {
+              password: currentPassword,
+              ...(totpCode ? { totp_code: totpCode.trim() } : {}),
+              ...(recoveryCode ? { recovery_code: recoveryCode.trim() } : {}),
+            },
+            headers: nextHeaders,
+            throwOnError: true,
+          });
+          latestCsrfRef.current = result.data.session.csrf_token;
+          onSession?.(result.data.session);
+          return {
+            ok: true,
+            setup: {
+              secret: result.data.secret,
+              qrDataUrl: result.data.qr_data_url,
+              expiresAt: result.data.expires_at,
+            },
+          };
+        }
+
+        if (mockTotp.enabled && totpCode === '000000') {
+          return { ok: false, error: '当前 TOTP 验证码错误或已过期。' };
+        }
+        const svg = encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="184" height="184" viewBox="0 0 184 184"><rect width="184" height="184" fill="#ffffff"/><rect x="16" y="16" width="44" height="44" fill="#0f172a"/><rect x="24" y="24" width="28" height="28" fill="#ffffff"/><rect x="30" y="30" width="16" height="16" fill="#0f172a"/><rect x="124" y="16" width="44" height="44" fill="#0f172a"/><rect x="132" y="24" width="28" height="28" fill="#ffffff"/><rect x="138" y="30" width="16" height="16" fill="#0f172a"/><rect x="16" y="124" width="44" height="44" fill="#0f172a"/><rect x="24" y="132" width="28" height="28" fill="#ffffff"/><rect x="30" y="138" width="16" height="16" fill="#0f172a"/><rect x="76" y="76" width="32" height="32" fill="#0f172a"/><rect x="120" y="120" width="40" height="40" fill="#0f172a"/></svg>',
+        );
+        return {
+          ok: true,
+          setup: {
+            secret: 'JBSWY3DPEHPK3PXP',
+            qrDataUrl: `data:image/svg+xml;utf8,${svg}`,
+            expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          },
+        };
+      } catch (error) {
+        const info = extractErrorInfo(error);
+        if (
+          ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+            info.code ?? '',
+          )
+        ) {
+          onFailure?.(error);
+        }
+        return {
+          ok: false,
+          error: info.message,
+          requireReauth: info.code === 'REAUTH_REQUIRED',
+        };
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [
+      headersWithCsrf,
+      isLive,
+      mockTotp.enabled,
+      onFailure,
+      onSession,
+      reverify,
+      session,
+      simulateActionFailure,
+    ],
+  );
+
+  const confirmTotpSetup = useCallback(
+    async (
+      code: string,
+    ): Promise<
+      | { ok: true; codes: string[]; message?: string }
+      | { ok: false; error: string; requireReauth?: boolean }
+    > => {
+      if (busyRef.current) {
+        return { ok: false, error: '正在处理其他安全操作，请稍候。' };
+      }
+      if (!/^\d{6}$/.test(code.trim())) {
+        return { ok: false, error: '请输入 6 位数字 TOTP 验证码。' };
+      }
+      if (simulateActionFailure) {
+        return {
+          ok: false,
+          error: '确认 TOTP 绑定失败：服务端拒绝请求（未自动重试）。',
+        };
+      }
+
+      busyRef.current = true;
+      try {
+        const nextHeaders = headersWithCsrf();
+        if (isLive && nextHeaders) {
+          const result = await authTotpConfirm({
+            body: { code: code.trim() },
+            headers: nextHeaders,
+            throwOnError: true,
+          });
+          latestCsrfRef.current = result.data.session.csrf_token;
+          onSession?.(result.data.session);
+          setLiveTotpRemaining(result.data.recovery_codes.length);
+          void queryClient.invalidateQueries({
+            queryKey: ['settings-sessions'],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ['settings-audits'],
+          });
+          return {
+            ok: true,
+            codes: result.data.recovery_codes,
+            message: 'TOTP 验证器已绑定，请立即离线保存新的备用恢复码。',
+          };
+        }
+
+        if (code.trim() === '000000') {
+          return { ok: false, error: '新验证器验证码无效，请重新核对。' };
+        }
+        const codes = generateDemoRecoveryCodes();
+        setMockTotp((prev) => ({
+          ...prev,
+          enabled: true,
+          bound: true,
+          recoveryCodesTotal: codes.length,
+          recoveryCodesRemaining: codes.length,
+        }));
+        prependMockAudit(
+          'totp_bound',
+          '绑定 TOTP 验证器',
+          'settings',
+          'TOTP 验证器与恢复码',
+        );
+        return {
+          ok: true,
+          codes,
+          message: 'TOTP 验证器已绑定，请立即离线保存新的备用恢复码。',
+        };
+      } catch (error) {
+        const info = extractErrorInfo(error);
+        if (
+          ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+            info.code ?? '',
+          )
+        ) {
+          onFailure?.(error);
+        }
+        return {
+          ok: false,
+          error: info.message,
+          requireReauth: info.code === 'REAUTH_REQUIRED',
+        };
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [
+      headersWithCsrf,
+      isLive,
+      onFailure,
+      onSession,
+      prependMockAudit,
+      queryClient,
+      simulateActionFailure,
     ],
   );
 
@@ -1135,10 +1402,11 @@ export function useSettingsData({
         }
 
         const now = new Date();
-        const formatted = formatSettingsDateTime(now.toISOString());
-        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}00`;
+        const formatted = formatSettingsDateTime(now.toISOString(), true);
+        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+        const suffix = Math.random().toString(36).slice(2, 6);
         const newArchive: BackupArchiveItem = {
-          id: `bkp-${stamp}`,
+          id: `bkp-${stamp}-${suffix}`,
           filename: `gmailfile_${stamp}.pgdump.age`,
           createdAt: formatted,
           sizeLabel: '64.5 MB',
@@ -1400,7 +1668,7 @@ export function useSettingsData({
 
   const totpSecurity: TotpSecurityInfo = useMemo(() => {
     if (!isLive) return mockTotp;
-    const enabled = session?.totp_enabled ?? true;
+    const enabled = Boolean(session?.totp_enabled);
     return {
       enabled,
       bound: enabled,
@@ -1575,22 +1843,55 @@ export function useSettingsData({
     uiStateOverride,
   ]);
 
+  const auditIntegrityState: CardStateMode = useMemo(() => {
+    if (uiStateOverride) return uiStateOverride;
+    if (!isLive) return 'ready';
+    if (integrityQuery.isPending) return 'loading';
+    if (integrityQuery.isError) return 'error';
+    return 'ready';
+  }, [
+    integrityQuery.isError,
+    integrityQuery.isPending,
+    isLive,
+    uiStateOverride,
+  ]);
+
+  const runtimeState: CardStateMode = useMemo(() => {
+    if (uiStateOverride) return uiStateOverride;
+    if (!isLive) return 'ready';
+    if (systemQuery.isPending) return 'loading';
+    if (systemQuery.isError) return 'error';
+    return 'ready';
+  }, [isLive, systemQuery.isError, systemQuery.isPending, uiStateOverride]);
+
   const runtime: SystemRuntimeInfo = useMemo(() => {
     if (!isLive) {
-      const healthy = mockBackup.state !== 'failed';
+      const healthy =
+        mockBackup.state !== 'failed' && mockBackup.state !== 'stale';
       return {
         ...mockRuntime,
         healthy,
-        statusText: healthy ? '系统正常运行' : '存在待处理告警',
+        statusText: healthy
+          ? '系统正常运行'
+          : mockBackup.state === 'stale'
+            ? '备份已过期'
+            : '存在待处理告警',
       };
     }
     const backupBad =
       backup.state === 'failed' ||
+      backup.state === 'stale' ||
       backupQuery.isError ||
       auditIntegrity?.valid === false;
     return {
       healthy: !backupBad,
-      statusText: backupBad ? '存在待处理告警' : '系统正常运行',
+      statusText: !backupBad
+        ? '系统正常运行'
+        : backup.state === 'stale' &&
+            !backupQuery.isError &&
+            auditIntegrity?.valid !== false
+          ? '备份已过期'
+          : '存在待处理告警',
       appVersion: systemQuery.data?.version.version
         ? `v${systemQuery.data.version.version}`
         : '—',
@@ -1612,13 +1913,14 @@ export function useSettingsData({
 
   const isRecentlyVerified = useMemo(() => {
     const ts = adminSecurity.stepUpTotpRequired
-      ? (adminSecurity.mfaReverifiedUntil ?? adminSecurity.reverifiedUntil)
+      ? adminSecurity.mfaReverifiedUntil
       : adminSecurity.reverifiedUntil;
-    return isReauthActive(ts);
+    return isReauthActive(ts, nowMs);
   }, [
     adminSecurity.mfaReverifiedUntil,
     adminSecurity.reverifiedUntil,
     adminSecurity.stepUpTotpRequired,
+    nowMs,
   ]);
 
   return {
@@ -1658,6 +1960,7 @@ export function useSettingsData({
           ? extractErrorInfo(auditsQuery.error).message
           : null,
     auditIntegrity,
+    auditIntegrityState,
     retention,
     retentionState,
     retentionError:
@@ -1667,6 +1970,7 @@ export function useSettingsData({
           ? extractErrorInfo(integrityQuery.error).message
           : null,
     runtime,
+    runtimeState,
     isRecentlyVerified,
     handlers: {
       reverify,
@@ -1674,6 +1978,8 @@ export function useSettingsData({
       registerWebAuthnCredential,
       renameWebAuthnCredential,
       deleteWebAuthnCredential,
+      startTotpSetup,
+      confirmTotpSetup,
       disableTotp,
       changePassword,
       regenerateRecoveryCodes,

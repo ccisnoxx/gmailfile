@@ -6,7 +6,7 @@ import { formatDetailDateTime } from './detail-mock-fixtures';
 
 export function AccountOverviewCard({
   account,
-  updateSource = '管理员（本地控制台）',
+  updateSource,
   onCopyId,
   className,
 }: {
@@ -58,7 +58,7 @@ export function AccountOverviewCard({
           <dd>
             <span
               data-slot="account-version-pill"
-              className="inline-flex items-center rounded-full border border-[#14b8a6]/28 bg-[#e6f7f2] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#0b6e56]"
+              className="inline-flex items-center rounded-full border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[var(--badge-green-text)]"
             >
               v{account.row_version}
             </span>
@@ -85,12 +85,14 @@ export function AccountOverviewCard({
           </dd>
         </div>
 
-        <div className="flex items-center justify-between gap-3 pt-2.5 pb-0">
-          <dt className="shrink-0 text-[var(--text-secondary)]">更新来源</dt>
-          <dd className="text-right font-medium text-[var(--text-primary)]">
-            {updateSource}
-          </dd>
-        </div>
+        {updateSource && (
+          <div className="flex items-center justify-between gap-3 pt-2.5 pb-0">
+            <dt className="shrink-0 text-[var(--text-secondary)]">更新来源</dt>
+            <dd className="text-right font-medium text-[var(--text-primary)]">
+              {updateSource}
+            </dd>
+          </div>
+        )}
       </dl>
     </GlassPanel>
   );

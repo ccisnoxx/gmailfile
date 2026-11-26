@@ -92,6 +92,13 @@ function LiveAccountsChartView(props: AccountsChartViewProps) {
       ).data,
   });
 
+  const analyticsError =
+    trendQuery.isError || distributionQuery.isError || recoveryChartQuery.isError;
+  const analyticsPending =
+    trendQuery.isPending ||
+    distributionQuery.isPending ||
+    recoveryChartQuery.isPending;
+
   return (
     <AccountsChartBody
       {...props}
@@ -100,6 +107,15 @@ function LiveAccountsChartView(props: AccountsChartViewProps) {
       trendDataResp={trendQuery.data}
       distributionResp={distributionQuery.data}
       recoveryResp={recoveryChartQuery.data}
+      analyticsPending={analyticsPending}
+      analyticsError={analyticsError}
+      onRetryAnalytics={() => {
+        void Promise.all([
+          trendQuery.refetch(),
+          distributionQuery.refetch(),
+          recoveryChartQuery.refetch(),
+        ]);
+      }}
     />
   );
 }
@@ -115,12 +131,18 @@ function AccountsChartBody({
   trendDataResp,
   distributionResp,
   recoveryResp,
+  analyticsPending = false,
+  analyticsError = false,
+  onRetryAnalytics,
 }: AccountsChartViewProps & {
   trendMonths?: 6 | 12;
   onTrendMonthsChange?: (m: 6 | 12) => void;
   trendDataResp?: RegistrationTrendResponse;
   distributionResp?: StatusDistributionResponse;
   recoveryResp?: DashboardRecoveryUsageResponse;
+  analyticsPending?: boolean;
+  analyticsError?: boolean;
+  onRetryAnalytics?: () => void;
 }) {
   // 状态分布（优先全库聚合接口，演示模式回退 stats）
   const statusData = useMemo(() => {
@@ -139,6 +161,16 @@ function AccountsChartBody({
         count: stats.normal,
         fill: STATUS_COLORS.normal,
       },
+      ...(stats.pending !== undefined
+        ? [
+            {
+              key: 'pending_verification',
+              label: '待验证',
+              count: stats.pending,
+              fill: STATUS_COLORS.pending_verification,
+            },
+          ]
+        : []),
       {
         key: 'restricted',
         label: '异常 / 风险',
@@ -183,12 +215,15 @@ function AccountsChartBody({
     }));
   }, [distributionResp, items]);
 
-  const totalAccounts =
-    distributionResp?.total ?? Math.max(stats.all, items.length);
+  const twoFaDenominator = distributionResp
+    ? distributionResp.total
+    : items.length;
   const enabled2faCount =
     twoFactorData.find((entry) => entry.key === 'enabled')?.count ?? 0;
   const twoFaRatio =
-    totalAccounts > 0 ? Math.round((enabled2faCount / totalAccounts) * 100) : 0;
+    twoFaDenominator > 0
+      ? Math.round((enabled2faCount / twoFaDenominator) * 100)
+      : 0;
 
   // 注册趋势数据（优先全库聚合接口，演示模式按样本月份构造）
   const trendData = useMemo(() => {
@@ -263,6 +298,29 @@ function AccountsChartBody({
       data-slot="accounts-chart-view"
       className="grid gap-4 lg:grid-cols-3"
     >
+      {analyticsError && onRetryAnalytics && (
+        <div
+          role="alert"
+          className="macos-glass-panel flex flex-wrap items-center justify-between gap-2 border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-4 py-2.5 text-xs text-[var(--badge-red-text)] lg:col-span-3"
+        >
+          <span>部分全局分析数据加载失败，当前已回退本地样本统计。</span>
+          <button
+            type="button"
+            onClick={onRetryAnalytics}
+            className="rounded-lg border border-current px-2.5 py-1 font-medium transition-opacity hover:opacity-80"
+          >
+            重试加载
+          </button>
+        </div>
+      )}
+      {analyticsPending && liveAnalytics && !analyticsError && (
+        <p
+          role="status"
+          className="text-xs text-[var(--text-secondary)] lg:col-span-3"
+        >
+          正在同步全局分析图表数据…
+        </p>
+      )}
       {/* 1. 注册趋势面积图 */}
       <GlassPanel variant="strong" className="p-5 lg:col-span-2">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -272,7 +330,7 @@ function AccountsChartBody({
             </h2>
             <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
               {liveAnalytics
-                ? `全局未删除账号近 ${trendMonths} 个月新增与累计走势（${timezone}）`
+                ? `全局未删除账号近 ${trendMonths} 个月按月新增走势（${timezone}）`
                 : '当前展示样本注册趋势'}
             </p>
           </div>
@@ -290,7 +348,7 @@ function AccountsChartBody({
                   onClick={() => onTrendMonthsChange(m)}
                   className={
                     trendMonths === m
-                      ? 'rounded-[9px] bg-[var(--accent)] px-2.5 py-1 font-medium text-white'
+                      ? 'rounded-[9px] bg-[var(--accent)] px-2.5 py-1 font-medium text-[var(--primary-foreground)]'
                       : 'rounded-[9px] px-2.5 py-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                   }
                 >
@@ -457,15 +515,6 @@ function AccountsChartBody({
               按全局统计口径展示正常、待验证、受限、无法登录、停用与已归档数量
             </p>
           </div>
-          {onOpenRecoveryUsage && (
-            <button
-              type="button"
-              onClick={onOpenRecoveryUsage}
-              className="rounded-xl border border-[var(--border)] bg-white/70 px-3 py-1.5 text-xs font-medium text-[var(--accent)] transition-colors hover:bg-white"
-            >
-              辅助邮箱使用情况
-            </button>
-          )}
         </div>
         <div className="h-[220px] w-full min-w-0">
           <ResponsiveContainer width="100%" height={220} minWidth={220}>

@@ -345,9 +345,21 @@ export function useAuthMachine({
   );
 
   const handleRefreshSession = useCallback(() => {
-    void run(async () => {
-      await refresh();
-    });
+    void (async () => {
+      const ticket = generation.current;
+      try {
+        const result = await authSession({ throwOnError: true });
+        if (ticket === generation.current) {
+          setSession(result.data);
+        }
+      } catch {
+        if (ticket === generation.current) {
+          void run(async () => {
+            await refresh();
+          });
+        }
+      }
+    })();
   }, [refresh, run]);
 
   const handleSignedOut = useCallback(

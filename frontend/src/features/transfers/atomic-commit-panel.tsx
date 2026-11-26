@@ -92,21 +92,21 @@ export function AtomicCommitPanel({
         {/* 统计摘要胶囊 */}
         {hasFile && (
           <div className="flex flex-wrap items-center gap-2 text-[12.5px] font-medium tabular-nums">
-            <span className="rounded-full border border-[#1677ff]/20 bg-[#eaf3ff]/80 px-3 py-1 text-[#1158c7]">
+            <span className="rounded-full border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3 py-1 text-[var(--badge-blue-text)]">
               新增 {summary.create.toLocaleString('en-US')} 条
             </span>
-            <span className="rounded-full border border-[#2fbf71]/25 bg-[#e7f8ef]/85 px-3 py-1 text-[#116b3b]">
+            <span className="rounded-full border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3 py-1 text-[var(--badge-green-text)]">
               更新 {summary.update.toLocaleString('en-US')} 条
             </span>
-            <span className="rounded-full border border-[#b9d0ec]/65 bg-white/75 px-3 py-1 text-[var(--text-secondary)]">
+            <span className="rounded-full border border-[var(--badge-slate-border)] bg-[var(--badge-slate-bg)] px-3 py-1 text-[var(--badge-slate-text)]">
               跳过 {summary.skip.toLocaleString('en-US')} 条
             </span>
             <span
               className={cn(
                 'rounded-full border px-3 py-1',
                 hasErrors
-                  ? 'border-[#e45d5d]/30 bg-[#fdecec]/90 font-semibold text-[#b93838]'
-                  : 'border-white/80 bg-white/65 text-[var(--text-secondary)]',
+                  ? 'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] font-semibold text-[var(--badge-red-text)]'
+                  : 'border-[var(--badge-slate-border)] bg-[var(--badge-slate-bg)] text-[var(--text-secondary)]',
               )}
             >
               错误 {summary.error.toLocaleString('en-US')} 条
@@ -120,7 +120,7 @@ export function AtomicCommitPanel({
         {hasFile && hasErrors && (
           <div
             role="alert"
-            className="flex items-start gap-2 rounded-xl border border-[#e45d5d]/28 bg-[#fdecec]/78 px-3.5 py-2.5 text-[12.5px] leading-5 text-[#a83838]"
+            className="flex items-start gap-2 rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-2.5 text-[12.5px] leading-5 text-[var(--badge-red-text)]"
           >
             <AlertCircle
               className="mt-0.5 size-4 shrink-0 text-[var(--danger)]"
@@ -140,7 +140,7 @@ export function AtomicCommitPanel({
         {hasFile && !hasErrors && needsRepreview && (
           <div
             role="status"
-            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#f5a623]/32 bg-[#fef6df]/85 px-3.5 py-2.5 text-[12.5px] text-[#9a5c06]"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-3.5 py-2.5 text-[12.5px] text-[var(--badge-orange-text)]"
           >
             <span className="flex items-center gap-2">
               <AlertTriangle
@@ -155,7 +155,7 @@ export function AtomicCommitPanel({
               <button
                 type="button"
                 onClick={onRepreview}
-                className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#f5a623]/40 bg-white/85 px-2.5 text-[12px] font-semibold text-[#9a5c06] hover:bg-white"
+                className="inline-flex h-7 items-center gap-1 rounded-lg border border-current/35 bg-white/85 px-2.5 text-[12px] font-semibold text-[var(--badge-orange-text)] hover:bg-white"
               >
                 <RefreshCw className="size-3" aria-hidden="true" />
                 重新预览
@@ -164,14 +164,46 @@ export function AtomicCommitPanel({
           </div>
         )}
 
+        {hasFile &&
+          !hasErrors &&
+          !needsRepreview &&
+          !hasReceipt &&
+          outcome?.kind !== 'committed' &&
+          outcome?.kind !== 'unknown' && (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-3.5 py-2.5 text-[12.5px] text-[var(--badge-orange-text)]"
+            >
+              <span className="flex items-center gap-2">
+                <AlertTriangle
+                  className="size-4 shrink-0 text-[var(--warning)]"
+                  aria-hidden="true"
+                />
+                <span>
+                  当前尚未取得有效的服务端校验凭据（可能文件级校验未通过或二次验证已超时），请重新预览校验后再提交。
+                </span>
+              </span>
+              {onRepreview && (
+                <button
+                  type="button"
+                  onClick={onRepreview}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-current/35 bg-white/85 px-2.5 text-[12px] font-semibold text-[var(--badge-orange-text)] hover:bg-white"
+                >
+                  <RefreshCw className="size-3" aria-hidden="true" />
+                  重新预览
+                </button>
+              )}
+            </div>
+          )}
+
         {submitting && (
           <div
             role="status"
             aria-live="polite"
             data-slot="commit-progress"
-            className="space-y-2 rounded-xl border border-[#1677ff]/25 bg-[#eaf3ff]/80 px-3.5 py-3"
+            className="space-y-2 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3.5 py-3"
           >
-            <div className="flex items-center justify-between gap-2 text-[12.5px] font-medium text-[#1158c7]">
+            <div className="flex items-center justify-between gap-2 text-[12.5px] font-medium text-[var(--badge-blue-text)]">
               <span className="flex items-center gap-2">
                 <Loader2
                   className="macos-spinner size-4 shrink-0 text-[var(--accent)]"
@@ -189,7 +221,7 @@ export function AtomicCommitPanel({
               aria-valuetext="正在提交"
               className="h-1.5 w-full overflow-hidden rounded-full bg-white/80"
             >
-              <div className="h-full w-2/3 animate-pulse rounded-full bg-[linear-gradient(90deg,#3b93ff,#1677ff)]" />
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-[var(--accent)]" />
             </div>
           </div>
         )}
@@ -199,7 +231,7 @@ export function AtomicCommitPanel({
             role="alert"
             aria-live="assertive"
             data-slot="commit-unknown-banner"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f5a623]/38 bg-[#fef6df]/90 px-3.5 py-3 text-[12.5px] text-[#8a5105]"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-3.5 py-3 text-[12.5px] text-[var(--badge-orange-text)]"
           >
             <div className="flex items-start gap-2">
               <AlertTriangle
@@ -208,7 +240,7 @@ export function AtomicCommitPanel({
               />
               <div>
                 <p className="font-semibold">{outcome.message}</p>
-                <p className="mt-0.5 text-[12px] text-[#8a5105]/90">
+                <p className="mt-0.5 text-[12px] opacity-90">
                   网络连接中断或服务端响应异常，系统不会自动重试，也无法判定是否已回滚。请先核对账号列表与审计日志。
                 </p>
               </div>
@@ -227,7 +259,7 @@ export function AtomicCommitPanel({
               <button
                 type="button"
                 onClick={onOpenAuditLog}
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#1677ff]/25 bg-[#eaf3ff] px-3 text-[12px] font-semibold text-[#1158c7] hover:bg-[#dcebff]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3 text-[12px] font-semibold text-[var(--badge-blue-text)] hover:brightness-95"
               >
                 <FileText className="size-3.5" aria-hidden="true" />
                 查看审计日志
@@ -241,7 +273,7 @@ export function AtomicCommitPanel({
             role="alert"
             aria-live="assertive"
             data-slot="commit-conflict-banner"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e45d5d]/30 bg-[#fdecec]/90 px-3.5 py-3 text-[12.5px] text-[#a83838]"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-3 text-[12.5px] text-[var(--badge-red-text)]"
           >
             <div className="flex items-start gap-2">
               <AlertCircle
@@ -262,7 +294,7 @@ export function AtomicCommitPanel({
               <button
                 type="button"
                 onClick={onRepreview}
-                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#e45d5d]/30 bg-white/88 px-3 text-[12px] font-semibold text-[#a83838] hover:bg-white"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-current/30 bg-white/88 px-3 text-[12px] font-semibold text-[var(--badge-red-text)] hover:bg-white"
               >
                 <RefreshCw className="size-3.5" aria-hidden="true" />
                 重新预览
@@ -276,7 +308,7 @@ export function AtomicCommitPanel({
             role="status"
             aria-live="polite"
             data-slot="commit-success-banner"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#2fbf71]/28 bg-[#e7f8ef]/85 px-3.5 py-3 text-[12.5px] text-[#186e40]"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3.5 py-3 text-[12.5px] text-[var(--badge-green-text)]"
           >
             <div className="flex items-center gap-2">
               <CheckCircle2
@@ -293,7 +325,7 @@ export function AtomicCommitPanel({
             <button
               type="button"
               onClick={onOpenAuditLog}
-              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#2fbf71]/30 bg-white/85 px-3 text-[12px] font-semibold text-[#186e40] hover:bg-white"
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-current/30 bg-white/85 px-3 text-[12px] font-semibold text-[var(--badge-green-text)] hover:bg-white"
             >
               <FileText className="size-3.5" aria-hidden="true" />
               查看审计日志
@@ -352,8 +384,8 @@ export function AtomicCommitPanel({
               className={cn(
                 'inline-flex h-9 items-center gap-2 rounded-xl px-5 text-[13px] font-semibold transition-all duration-[180ms] ease-out',
                 startDisabled
-                  ? 'cursor-not-allowed border border-[#b9cde6]/70 bg-[#d5e3f4]/80 text-[#667892]'
-                  : 'border border-white/35 bg-[linear-gradient(180deg,#3b93ff_0%,#1677ff_100%)] text-white shadow-[0_8px_20px_rgba(22,119,255,0.28),inset_0_1px_0_rgba(255,255,255,0.38)] hover:brightness-105',
+                  ? 'cursor-not-allowed border border-[var(--border)] bg-[var(--badge-slate-bg)] text-[var(--text-secondary)] opacity-70'
+                  : 'border border-white/25 bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_8px_20px_rgba(22,119,255,0.28)] hover:bg-[var(--accent-hover)]',
               )}
             >
               {submitting && (

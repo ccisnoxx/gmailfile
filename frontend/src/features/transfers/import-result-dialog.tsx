@@ -44,7 +44,7 @@ export function ImportResultDialog({
           <>
             <DialogHeader className="space-y-2">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#2fbf71]/25 bg-[#e7f8ef] text-[#116b3b]">
+                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]">
                   <CheckCircle2 className="size-5" aria-hidden="true" />
                 </span>
                 <div>
@@ -63,7 +63,7 @@ export function ImportResultDialog({
                 <p className="text-[11.5px] text-[var(--text-secondary)]">
                   新增
                 </p>
-                <p className="mt-1 text-[20px] font-semibold tabular-nums text-[#1158c7]">
+                <p className="mt-1 text-[20px] font-semibold tabular-nums text-[var(--accent-text)]">
                   {outcome.created.toLocaleString('en-US')}
                 </p>
               </div>
@@ -71,7 +71,7 @@ export function ImportResultDialog({
                 <p className="text-[11.5px] text-[var(--text-secondary)]">
                   更新
                 </p>
-                <p className="mt-1 text-[20px] font-semibold tabular-nums text-[#116b3b]">
+                <p className="mt-1 text-[20px] font-semibold tabular-nums text-[var(--success-text)]">
                   {outcome.updated.toLocaleString('en-US')}
                 </p>
               </div>
@@ -92,7 +92,7 @@ export function ImportResultDialog({
                   onOpenChange(false);
                   onOpenAuditLog();
                 }}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#1677ff]/25 bg-[#eaf3ff] px-3.5 text-[13px] font-semibold text-[#1158c7] transition-colors hover:bg-[#dcebff]"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3.5 text-[13px] font-semibold text-[var(--badge-blue-text)] transition-colors hover:brightness-95"
               >
                 <FileText className="size-4" aria-hidden="true" />
                 查看审计日志
@@ -114,7 +114,7 @@ export function ImportResultDialog({
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}
-                  className="inline-flex h-9 items-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-white hover:bg-[var(--accent-hover)]"
+                  className="inline-flex h-9 items-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--primary-foreground)] hover:bg-[var(--accent-hover)]"
                 >
                   完成
                 </button>
@@ -127,7 +127,7 @@ export function ImportResultDialog({
           <>
             <DialogHeader className="space-y-2">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#e45d5d]/28 bg-[#fdecec] text-[#b93838]">
+                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]">
                   <AlertCircle className="size-5" aria-hidden="true" />
                 </span>
                 <div>
@@ -144,9 +144,9 @@ export function ImportResultDialog({
             {outcome.issues.length > 0 && (
               <div
                 role="alert"
-                className="macos-thin-scrollbar max-h-44 overflow-auto rounded-2xl border border-[#e45d5d]/22 bg-[#fff7f7]/90 p-3 text-[12.5px]"
+                className="macos-thin-scrollbar max-h-44 overflow-auto rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] p-3 text-[12.5px]"
               >
-                <ul className="space-y-1.5 text-[#a83838]">
+                <ul className="space-y-1.5 text-[var(--badge-red-text)]">
                   {outcome.issues.map((item, idx) => (
                     <li key={idx}>
                       {item.row ? `第 ${item.row} 行` : '文件'} · {item.field}：
@@ -188,7 +188,7 @@ export function ImportResultDialog({
                       onOpenChange(false);
                       onRepreview();
                     }}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-white hover:bg-[var(--accent-hover)]"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--primary-foreground)] hover:bg-[var(--accent-hover)]"
                   >
                     <RefreshCw className="size-3.5" aria-hidden="true" />
                     重新预览
@@ -203,7 +203,7 @@ export function ImportResultDialog({
           <>
             <DialogHeader className="space-y-2">
               <div className="flex items-center gap-2.5">
-                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[#f5a623]/35 bg-[#fef6df] text-[#8a5000]">
+                <span className="inline-flex size-9 items-center justify-center rounded-2xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]">
                   <AlertTriangle className="size-5" aria-hidden="true" />
                 </span>
                 <div>
@@ -217,7 +217,7 @@ export function ImportResultDialog({
               </div>
             </DialogHeader>
 
-            <div className="rounded-2xl border border-[#f5a623]/28 bg-[#fffaf0]/90 p-3.5 text-[12.5px] leading-6 text-[#8a5105]">
+            <div className="rounded-2xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] p-3.5 text-[12.5px] leading-6 text-[var(--badge-orange-text)]">
               为防止重复写入或并发覆盖，系统已锁定本次提交凭据且
               <strong>不会自动重试</strong>
               ，也无法确认事务是否已落库。请刷新账号列表并查阅审计日志确认最终状态。
@@ -230,7 +230,7 @@ export function ImportResultDialog({
                   onOpenChange(false);
                   onOpenAuditLog();
                 }}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#1677ff]/25 bg-[#eaf3ff] px-3.5 text-[13px] font-semibold text-[#1158c7] hover:bg-[#dcebff]"
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3.5 text-[13px] font-semibold text-[var(--badge-blue-text)] hover:brightness-95"
               >
                 <FileText className="size-4" aria-hidden="true" />
                 查看审计日志
@@ -244,7 +244,7 @@ export function ImportResultDialog({
                       onOpenChange(false);
                       onRefreshState();
                     }}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-white hover:bg-[var(--accent-hover)]"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--primary-foreground)] hover:bg-[var(--accent-hover)]"
                   >
                     <RefreshCw className="size-3.5" aria-hidden="true" />
                     刷新确认

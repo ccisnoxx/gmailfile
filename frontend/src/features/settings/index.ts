@@ -23,6 +23,7 @@ export {
 } from './settings-page';
 export { SettingsSegmentedTabs } from './settings-segmented-tabs';
 export { TotpSecurityCard } from './totp-security-card';
+export { TotpSetupModal } from './totp-setup-modal';
 export { WebAuthnSecurityCard } from './webauthn-security-card';
 export {
   isSettingsSectionKey,
@@ -44,5 +45,6 @@ export {
   type SettingsSectionKey,
   type SystemRuntimeInfo,
   type TotpSecurityInfo,
+  type TotpSetupChallenge,
   type WebAuthnCredentialRow,
 } from './types';

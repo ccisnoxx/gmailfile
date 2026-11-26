@@ -1,4 +1,4 @@
-export { AppWindowShell } from './app-window-shell';
+export { AppWindowShell, useAppShellContext } from './app-window-shell';
 export {
   DEFAULT_DISPLAY_SETTINGS,
   DISPLAY_SETTINGS_STORAGE_KEY,
@@ -12,8 +12,14 @@ export {
 } from './display-settings-popover';
 export { EmptyState } from './empty-state';
 export { GlassPanel } from './glass-panel';
-export { GlassToolbar, type TopNavKey } from './glass-toolbar';
+export {
+  GLOBAL_TOP_NAV_ITEMS,
+  GlassToolbar,
+  MobilePrimaryNavMenu,
+  type TopNavKey,
+} from './glass-toolbar';
 export { GmailMark } from './gmail-mark';
+export { IconTooltip } from './icon-tooltip';
 export { LoadingState } from './loading-state';
 export { MacMenuBar } from './mac-menu-bar';
 export { MacTrafficLights } from './mac-traffic-lights';

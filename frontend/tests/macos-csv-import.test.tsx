@@ -10,11 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CsvPreview, SessionResponse } from '@/api/generated';
-import {
-  DEFAULT_NAV_ALPHA,
-  NAV_ALPHA_STORAGE_KEY,
-  persistNavAlpha,
-} from '@/components/macos';
+import { NAV_ALPHA_STORAGE_KEY, persistNavAlpha } from '@/components/macos';
 import {
   AtomicCommitPanel,
   CsvDropzone,
@@ -132,29 +128,19 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
 
     const { container } = renderPreviewRouter('/transfers/csv');
 
-    // 一、顶部 24px 装饰性 macOS 菜单栏
-    const menuBar = container.querySelector('[data-slot="macos-menu-bar"]');
-    expect(menuBar).toBeInTheDocument();
-    expect(menuBar).toHaveTextContent('Gmail 账号管理');
-    for (const label of ['文件', '编辑', '查看', '窗口', '帮助']) {
-      expect(menuBar).toHaveTextContent(label);
-    }
+    // 一、统一 AppShell：移除虚假网页 macOS 菜单栏与装饰交通灯，统一使用 GlassToolbar 与 PrimarySidebar
+    expect(
+      container.querySelector('[data-slot="macos-menu-bar"]'),
+    ).not.toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="app-window-shell"]'),
+    ).toBeInTheDocument();
 
-    // 二、顶部应用导航
-    const toolbar = container.querySelector(
-      '[data-slot="transfer-app-toolbar"]',
-    );
+    const toolbar = container.querySelector('[data-slot="glass-toolbar"]');
     expect(toolbar).toBeInTheDocument();
     expect(toolbar).toHaveTextContent('Gmail 账号管理系统');
-    expect(toolbar).toHaveTextContent('私有部署 · 单管理员模式');
-    const topNav = screen.getByRole('navigation', { name: '应用主导航' });
-    for (const label of [
-      '控制台',
-      'Gmail 账号',
-      '标签管理',
-      '导入 / 导出',
-      '批量操作',
-    ]) {
+    const topNav = screen.getByRole('navigation', { name: '主导航' });
+    for (const label of ['账号管理', '导入 / 导出', '审计日志', '系统设置']) {
       expect(
         within(topNav).getByRole('button', { name: label }),
       ).toBeInTheDocument();
@@ -162,38 +148,31 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     expect(
       within(topNav).getByRole('button', { name: '导入 / 导出' }),
     ).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByLabelText('全局搜索')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '界面与显示设置' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '通知' })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: '管理员菜单' }),
     ).toBeInTheDocument();
 
-    // 三、左侧分组导航 + 统计数 + 底部状态、版本 v1.2.0 与 60% 透明度滑块
+    // 二、统一左侧工作区侧栏（不再展示硬编码 v1.2.0）
     const sidebar = container.querySelector(
-      '[data-slot="transfer-sidebar"]',
+      '[data-slot="primary-sidebar"]',
     ) as HTMLElement;
     expect(sidebar).toBeInTheDocument();
-    expect(within(sidebar).getByText('12,548')).toBeInTheDocument();
-    expect(within(sidebar).getByText('36')).toBeInTheDocument();
-    expect(within(sidebar).getByText('1,203')).toBeInTheDocument();
-    expect(within(sidebar).getByText('87')).toBeInTheDocument();
     expect(
       within(sidebar).getByRole('button', { name: '导入 / 导出（CSV）' }),
     ).toHaveAttribute('aria-current', 'page');
     expect(within(sidebar).getByText('系统运行正常')).toBeInTheDocument();
-    expect(within(sidebar).getByText('版本 v1.2.0')).toBeInTheDocument();
-    const opacitySlider = within(sidebar).getByRole('slider', {
-      name: '界面透明度',
-    }) as HTMLInputElement;
-    expect(opacitySlider.value).toBe(String(DEFAULT_NAV_ALPHA));
 
-    // 四、页面标题区、右侧按钮与顶部子标签
+    // 三、页面标题区、右侧按钮与顶部三子标签（CSV 导入 / 批量操作 / 数据导出）
     expect(
       screen.getByRole('heading', { level: 1, name: 'CSV 导入 / 批量操作' }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        '批量导入、更新或管理 Gmail 账号，支持严格校验、字段映射与原子提交。',
+        /批量导入、更新、导出或管理 Gmail 账号，支持严格校验、字段映射、加密导出与原子提交。/,
       ),
     ).toBeInTheDocument();
     expect(
@@ -208,6 +187,9 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     ).toBeInTheDocument();
     expect(
       within(subTabs).getByRole('tab', { name: '批量操作', selected: false }),
+    ).toBeInTheDocument();
+    expect(
+      within(subTabs).getByRole('tab', { name: '数据导出', selected: false }),
     ).toBeInTheDocument();
 
     // 五、四步流程指示器默认处于第 2～3 步之间：第 1 步完成，第 2 步高亮，第 3/4 步未完成
@@ -609,13 +591,15 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     expect(screen.queryByText('live_sync.csv')).not.toBeInTheDocument();
   });
 
-  it('界面透明度滑块跨页面同步 localStorage，支持拖放、批量操作子标签与审计日志跳转', async () => {
+  it('界面透明度滑块跨页面同步 localStorage，支持拖放、批量操作二次确认与审计日志跳转', async () => {
     const user = userEvent.setup();
     const { router } = renderPreviewRouter('/transfers/csv');
 
-    // 调整左侧栏界面透明度滑块并写入 localStorage
-    const slider = screen.getByRole('slider', {
-      name: '界面透明度',
+    // 通过顶栏「界面与显示设置」浮层调整毛玻璃透明度并写入 localStorage
+    await user.click(screen.getByRole('button', { name: '界面与显示设置' }));
+    const popover = screen.getByRole('dialog', { name: '界面与显示' });
+    const slider = within(popover).getByRole('slider', {
+      name: '导航栏毛玻璃透明度',
     }) as HTMLInputElement;
     fireEvent.change(slider, { target: { value: '75' } });
     expect(window.localStorage.getItem(NAV_ALPHA_STORAGE_KEY)).toBe('75');
@@ -626,6 +610,7 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
       persistNavAlpha(48);
     });
     expect(slider.value).toBe('48');
+    await user.keyboard('{Escape}');
 
     // 拖放 CSV 文件支持
     const dropzone = screen.getByRole('button', {
@@ -637,11 +622,15 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     });
     await screen.findByText('dropped_batch.csv');
 
-    // 切换至“批量操作”子标签并执行批量状态调整
+    // 切换至“批量操作”子标签并执行批量状态调整（含二次确认弹窗）
     await user.click(screen.getByRole('tab', { name: '批量操作' }));
     expect(screen.getByText('账号批量操作台')).toBeInTheDocument();
     await user.click(screen.getByLabelText('选择账号 example@gmail.com'));
     await user.click(screen.getByRole('button', { name: '应用状态' }));
+    const confirmDialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(confirmDialog).getByRole('button', { name: '确认提交' }),
+    );
     await screen.findByText(/已原子更新 1 个账号的状态/);
 
     // 切换回 CSV 导入并点击审计日志入口跳转
@@ -720,11 +709,93 @@ describe('CSV 导入 / 批量操作页面（macOS 淡蓝亚克力四阶段工作
     await screen.findByText('blocked_preview.csv');
     await screen.findByText(/请先重新验证管理员密码/);
 
+    // 应弹出页内二次验证弹窗（保留内存 CSV 文件）；取消后仍禁止无有效 receipt 提交
+    const reauthDialog = await screen.findByRole('dialog');
+    await user.click(within(reauthDialog).getByRole('button', { name: '取消' }));
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText('blocked_preview.csv')).toBeInTheDocument();
+
     const checkbox = screen.getByLabelText(
       '我已确认数据无误，并知悉该操作将以事务方式原子提交',
     );
     await user.click(checkbox);
     expect(screen.getByRole('button', { name: '开始导入' })).toBeDisabled();
     expect(commitCalls).toHaveLength(0);
+  });
+
+  it('Live 模式下勾选「跳过空值字段」将真实透传 skip_empty_fields 到后端预览接口', async () => {
+    const user = userEvent.setup();
+    const session = makeSession();
+    const previewOptionsSent: Record<string, unknown>[] = [];
+
+    const fetchMock = vi.fn(async (req: Request) => {
+      const url = new URL(req.url);
+      if (url.pathname === '/api/v1/dashboard/summary') {
+        return json({
+          total: 0,
+          normal: 0,
+          pending_verification: 0,
+          abnormal: 0,
+          risk: 0,
+          disabled: 0,
+          archived: 0,
+          deleted_count: 0,
+          tag_counts: {},
+          added_this_month: 0,
+          unverified_over_30_days: 0,
+        });
+      }
+      if (url.pathname === '/api/v1/tags') return json([]);
+      if (url.pathname === '/api/v1/accounts') {
+        return json({ items: [], total: 0, page: 1, page_size: 30 });
+      }
+      if (url.pathname === '/api/v1/audit-events') {
+        return json({ items: [], total: 0, page: 1, page_size: 20, event_types: [] });
+      }
+      if (url.pathname === '/api/v1/imports/csv/preview') {
+        const raw = url.searchParams.get('options');
+        previewOptionsSent.push(raw ? JSON.parse(raw) : {});
+        return json({
+          receipt_id: 'rcpt-skip-empty-1',
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+          mapping: { gmail_email: 0, password: 1 },
+          strategy: 'update',
+          skip_empty_fields: Boolean(raw && JSON.parse(raw).skip_empty_fields),
+          columns: [
+            { index: 0, suggested_field: 'gmail_email' },
+            { index: 1, suggested_field: 'password' },
+          ],
+          rows: [{ row: 2, action: 'update' }],
+          errors: [],
+        });
+      }
+      return json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<CsvImportPage mode="live" session={session} />);
+    const fileInput = screen.getByLabelText(
+      '选择 CSV 文件',
+    ) as HTMLInputElement;
+    await user.upload(fileInput, makeCleanCsvFile('skip_empty.csv'));
+    await screen.findByText('skip_empty.csv');
+
+    await waitFor(() => expect(previewOptionsSent.length).toBeGreaterThanOrEqual(1));
+    expect(previewOptionsSent[0]).toMatchObject({ skip_empty_fields: true });
+
+    // 取消勾选后点击重新预览，应向后端发送 skip_empty_fields: false
+    const skipToggle = screen.getByLabelText(/跳过空值字段/);
+    await user.click(skipToggle);
+    const repreviewBtns = await screen.findAllByRole('button', {
+      name: /重新预览/,
+    });
+    await user.click(repreviewBtns[0]);
+    await waitFor(() =>
+      expect(
+        previewOptionsSent.some((opt) => opt.skip_empty_fields === false),
+      ).toBe(true),
+    );
   });
 });

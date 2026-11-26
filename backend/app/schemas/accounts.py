@@ -183,6 +183,7 @@ Sort = Literal[
 class AccountQuery(Input):
     search: str = Field(default="", max_length=254)
     status: Status | None = None
+    statuses: list[Status] | None = Field(default=None, max_length=6)
     purpose: str | None = Field(default=None, max_length=100)
     tag: UUID | None = None
     two_factor_status: TwoFactor | None = None
@@ -194,6 +195,24 @@ class AccountQuery(Input):
     sort: Sort = "-account_no"
     page: int = Field(default=1, ge=1, le=1000000)
     page_size: int = Field(default=30, ge=1, le=100)
+
+    @field_validator("statuses", mode="before")
+    @classmethod
+    def parse_statuses(cls, value: object) -> object:
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            parts = list(dict.fromkeys(item.strip() for item in value.split(",") if item.strip()))
+            return parts or None
+        if isinstance(value, list):
+            parts: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    parts.extend(part.strip() for part in item.split(",") if part.strip())
+                else:
+                    parts.append(item)
+            return list(dict.fromkeys(parts)) or None
+        return value
 
     @model_validator(mode="after")
     def date_range(self) -> Self:
@@ -247,9 +266,13 @@ class DashboardSummary(BaseModel):
     normal: int
     pending_verification: int
     abnormal: int
+    risk: int = 0
+    disabled: int = 0
+    archived: int = 0
     added_this_month: int
     unverified_over_30_days: int
     deleted_count: int = 0
+    tag_counts: dict[str, int] = Field(default_factory=dict)
     timezone: str
     month_from: Timestamp
     month_to: Timestamp

@@ -5,6 +5,11 @@ import {
   accountsRevealPassword,
   authReverify,
 } from '@/api/generated';
+import {
+  formatWebAuthnError,
+  isWebAuthnSupported,
+  performPasskeyStepUp,
+} from '@/lib/webauthn';
 
 export const PASSWORD_MASK_TEXT = '••••••••••••••••';
 const SECRET_TTL_MS = 20000;
@@ -264,6 +269,10 @@ export function usePasswordSecret({
           ticket === generation.current &&
           !document.hidden
         ) {
+          setStatusMessage(
+            (error as { error?: { message?: string } })?.error?.message ??
+              '重新验证失败，请检查管理员凭据后重试。',
+          );
           onFailure?.(error);
         }
       } finally {
@@ -273,14 +282,51 @@ export function usePasswordSecret({
     [onFailure, onSession, session],
   );
 
+  const reverifyWithPasskey = useCallback(async () => {
+    if (!session || !onSession || verifying) return;
+    const ticket = generation.current;
+    setVerifying(true);
+    setStatusMessage('');
+    try {
+      const data = await performPasskeyStepUp(session.csrf_token);
+      if (
+        !mounted.current ||
+        ticket !== generation.current ||
+        document.hidden
+      ) {
+        return;
+      }
+      onSession(data);
+      setReauth(false);
+      setStatusMessage('通行密钥重新验证成功，请再次选择显示或复制。');
+    } catch (error) {
+      if (
+        mounted.current &&
+        ticket === generation.current &&
+        !document.hidden
+      ) {
+        setStatusMessage(formatWebAuthnError(error));
+        onFailure?.(error);
+      }
+    } finally {
+      if (mounted.current) setVerifying(false);
+    }
+  }, [onFailure, onSession, session, verifying]);
+
+  const canUsePasskey = Boolean(
+    session?.webauthn_enabled && isWebAuthnSupported(),
+  );
+
   return {
     password,
     pending,
     reauth,
     verifying,
     statusMessage,
+    canUsePasskey,
     reveal,
     clear,
     submitReverify,
+    reverifyWithPasskey,
   };
 }

@@ -155,6 +155,7 @@ test.describe('Wave 4 (TC-P2-003 & TC-P2-004): WCAG 2.1 AA 无障碍与三浏览
       expect(tableCheck.hasTable).toBe(true);
       expect(tableCheck.docOverflow).toBeLessThanOrEqual(1);
 
+      await page.getByRole('button', { name: '界面与显示设置' }).click();
       const slider = page.getByRole('slider', { name: '导航栏毛玻璃透明度' });
       await expect(slider).toBeVisible();
       await slider.focus();

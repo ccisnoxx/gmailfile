@@ -7,12 +7,14 @@ import type {
 
 export type ImportStep = 1 | 2 | 3 | 4;
 
-export type TransferSubTab = 'import' | 'batch';
+export type TransferSubTab = 'import' | 'batch' | 'export';
 
 export type ImportStrategyOption = 'upsert' | 'insert_only' | 'strict_new';
 
 export type ConflictResolutionOption =
-  'csv_overwrite' | 'keep_existing' | 'reject_batch';
+  | 'csv_overwrite'
+  | 'keep_existing'
+  | 'reject_batch';
 
 export type SystemFieldKey =
   | 'gmail_email'
@@ -27,6 +29,8 @@ export type SystemFieldKey =
   | 'purpose'
   | 'tags'
   | 'last_login_at'
+  | 'last_verified_at'
+  | 'password_changed_at'
   | 'notes';
 
 export type SystemFieldDefinition = {
@@ -156,6 +160,24 @@ export const SYSTEM_FIELD_DEFINITIONS: readonly SystemFieldDefinition[] = [
     description: 'ISO 8601 时间戳',
   },
   {
+    key: 'last_verified_at',
+    label: '最后验证时间',
+    required: false,
+    sensitive: false,
+    primary: false,
+    aliases: ['last_verified_at', 'last_verified', '最后验证'],
+    description: 'ISO 8601 时间戳',
+  },
+  {
+    key: 'password_changed_at',
+    label: '密码修改时间',
+    required: false,
+    sensitive: false,
+    primary: false,
+    aliases: ['password_changed_at', 'password_changed', '密码修改时间'],
+    description: 'ISO 8601 时间戳',
+  },
+  {
     key: 'notes',
     label: '备注信息',
     required: false,
@@ -273,9 +295,10 @@ export type ImportHistoryRecord = {
   fileName: string;
   executedAt: string;
   strategyLabel: string;
-  created: number;
-  updated: number;
-  skipped: number;
+  created: number | null;
+  updated: number | null;
+  skipped: number | null;
+  summaryText?: string;
   status: 'committed' | 'rejected';
   operator: string;
 };

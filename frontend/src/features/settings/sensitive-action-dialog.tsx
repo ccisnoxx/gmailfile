@@ -114,6 +114,7 @@ export function SensitiveActionDialog({
       );
       if (!result.ok) {
         if (result.requireReauth) {
+          setPasskeyVerified(false);
           setForceCredentials(true);
         }
         setErrorMessage(result.error);
@@ -146,7 +147,7 @@ export function SensitiveActionDialog({
               className={cn(
                 'inline-flex size-9 shrink-0 items-center justify-center rounded-xl',
                 tone === 'danger'
-                  ? 'bg-[#e45d5d]/12 text-[#c54646]'
+                  ? 'bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]'
                   : 'bg-[var(--accent-soft)] text-[var(--accent)]',
               )}
             >
@@ -169,8 +170,8 @@ export function SensitiveActionDialog({
             className={cn(
               'rounded-2xl border px-3.5 py-3 text-[12.5px] leading-5',
               tone === 'danger'
-                ? 'border-[#e45d5d]/25 bg-[#e45d5d]/[0.07] text-[#8f2e2e]'
-                : 'border-[#f5a623]/30 bg-[#f5a623]/[0.08] text-[#8a5306]',
+                ? 'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]'
+                : 'border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]',
             )}
           >
             <div className="flex items-start gap-2">
@@ -226,7 +227,7 @@ export function SensitiveActionDialog({
                       setBusy(false);
                     }
                   }}
-                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[#1677ff]/30 bg-[var(--accent-soft)] px-3 text-[12.5px] font-medium text-[var(--accent)] transition-colors hover:bg-[#1677ff]/18 disabled:opacity-50"
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3 text-[12.5px] font-medium text-[var(--badge-blue-text)] transition-colors hover:brightness-95 disabled:opacity-50"
                 >
                   <KeyRound className="size-3.5" aria-hidden="true" />
                   <span>使用通行密钥（Passkey）完成二次验证</span>
@@ -248,7 +249,7 @@ export function SensitiveActionDialog({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="请输入当前管理员密码"
-                  className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/80 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/80 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 />
               </div>
 
@@ -273,13 +274,13 @@ export function SensitiveActionDialog({
                       setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))
                     }
                     placeholder="输入 6 位动态验证码"
-                    className="h-9 w-full rounded-xl border border-[#cdddf0] bg-white/85 px-3 font-mono text-[13px] tracking-widest text-[var(--text-primary)] placeholder:font-sans placeholder:tracking-normal placeholder:text-[var(--text-secondary)]/80 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    className="h-9 w-full rounded-xl border border-[var(--border)] bg-white/85 px-3 font-mono text-[13px] tracking-widest text-[var(--text-primary)] placeholder:font-sans placeholder:tracking-normal placeholder:text-[var(--text-secondary)]/80 focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                   />
                 </div>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-xl border border-[#2fbf71]/25 bg-[#2fbf71]/[0.08] px-3 py-2 text-[12.5px] text-[#116b3b]">
+            <div className="flex items-center gap-2 rounded-xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3 py-2 text-[12.5px] text-[var(--badge-green-text)]">
               <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
               <span>
                 最近已完成管理员重新验证（5 分钟有效期内），可直接确认。
@@ -290,7 +291,7 @@ export function SensitiveActionDialog({
           {errorMessage && (
             <div
               role="alert"
-              className="rounded-xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.09] px-3 py-2 text-[12.5px] leading-5 text-[#a83838]"
+              className="rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12.5px] leading-5 text-[var(--badge-red-text)]"
             >
               {errorMessage}
             </div>
@@ -312,7 +313,7 @@ export function SensitiveActionDialog({
                 'inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-4 text-[13px] font-medium transition-all duration-[180ms] ease-out disabled:opacity-60',
                 tone === 'danger'
                   ? 'border border-[#c53030]/35 bg-[#c53030] text-white shadow-[0_6px_16px_rgba(197,48,48,0.22)] hover:bg-[#a62626]'
-                  : 'bg-[var(--accent)] text-white shadow-[0_6px_16px_rgba(22,119,255,0.25)] hover:bg-[var(--accent-hover)]',
+                  : 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.25)] hover:bg-[var(--accent-hover)]',
               )}
             >
               {busy && (

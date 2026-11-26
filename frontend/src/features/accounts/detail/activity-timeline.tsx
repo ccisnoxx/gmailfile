@@ -51,48 +51,50 @@ export function ActivityTimeline({
       {items.length === 0 ? (
         <p className="text-xs text-[var(--text-secondary)]">暂无活动记录</p>
       ) : (
-        <ol className="relative space-y-3.5 pl-4">
-          {/* 细蓝色时间轴线 */}
+        <div className="relative">
+          {/* 细蓝色时间轴线（置于 ol 外，保持列表语义合法） */}
           <span
             aria-hidden="true"
             className="pointer-events-none absolute top-2 bottom-2 left-[5px] w-[1.5px] bg-gradient-to-b from-[#1677ff]/65 via-[#1677ff]/28 to-[#1677ff]/12"
           />
-          {items.map((item, idx) => {
-            const isLatest = idx === 0;
-            return (
-              <li
-                key={item.id}
-                className="relative flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[12.5px]"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    'absolute top-1.5 -left-[15px] rounded-full',
-                    isLatest
-                      ? 'size-2.5 bg-[var(--accent)] ring-4 ring-[#1677ff]/15'
-                      : 'ml-[1px] size-2 bg-[#93beff] ring-2 ring-white/80',
-                  )}
-                />
-                <span
-                  className={cn(
-                    'min-w-0 leading-snug',
-                    isLatest
-                      ? 'font-medium text-[var(--text-primary)]'
-                      : 'text-[var(--text-primary)]/85',
-                  )}
+          <ol className="relative space-y-3.5 pl-4">
+            {items.map((item, idx) => {
+              const isLatest = idx === 0;
+              return (
+                <li
+                  key={item.id}
+                  className="relative flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-[12.5px]"
                 >
-                  {item.title}
-                </span>
-                <time
-                  data-dynamic="timestamp"
-                  className="shrink-0 text-[11.5px] tabular-nums text-[var(--text-secondary)]"
-                >
-                  {item.timestamp}
-                </time>
-              </li>
-            );
-          })}
-        </ol>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'absolute top-1.5 -left-[15px] rounded-full',
+                      isLatest
+                        ? 'size-2.5 bg-[var(--accent)] ring-4 ring-[#1677ff]/15'
+                        : 'ml-[1px] size-2 bg-[#93beff] ring-2 ring-white/80',
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      'min-w-0 leading-snug',
+                      isLatest
+                        ? 'font-medium text-[var(--text-primary)]'
+                        : 'text-[var(--text-primary)]/85',
+                    )}
+                  >
+                    {item.title}
+                  </span>
+                  <time
+                    data-dynamic="timestamp"
+                    className="shrink-0 text-[11.5px] tabular-nums text-[var(--text-secondary)]"
+                  >
+                    {item.timestamp}
+                  </time>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
     </GlassPanel>
   );

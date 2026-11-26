@@ -75,6 +75,7 @@ test.describe('四个 macOS 页面：多分辨率、透明度、状态、200% �
     await installDeterministicMacosApp(page, { navAlpha: 60 });
     await openMacosPage(page, 'accounts');
 
+    await page.getByRole('button', { name: '界面与显示设置' }).click();
     const slider = page.getByRole('slider', { name: '导航栏毛玻璃透明度' });
     await expect(slider).toBeVisible();
 

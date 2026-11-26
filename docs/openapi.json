@@ -2491,6 +2491,34 @@
             }
           },
           {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "normal",
+                      "pending_verification",
+                      "restricted",
+                      "login_failed",
+                      "disabled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 6
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Statuses"
+            }
+          },
+          {
             "name": "purpose",
             "in": "query",
             "required": false,
@@ -4295,6 +4323,109 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/unarchive": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Unarchive",
+        "operationId": "accountsUnarchive",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}/restore": {
       "post": {
         "tags": [
@@ -5845,6 +5976,29 @@
             ],
             "title": "Status"
           },
+          "statuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "normal",
+                    "pending_verification",
+                    "restricted",
+                    "login_failed",
+                    "disabled",
+                    "archived"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statuses"
+          },
           "purpose": {
             "anyOf": [
               {
@@ -6796,6 +6950,11 @@
             ],
             "title": "Strategy",
             "default": "skip"
+          },
+          "skip_empty_fields": {
+            "type": "boolean",
+            "title": "Skip Empty Fields",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -6862,6 +7021,11 @@
               "error"
             ],
             "title": "Strategy"
+          },
+          "skip_empty_fields": {
+            "type": "boolean",
+            "title": "Skip Empty Fields",
+            "default": false
           },
           "columns": {
             "items": {
@@ -6970,6 +7134,21 @@
             "type": "integer",
             "title": "Abnormal"
           },
+          "risk": {
+            "type": "integer",
+            "title": "Risk",
+            "default": 0
+          },
+          "disabled": {
+            "type": "integer",
+            "title": "Disabled",
+            "default": 0
+          },
+          "archived": {
+            "type": "integer",
+            "title": "Archived",
+            "default": 0
+          },
           "added_this_month": {
             "type": "integer",
             "title": "Added This Month"
@@ -6982,6 +7161,13 @@
             "type": "integer",
             "title": "Deleted Count",
             "default": 0
+          },
+          "tag_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Tag Counts"
           },
           "timezone": {
             "type": "string",

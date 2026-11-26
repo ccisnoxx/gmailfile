@@ -91,7 +91,7 @@ export function ActiveSessionsCard({
               onClick={() => setFilterMode('all')}
               className={
                 filterMode === 'all'
-                  ? 'rounded-[9px] bg-[var(--accent)] px-2 py-1 font-medium text-white'
+                  ? 'rounded-[9px] bg-[var(--accent)] px-2 py-1 font-medium text-[var(--primary-foreground)]'
                   : 'rounded-[9px] px-2 py-1 font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }
             >
@@ -103,7 +103,7 @@ export function ActiveSessionsCard({
               onClick={() => setFilterMode('active')}
               className={
                 filterMode === 'active'
-                  ? 'rounded-[9px] bg-[var(--accent)] px-2 py-1 font-medium text-white'
+                  ? 'rounded-[9px] bg-[var(--accent)] px-2 py-1 font-medium text-[var(--primary-foreground)]'
                   : 'rounded-[9px] px-2 py-1 font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }
             >
@@ -114,7 +114,7 @@ export function ActiveSessionsCard({
             type="button"
             disabled={state !== 'ready' || otherSessionsCount === 0}
             onClick={onLogoutOtherSessions}
-            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[#e45d5d]/28 bg-[#e45d5d]/[0.07] px-3 text-[12.5px] font-medium text-[#b84040] transition-all duration-[180ms] ease-out hover:bg-[#e45d5d]/[0.14] disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 text-[12.5px] font-medium text-[var(--badge-red-text)] transition-all duration-[180ms] ease-out hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <LogOut className="size-3.5" aria-hidden="true" />
             <span>退出其他会话</span>
@@ -125,16 +125,22 @@ export function ActiveSessionsCard({
       <div className="macos-thin-scrollbar w-full max-w-full overflow-x-auto rounded-2xl border border-white/75 bg-white/44">
         <table
           aria-label="活动会话列表"
-          className="w-full min-w-[520px] border-collapse text-left text-[13px]"
+          className="w-full border-collapse text-left text-[12.5px]"
         >
           <thead>
-            <tr className="border-b border-[var(--table-divider)] bg-white/40 text-[11.5px] font-semibold text-[#475467]">
-              <th className="px-3 py-2.5 font-semibold">设备与浏览器</th>
-              <th className="px-3 py-2.5 font-semibold">状态</th>
-              <th className="px-3 py-2.5 font-semibold">IP 地址</th>
-              <th className="px-3 py-2.5 font-semibold">登录时间</th>
-              <th className="px-3 py-2.5 font-semibold">最后活动</th>
-              <th className="px-3 py-2.5 text-right font-semibold">操作</th>
+            <tr className="border-b border-[var(--table-divider)] bg-[var(--surface-table-head)] text-[11.5px] font-semibold text-[var(--text-secondary)]">
+              <th className="px-3 py-2.5 font-semibold whitespace-nowrap">
+                设备与来源
+              </th>
+              <th className="px-2 py-2.5 font-semibold whitespace-nowrap">
+                登录时间
+              </th>
+              <th className="px-2 py-2.5 font-semibold whitespace-nowrap">
+                最后活动
+              </th>
+              <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                操作
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--table-divider)]">
@@ -144,60 +150,60 @@ export function ActiveSessionsCard({
                 className="transition-colors hover:bg-[var(--table-row-hover)]"
               >
                 <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <DeviceIcon type={item.deviceType} />
                     <span className="font-medium text-[var(--text-primary)]">
                       {item.deviceBrowser}
                     </span>
                     {item.current && (
-                      <span className="inline-flex items-center rounded-full border border-[#1677ff]/24 bg-[#1677ff]/12 px-2 py-0.5 text-[11px] font-semibold text-[#0d4bb3]">
+                      <span className="inline-flex items-center rounded-full border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-1.5 py-0.5 text-[10.5px] font-semibold text-[var(--badge-blue-text)]">
                         当前会话
                       </span>
                     )}
                     {item.mfaReauthenticated && (
                       <span
                         title="最近 5 分钟内已完成高风险 Step-Up 验证"
-                        className="inline-flex items-center gap-0.5 rounded-full bg-[var(--success-soft)] px-1.5 py-0.5 text-[10.5px] font-medium text-[var(--success-text)]"
+                        className="inline-flex items-center gap-0.5 rounded-full bg-[var(--badge-green-bg)] px-1.5 py-0.5 text-[10.5px] font-medium text-[var(--badge-green-text)]"
                       >
                         <ShieldCheck className="size-3" aria-hidden="true" />
                         Step-Up
                       </span>
                     )}
                   </div>
-                </td>
-                <td className="px-3 py-2.5 whitespace-nowrap text-[12px]">
-                  <span
-                    className={
-                      item.state === 'valid'
-                        ? 'rounded-full bg-[var(--success-soft)] px-2 py-0.5 font-medium text-[var(--success-text)]'
-                        : 'rounded-full bg-[var(--muted)] px-2 py-0.5 font-medium text-[var(--text-secondary)]'
-                    }
-                  >
-                    {stateLabels[item.state]}
-                  </span>
-                </td>
-                <td className="px-3 py-2.5 font-mono text-[12px] whitespace-nowrap tabular-nums text-[#475467]">
-                  {item.ipAddress}
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px]">
+                    <span className="font-mono tabular-nums text-[var(--text-secondary)]">
+                      {item.ipAddress}
+                    </span>
+                    <span
+                      className={
+                        item.state === 'valid'
+                          ? 'rounded-full bg-[var(--badge-green-bg)] px-1.5 py-0.5 text-[10.5px] font-medium text-[var(--badge-green-text)]'
+                          : 'rounded-full bg-[var(--badge-slate-bg)] px-1.5 py-0.5 text-[10.5px] font-medium text-[var(--badge-slate-text)]'
+                      }
+                    >
+                      {stateLabels[item.state]}
+                    </span>
+                  </div>
                 </td>
                 <td
                   data-dynamic="timestamp"
-                  className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[#475467]"
+                  className="px-2 py-2.5 text-[11.5px] whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
                 >
                   {item.loginAt}
                 </td>
                 <td
                   data-dynamic="timestamp"
-                  className="px-3 py-2.5 text-[12px] whitespace-nowrap tabular-nums text-[var(--text-primary)]"
+                  className="px-2 py-2.5 text-[11.5px] whitespace-nowrap tabular-nums text-[var(--text-primary)]"
                 >
                   {item.lastActiveAt}
                 </td>
-                <td className="px-3 py-2.5 text-right">
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">
                   <button
                     type="button"
                     aria-label={`终止会话 ${item.deviceBrowser}`}
-                    disabled={item.state === 'revoked'}
+                    disabled={item.state !== 'valid'}
                     onClick={() => onTerminateSession(item)}
-                    className="inline-flex h-7 items-center rounded-lg border border-[#e45d5d]/26 bg-white/65 px-2.5 text-[12px] font-medium text-[#b84040] transition-colors hover:bg-[#e45d5d]/[0.1] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="inline-flex h-7 items-center rounded-lg border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-2.5 text-[12px] font-medium text-[var(--badge-red-text)] transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     终止
                   </button>
@@ -207,7 +213,7 @@ export function ActiveSessionsCard({
             {visibleSessions.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={4}
                   className="px-3 py-4 text-center text-xs text-[var(--text-secondary)]"
                 >
                   当前筛选条件下暂无会话记录。

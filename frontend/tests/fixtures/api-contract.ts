@@ -128,6 +128,12 @@ export function buildDashboardSummary(
 ): DashboardSummary {
   const active = accounts.filter((a) => !a.deleted_at);
   const deleted = accounts.filter((a) => Boolean(a.deleted_at));
+  const tagCounts: Record<string, number> = {};
+  for (const account of active) {
+    for (const tag of account.tags) {
+      tagCounts[tag.id] = (tagCounts[tag.id] ?? 0) + 1;
+    }
+  }
   return {
     total: active.length,
     normal: active.filter((a) => a.status === 'normal').length,
@@ -137,6 +143,12 @@ export function buildDashboardSummary(
     abnormal: active.filter((a) =>
       ['restricted', 'login_failed', 'disabled'].includes(a.status),
     ).length,
+    risk: active.filter((a) =>
+      ['restricted', 'login_failed'].includes(a.status),
+    ).length,
+    disabled: active.filter((a) => a.status === 'disabled').length,
+    archived: active.filter((a) => a.status === 'archived').length,
+    tag_counts: tagCounts,
     added_this_month: active.length,
     unverified_over_30_days: 0,
     deleted_count: deleted.length,

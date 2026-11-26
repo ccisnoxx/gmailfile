@@ -7,6 +7,7 @@ import {
   Eye,
   EyeOff,
   HelpCircle,
+  KeyRound,
   MinusCircle,
   RefreshCw,
   User,
@@ -191,10 +192,22 @@ export function AccountBasicInfoForm({
       return;
     }
 
+    if (draft.phone.trim()) {
+      const digits = draft.phone.replace(/\D/g, '');
+      if (digits.length < 6 || digits.length > 20) {
+        setValidationError('绑定手机号需包含 6 至 20 位数字。');
+        return;
+      }
+    }
+
+    if (!draft.recovery_email_external.trim()) {
+      setValidationError('辅助邮箱不能为空。');
+      return;
+    }
+
     if (
-      draft.recovery_email_external.trim() &&
       normalizeEmail(draft.gmail_email) ===
-        normalizeEmail(draft.recovery_email_external)
+      normalizeEmail(draft.recovery_email_external)
     ) {
       setValidationError('辅助邮箱不能与主邮箱相同。');
       return;
@@ -237,7 +250,7 @@ export function AccountBasicInfoForm({
           <Alert
             variant="destructive"
             role="alert"
-            className="rounded-2xl border-[var(--danger)]/35 bg-[#fff5f5]/90"
+            className="rounded-2xl border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]"
           >
             <AlertTriangle className="size-4" aria-hidden="true" />
             <AlertDescription className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -249,7 +262,7 @@ export function AccountBasicInfoForm({
                 <button
                   type="button"
                   onClick={onReloadLatest}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--danger)]/35 bg-white/90 px-2.5 text-xs font-medium text-[var(--danger)] transition-colors hover:bg-white"
+                  className="inline-flex h-7 items-center gap-1 rounded-lg border border-current/35 bg-white/90 px-2.5 text-xs font-medium text-[var(--danger-text)] transition-colors hover:bg-white"
                 >
                   <RefreshCw className="size-3" aria-hidden="true" />
                   <span>重新加载最新版本</span>
@@ -264,7 +277,7 @@ export function AccountBasicInfoForm({
           <Alert
             variant="destructive"
             role="alert"
-            className="rounded-2xl border-[var(--danger)]/35 bg-[#fff5f5]/90"
+            className="rounded-2xl border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]"
           >
             <AlertDescription className="text-xs">
               {validationError}
@@ -398,12 +411,23 @@ export function AccountBasicInfoForm({
             )}
 
             {!isEditing && passwordSecret.reauth && session && (
-              <div className="rounded-2xl border border-[#1677ff]/25 bg-white/82 p-3.5 shadow-sm">
-                <p className="mb-2.5 text-xs font-medium text-[var(--text-primary)]">
+              <div className="space-y-2.5 rounded-2xl border border-[var(--accent)]/25 bg-[var(--surface-popover)] p-3.5 shadow-sm">
+                <p className="text-xs font-medium text-[var(--text-primary)]">
                   {session.step_up_totp_required
-                    ? '需要管理员密码与 TOTP 二次验证后方可查看凭据。'
+                    ? '需要最近 5 分钟内的二次验证（通行密钥或管理员密码 + TOTP）后方可查看凭据。'
                     : '需要完成管理员重新验证后方可查看凭据。'}
                 </p>
+                {passwordSecret.canUsePasskey && (
+                  <button
+                    type="button"
+                    disabled={passwordSecret.verifying}
+                    onClick={() => void passwordSecret.reverifyWithPasskey()}
+                    className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-3 text-xs font-medium text-[var(--accent-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+                  >
+                    <KeyRound className="size-3.5" aria-hidden="true" />
+                    <span>使用通行密钥（Passkey）验证</span>
+                  </button>
+                )}
                 <CredentialForm
                   kind="reverify"
                   busy={passwordSecret.verifying}
@@ -569,22 +593,16 @@ export function AccountBasicInfoForm({
               <output
                 id="detail-status"
                 aria-label="账号状态"
-                className="flex h-10 w-[118px] shrink-0 items-center justify-between gap-2 rounded-xl border border-white/82 bg-white/58 px-3 text-[13.5px] font-medium text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
+                className="flex h-10 w-[118px] shrink-0 items-center gap-2 rounded-xl border border-white/82 bg-white/58 px-3 text-[13.5px] font-medium text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
               >
-                <span className="inline-flex items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'size-2 shrink-0 rounded-full',
-                      currentStatusMeta.dotClass,
-                    )}
-                  />
-                  <span>{currentStatusMeta.label}</span>
-                </span>
-                <ChevronDown
+                <span
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-[var(--text-secondary)]"
+                  className={cn(
+                    'size-2 shrink-0 rounded-full',
+                    currentStatusMeta.dotClass,
+                  )}
                 />
+                <span>{currentStatusMeta.label}</span>
               </output>
             )}
 
@@ -641,7 +659,7 @@ export function AccountBasicInfoForm({
                         className="size-4 shrink-0 text-[var(--success)]"
                         aria-hidden="true"
                       />
-                      <span className="truncate text-[#116b3b]">
+                      <span className="truncate text-[var(--success-text)]">
                         已启用（TOTP）
                       </span>
                     </>
@@ -719,7 +737,6 @@ export function AccountBasicInfoForm({
             />
             <span
               data-slot="notes-char-count"
-              aria-live="polite"
               className="pointer-events-none absolute right-3 bottom-2 text-[11.5px] tabular-nums text-[var(--text-secondary)]"
             >
               {draft.notes.length} / {MAX_NOTES_LENGTH}
@@ -732,7 +749,7 @@ export function AccountBasicInfoForm({
       {isEditing && (
         <div
           data-slot="edit-sticky-actions"
-          className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--table-divider)] bg-[rgba(248,252,255,0.86)] px-[var(--detail-pad,20px)] py-3 backdrop-blur-md"
+          className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-b-[18px] border-t border-[var(--table-divider)] bg-[var(--surface-sticky-cell)] px-[var(--detail-pad,20px)] py-3 backdrop-blur-md"
         >
           <p className="text-xs text-[var(--text-secondary)]">
             {isDirty
@@ -751,7 +768,7 @@ export function AccountBasicInfoForm({
             <button
               type="submit"
               disabled={busy || conflict}
-              className="inline-flex h-9 items-center justify-center rounded-xl bg-[linear-gradient(180deg,#348dff_0%,#1677ff_100%)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.28)] transition-all duration-[160ms] ease-out hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.28)] transition-all duration-[160ms] ease-out hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? '正在保存…' : '保存修改'}
             </button>
@@ -766,7 +783,7 @@ export function AccountBasicInfoForm({
       variant="strong"
       data-slot="account-basic-info-form"
       className={cn(
-        'relative flex min-w-0 flex-col overflow-hidden rounded-[18px]',
+        'relative flex min-w-0 flex-col overflow-clip rounded-[18px]',
         className,
       )}
     >
@@ -775,7 +792,7 @@ export function AccountBasicInfoForm({
         <div className="flex items-start gap-2.5">
           <span
             aria-hidden="true"
-            className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]"
+            className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]"
           >
             <User className="size-4" />
           </span>
@@ -789,7 +806,7 @@ export function AccountBasicInfoForm({
           </div>
         </div>
         {isEditing && (
-          <span className="inline-flex items-center rounded-full border border-[#1677ff]/25 bg-[#eaf3ff] px-2.5 py-0.5 text-xs font-medium text-[var(--accent)]">
+          <span className="inline-flex items-center rounded-full border border-[var(--accent)]/25 bg-[var(--accent-soft)] px-2.5 py-0.5 text-xs font-medium text-[var(--accent-text)]">
             编辑模式
           </span>
         )}

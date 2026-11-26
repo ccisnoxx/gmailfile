@@ -51,6 +51,7 @@ const makeSession = (
   reauthenticated_until: null,
   mfa_reauthenticated_until: null,
   step_up_totp_required: true,
+  totp_enabled: true,
   ...overrides,
 });
 
@@ -125,9 +126,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
       screen.getByText('安全、备份、审计与系统行为配置'),
     ).toBeInTheDocument();
 
-    // 顶部搜索框 + ⌘F 快捷键聚焦 + 右上角系统正常运行、通知、管理员菜单
-    const searchInput = screen.getByPlaceholderText('搜索设置（⌘F）');
-    fireEvent.keyDown(window, { key: 'f', metaKey: true });
+    // 顶部搜索框 + ⌘K 快捷键聚焦 + 右上角系统正常运行、通知、管理员菜单
+    const searchInput = screen.getByPlaceholderText('搜索设置（⌘K）');
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
     expect(
       container.querySelector('[data-slot="topbar-system-status"]'),
@@ -137,10 +138,10 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
       screen.getByRole('button', { name: '管理员菜单' }),
     ).toBeInTheDocument();
 
-    // 左侧主导航 9 项 + 回收站 3 + 当前选中“系统设置”
+    // 左侧统一主导航 9 项 + 回收站 3 + 当前选中“系统设置”
     const mainNav = screen.getByRole('navigation', { name: '系统主导航' });
     for (const label of [
-      '控制台',
+      '数据概览',
       'Gmail 账号',
       '标签管理',
       '导入 / 导出（CSV）',
@@ -158,21 +159,6 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     expect(
       within(mainNav).getByRole('button', { name: '系统设置' }),
     ).toHaveAttribute('aria-current', 'page');
-
-    // 系统设置二级导航 5 项，当前选中“安全与认证”
-    const subNav = screen.getByRole('navigation', { name: '系统设置二级导航' });
-    for (const label of [
-      '安全与认证',
-      '备份与恢复',
-      '审计与合规',
-      '界面与体验',
-      '系统与维护',
-    ]) {
-      expect(within(subNav).getByText(label)).toBeInTheDocument();
-    }
-    expect(
-      within(subNav).getByRole('button', { name: '安全与认证' }),
-    ).toHaveAttribute('aria-current', 'location');
 
     // 顶部 macOS segmented control
     const tablist = screen.getByRole('tablist', { name: '系统设置分类' });
@@ -271,21 +257,24 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     ).toBeInTheDocument();
   });
 
-  it('支持顶部 segmented control、键盘方向键与左侧二级导航同步切换内容，并支持顶部搜索过滤设置', async () => {
+  it('支持顶部 segmented control、键盘方向键同步切换内容，并支持顶部搜索过滤设置与 TOTP 重绑弹窗', async () => {
     const user = userEvent.setup();
     renderPreviewSettings('/settings/security');
 
     const tablist = screen.getByRole('tablist', { name: '系统设置分类' });
-    const subNav = screen.getByRole('navigation', { name: '系统设置二级导航' });
+
+    // 验证 TOTP 重绑入口可用
+    await user.click(screen.getByRole('button', { name: '重绑验证器…' }));
+    expect(
+      await screen.findByRole('dialog', { name: '重新绑定 TOTP 验证器' }),
+    ).toBeInTheDocument();
+    await user.keyboard('{Escape}');
 
     // 点击“备份与恢复”分段标签 -> 切换对应内容且隐藏管理员安全卡片
     await user.click(within(tablist).getByRole('tab', { name: '备份与恢复' }));
     expect(
       within(tablist).getByRole('tab', { name: '备份与恢复', selected: true }),
     ).toBeInTheDocument();
-    expect(
-      within(subNav).getByRole('button', { name: '备份与恢复' }),
-    ).toHaveAttribute('aria-current', 'location');
     expect(
       screen.getByRole('heading', { name: '最近加密归档快照' }),
     ).toBeInTheDocument();
@@ -314,15 +303,13 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
       screen.getByRole('switch', { name: '紧凑密度模式' }),
     ).toBeInTheDocument();
 
-    await user.click(
-      within(subNav).getByRole('button', { name: '系统与维护' }),
-    );
+    await user.click(within(tablist).getByRole('tab', { name: '系统与维护' }));
     expect(
       screen.getByRole('heading', { name: '运行环境与会话安全' }),
     ).toBeInTheDocument();
 
     // 顶部搜索过滤设置与空搜索状态
-    const searchInput = screen.getByPlaceholderText('搜索设置（⌘F）');
+    const searchInput = screen.getByPlaceholderText('搜索设置（⌘K）');
     await user.type(searchInput, 'TOTP');
     expect(
       screen.getByRole('heading', { name: '双因素认证（TOTP）' }),

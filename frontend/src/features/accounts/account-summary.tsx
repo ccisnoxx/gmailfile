@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Archive,
   CheckCircle2,
+  Clock,
   Mail,
   PauseCircle,
 } from 'lucide-react';
@@ -10,6 +11,7 @@ import { StatCard, type SidebarSectionKey } from '@/components/macos';
 export type AccountStatsData = {
   all: number;
   normal: number;
+  pending?: number;
   addedThisMonth: number;
   risk: number;
   disabled: number;
@@ -25,15 +27,25 @@ export function Summary({
   activeSection?: SidebarSectionKey | null;
   onSelectSection?: (section: SidebarSectionKey) => void;
 }) {
+  const showPending = stats.pending !== undefined;
   return (
     <section
       aria-label="账号全局统计"
-      className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5"
+      className={
+        showPending
+          ? 'grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-6'
+          : 'grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5'
+      }
     >
       <StatCard
         icon={<Mail className="size-[18px]" aria-hidden="true" />}
         title="全部账号"
         value={stats.all}
+        trend={
+          stats.addedThisMonth > 0
+            ? `↑ +${stats.addedThisMonth} 本月`
+            : undefined
+        }
         tone="blue"
         active={activeSection === 'all'}
         onClick={onSelectSection ? () => onSelectSection('all') : undefined}
@@ -42,15 +54,22 @@ export function Summary({
         icon={<CheckCircle2 className="size-[18px]" aria-hidden="true" />}
         title="正常账号"
         value={stats.normal}
-        trend={
-          stats.addedThisMonth > 0
-            ? `↑ +${stats.addedThisMonth} 本月`
-            : undefined
-        }
         tone="green"
         active={activeSection === 'normal'}
         onClick={onSelectSection ? () => onSelectSection('normal') : undefined}
       />
+      {showPending && (
+        <StatCard
+          icon={<Clock className="size-[18px]" aria-hidden="true" />}
+          title="待验证"
+          value={stats.pending ?? 0}
+          tone="blue"
+          active={activeSection === 'pending'}
+          onClick={
+            onSelectSection ? () => onSelectSection('pending') : undefined
+          }
+        />
+      )}
       <StatCard
         icon={<AlertTriangle className="size-[18px]" aria-hidden="true" />}
         title="风险账号"

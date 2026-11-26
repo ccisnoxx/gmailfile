@@ -119,7 +119,7 @@ export function MacSwitch({
         'relative inline-flex h-6 w-[40px] shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-[180ms] ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]',
         checked
           ? 'border-[#1268e6]/30 bg-[linear-gradient(180deg,#2f8bff_0%,#1677ff_100%)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.28)]'
-          : 'border-[#b9cadf]/70 bg-[#d5e1ee]/90 shadow-[inset_0_1px_2px_rgba(32,64,110,0.12)]',
+          : 'border-[#b9cadf]/70 bg-[#d5e1ee]/90 shadow-[inset_0_1px_2px_rgba(32,64,110,0.12)] dark:border-slate-600/80 dark:bg-slate-700/85',
       )}
     >
       <span
@@ -233,15 +233,10 @@ export function DisplaySettingsPopover({
       aria-labelledby={titleId}
       data-slot="display-settings-popover"
       className={cn(
-        'absolute top-full right-0 z-50 mt-2.5 w-[360px] max-w-[calc(100vw-2rem)] rounded-[18px] border border-white/95 bg-[rgba(253,254,255,0.96)] p-4 text-[var(--text-primary)] shadow-[0_22px_56px_rgba(32,68,118,0.22),0_4px_16px_rgba(32,68,118,0.1),inset_0_1px_0_rgba(255,255,255,1)] backdrop-blur-[32px] backdrop-saturate-150',
+        'absolute top-full right-0 z-50 mt-2.5 w-[340px] max-w-[calc(100vw-2rem)] rounded-[18px] border border-[var(--modal-border)] bg-[var(--surface-popover)] p-4 text-[var(--text-primary)] shadow-[0_22px_56px_rgba(15,30,58,0.28),0_4px_16px_rgba(15,30,58,0.12)] backdrop-blur-[28px] backdrop-saturate-150',
         className,
       )}
     >
-      {/* 顶部指向设置按钮的玻璃小尖角 */}
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute -top-1.5 right-3.5 size-3 rotate-45 rounded-[2px] border-t border-l border-white/95 bg-[rgba(253,254,255,0.98)]"
-      />
       {/* 顶部标题 */}
       <div className="flex items-center gap-2 border-b border-[var(--table-divider)] pb-3">
         <AppWindow

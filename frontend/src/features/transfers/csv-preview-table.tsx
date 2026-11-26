@@ -20,17 +20,20 @@ const STATUS_BADGE: Record<
 > = {
   valid: {
     label: '有效',
-    className: 'border-[#2fbf71]/25 bg-[#e7f8ef] text-[#116b3b]',
+    className:
+      'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]',
     dotClass: 'bg-[var(--success)]',
   },
   warning: {
     label: '警告',
-    className: 'border-[#f5a623]/30 bg-[#fef6df] text-[#8a5000]',
+    className:
+      'border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]',
     dotClass: 'bg-[var(--warning)]',
   },
   error: {
     label: '错误',
-    className: 'border-[#e45d5d]/28 bg-[#fdecec] text-[#b93838]',
+    className:
+      'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]',
     dotClass: 'bg-[var(--danger)]',
   },
 };
@@ -86,7 +89,7 @@ export function CsvPreviewTable({
     <div data-slot="csv-preview-table" className={cn('space-y-3', className)}>
       <div className="macos-thin-scrollbar max-h-[430px] overflow-auto rounded-2xl border border-white/84 bg-white/56 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
         <table className="w-full min-w-[880px] border-collapse text-left text-[13px]">
-          <thead className="sticky top-0 z-10 border-b border-[var(--table-divider)] bg-[rgba(244,249,255,0.94)] text-[11.5px] font-semibold text-[var(--text-secondary)] backdrop-blur-md">
+          <thead className="sticky top-0 z-10 border-b border-[var(--table-divider)] bg-[var(--surface-table-head)] text-[11.5px] font-semibold text-[var(--text-secondary)] backdrop-blur-md">
             <tr>
               <th scope="col" className="w-10 px-3 py-2.5 text-center">
                 <input
@@ -157,9 +160,9 @@ export function CsvPreviewTable({
                         isSelected
                           ? 'bg-[var(--table-row-selected)]'
                           : row.status === 'error'
-                            ? 'bg-[#fdecec]/30 hover:bg-[#fdecec]/50'
+                            ? 'bg-[var(--badge-red-bg)]/45 hover:bg-[var(--badge-red-bg)]/70'
                             : row.status === 'warning'
-                              ? 'bg-[#fef6df]/25 hover:bg-[#fef6df]/48'
+                              ? 'bg-[var(--badge-orange-bg)]/35 hover:bg-[var(--badge-orange-bg)]/60'
                               : 'hover:bg-white/62',
                       )}
                     >
@@ -202,7 +205,7 @@ export function CsvPreviewTable({
                               row.issues.some(
                                 (i) => i.field === 'gmail_email',
                               ) &&
-                              'text-[#b93838]',
+                              'text-[var(--danger-text)]',
                           )}
                         >
                           {row.gmailEmail}
@@ -229,9 +232,9 @@ export function CsvPreviewTable({
                           className={cn(
                             'inline-flex items-center gap-1 text-[12px] font-medium',
                             row.twoFactorStatus === 'enabled'
-                              ? 'text-[#116b3b]'
+                              ? 'text-[var(--success-text)]'
                               : row.twoFactorStatus === 'disabled'
-                                ? 'text-[#8a5000]'
+                                ? 'text-[var(--warning-text)]'
                                 : 'text-[var(--text-secondary)]',
                           )}
                         >
@@ -256,9 +259,9 @@ export function CsvPreviewTable({
                             className={cn(
                               'truncate text-[12.5px]',
                               row.status === 'error'
-                                ? 'font-medium text-[#b93838]'
+                                ? 'font-medium text-[var(--danger-text)]'
                                 : row.status === 'warning'
-                                  ? 'text-[#8a5000]'
+                                  ? 'text-[var(--warning-text)]'
                                   : 'text-[var(--text-secondary)]',
                             )}
                           >
@@ -296,7 +299,7 @@ export function CsvPreviewTable({
                         className="bg-white/75"
                       >
                         <td colSpan={9} className="px-6 py-3">
-                          <div className="rounded-xl border border-[#b9d0ec]/55 bg-[#f7fbff]/90 p-3">
+                          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-table-head)] p-3">
                             <p className="mb-2 text-[12px] font-semibold text-[var(--text-primary)]">
                               第 {row.rowNumber} 行字段校验明细（共{' '}
                               {row.issues.length} 项）
@@ -324,7 +327,7 @@ export function CsvPreviewTable({
                                         {issue.fieldLabel}
                                       </span>
                                       {issue.columnLetter && (
-                                        <span className="rounded bg-white/90 px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--text-secondary)] ring-1 ring-[#cdddf0]">
+                                        <span className="rounded bg-white/90 px-1.5 py-0.5 font-mono text-[10.5px] text-[var(--text-secondary)] ring-1 ring-[var(--border)]">
                                           {issue.columnLetter} 列
                                         </span>
                                       )}
@@ -332,8 +335,8 @@ export function CsvPreviewTable({
                                         className={cn(
                                           'font-medium',
                                           issue.severity === 'error'
-                                            ? 'text-[#b93838]'
-                                            : 'text-[#8a5000]',
+                                            ? 'text-[var(--danger-text)]'
+                                            : 'text-[var(--warning-text)]',
                                         )}
                                       >
                                         {issue.reason}
@@ -376,8 +379,8 @@ export function CsvPreviewTable({
             条
           </span>
           {selectedRows.size > 0 && (
-            <span className="rounded-full bg-[#eaf3ff] px-2.5 py-0.5 text-[11.5px] font-medium text-[#1158c7]">
-              已勾选 {selectedRows.size} 行
+            <span className="rounded-full bg-[var(--badge-blue-bg)] px-2.5 py-0.5 text-[11.5px] font-medium text-[var(--badge-blue-text)]">
+              已勾选 {selectedRows.size} 行（导出预览时将仅导出所选行）
             </span>
           )}
         </div>

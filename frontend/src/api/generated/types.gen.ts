@@ -301,6 +301,17 @@ export type AccountQuery = {
     | 'archived'
     | null;
   /**
+   * Statuses
+   */
+  statuses?: Array<
+    | 'normal'
+    | 'pending_verification'
+    | 'restricted'
+    | 'login_failed'
+    | 'disabled'
+    | 'archived'
+  > | null;
+  /**
    * Purpose
    */
   purpose?: string | null;
@@ -797,6 +808,10 @@ export type CsvOptions = {
    * Strategy
    */
   strategy?: 'skip' | 'update' | 'error';
+  /**
+   * Skip Empty Fields
+   */
+  skip_empty_fields?: boolean;
 };
 
 /**
@@ -821,6 +836,10 @@ export type CsvPreview = {
    * Strategy
    */
   strategy: 'skip' | 'update' | 'error';
+  /**
+   * Skip Empty Fields
+   */
+  skip_empty_fields?: boolean;
   /**
    * Columns
    */
@@ -892,6 +911,18 @@ export type DashboardSummary = {
    */
   abnormal: number;
   /**
+   * Risk
+   */
+  risk?: number;
+  /**
+   * Disabled
+   */
+  disabled?: number;
+  /**
+   * Archived
+   */
+  archived?: number;
+  /**
    * Added This Month
    */
   added_this_month: number;
@@ -903,6 +934,12 @@ export type DashboardSummary = {
    * Deleted Count
    */
   deleted_count?: number;
+  /**
+   * Tag Counts
+   */
+  tag_counts?: {
+    [key: string]: number;
+  };
   /**
    * Timezone
    */
@@ -3152,6 +3189,17 @@ export type AccountsListData = {
       | 'archived'
       | null;
     /**
+     * Statuses
+     */
+    statuses?: Array<
+      | 'normal'
+      | 'pending_verification'
+      | 'restricted'
+      | 'login_failed'
+      | 'disabled'
+      | 'archived'
+    > | null;
+    /**
      * Purpose
      */
     purpose?: string | null;
@@ -4066,6 +4114,58 @@ export type AccountsArchiveResponses = {
 
 export type AccountsArchiveResponse =
   AccountsArchiveResponses[keyof AccountsArchiveResponses];
+
+export type AccountsUnarchiveData = {
+  body: VersionInput;
+  path: {
+    /**
+     * Account Id
+     */
+    account_id: string;
+  };
+  query?: never;
+  url: '/api/v1/accounts/{account_id}/unarchive';
+};
+
+export type AccountsUnarchiveErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsUnarchiveError =
+  AccountsUnarchiveErrors[keyof AccountsUnarchiveErrors];
+
+export type AccountsUnarchiveResponses = {
+  /**
+   * Successful Response
+   */
+  200: AccountDetail;
+};
+
+export type AccountsUnarchiveResponse =
+  AccountsUnarchiveResponses[keyof AccountsUnarchiveResponses];
 
 export type AccountsRestoreData = {
   body: VersionInput;

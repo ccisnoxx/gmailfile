@@ -26,6 +26,7 @@ export type WorkspaceContextValue = {
   onSignedOut: (revocation: Promise<unknown>) => void;
   onSelectPanel: (panel: SecurityPanel) => void;
   onSecuritySubmit: (values: CredentialValues) => Promise<void>;
+  onReverifyWithPasskey?: () => Promise<void>;
 };
 
 export const WorkspaceContext = createContext<WorkspaceContextValue | null>(

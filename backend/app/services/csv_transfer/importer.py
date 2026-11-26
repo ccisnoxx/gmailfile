@@ -38,7 +38,11 @@ class CsvService:
             receipt = CsvReceipt(
                 session_id=self.accounts.session.id,
                 file_digest=hashlib.sha256(content).digest(),
-                options=CsvOptions(mapping=mapping, strategy=options.strategy).model_dump(),
+                options=CsvOptions(
+                    mapping=mapping,
+                    strategy=options.strategy,
+                    skip_empty_fields=options.skip_empty_fields,
+                ).model_dump(),
                 snapshot=snapshot,
                 created_at=self.auth.now,
                 expires_at=self.auth.now + timedelta(minutes=10),
@@ -50,6 +54,7 @@ class CsvService:
             expires_at=receipt.expires_at if receipt else None,
             mapping=mapping,
             strategy=options.strategy,
+            skip_empty_fields=options.skip_empty_fields,
             columns=columns,
             rows=rows,
             errors=errors,

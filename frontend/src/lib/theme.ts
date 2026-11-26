@@ -25,10 +25,26 @@ export function applyThemeMode(mode: ThemeMode): ResolvedTheme {
   const resolved = resolveTheme(mode);
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
+    const themeChanged =
+      Boolean(root.dataset.theme) && root.dataset.theme !== resolved;
+    if (themeChanged) {
+      root.classList.add('theme-switching');
+    }
     root.dataset.theme = resolved;
     root.dataset.themeMode = mode;
     root.classList.toggle('dark', resolved === 'dark');
     root.style.colorScheme = resolved;
+    if (themeChanged) {
+      // 强制同步样式计算后在下一帧恢复过渡，确保深浅色原子切换无半浅半深闪烁
+      void root.offsetWidth;
+      if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+        window.requestAnimationFrame(() => {
+          root.classList.remove('theme-switching');
+        });
+      } else {
+        root.classList.remove('theme-switching');
+      }
+    }
   }
   return resolved;
 }

@@ -50,7 +50,9 @@ test.describe('四个 macOS 页面：WCAG 2.2 AA、键盘导航、Focus Trap 与
     await installDeterministicMacosApp(page, { navAlpha: 60 });
     await openMacosPage(page, 'accounts');
 
-    // 1. 透明度滑块支持键盘方向键调节
+    // 1. 打开「界面与显示设置」浮层，透明度滑块支持键盘方向键调节且 Escape 恢复焦点
+    const displayBtn = page.getByRole('button', { name: '界面与显示设置' });
+    await displayBtn.click();
     const slider = page.getByRole('slider', { name: '导航栏毛玻璃透明度' });
     await slider.focus();
     await assertWcag22AA(page, '账号列表滑块聚焦态', {
@@ -61,6 +63,8 @@ test.describe('四个 macOS 页面：WCAG 2.2 AA、键盘导航、Focus Trap 与
     await expect(slider).toHaveValue('61');
     await page.keyboard.press('ArrowLeft');
     await expect(slider).toHaveValue('60');
+    await page.keyboard.press('Escape');
+    await expect(displayBtn).toBeFocused();
 
     // 2. 顶部通知浮层与管理员菜单：Escape 关闭并恢复焦点到触发按钮
     const notifBtn = page.getByRole('button', { name: '通知' });

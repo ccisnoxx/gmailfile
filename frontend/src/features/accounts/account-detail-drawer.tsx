@@ -1,4 +1,4 @@
-import { Archive } from 'lucide-react';
+import { Archive, RotateCcw } from 'lucide-react';
 import type { AccountDetail, SessionResponse } from '@/api/generated';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -138,13 +138,19 @@ export function AccountDetailDrawer({
                   </div>
                 ))}
               </dl>
-              {conflict && (
-                <Alert variant="destructive">
-                  <AlertDescription>
-                    {notice}
-                    <Button variant="outline" onClick={() => onReload(detail)}>
-                      重新加载最新版本
-                    </Button>
+              {notice && (
+                <Alert variant={conflict ? 'destructive' : 'default'}>
+                  <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                    <span>{notice}</span>
+                    {conflict && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onReload(detail)}
+                      >
+                        重新加载最新版本
+                      </Button>
+                    )}
                   </AlertDescription>
                 </Alert>
               )}
@@ -175,14 +181,25 @@ export function AccountDetailDrawer({
                     <Button disabled={busy || conflict} onClick={onEdit}>
                       编辑账号
                     </Button>
-                    <Button
-                      variant="outline"
-                      disabled={busy || conflict}
-                      onClick={() => onRequestConfirm('archive')}
-                    >
-                      <Archive data-icon="inline-start" />
-                      归档
-                    </Button>
+                    {detail.status === 'archived' ? (
+                      <Button
+                        variant="outline"
+                        disabled={busy || conflict}
+                        onClick={() => onRequestConfirm('unarchive')}
+                      >
+                        <RotateCcw data-icon="inline-start" />
+                        取消归档
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        disabled={busy || conflict}
+                        onClick={() => onRequestConfirm('archive')}
+                      >
+                        <Archive data-icon="inline-start" />
+                        归档
+                      </Button>
+                    )}
                     <Button
                       variant="destructive"
                       disabled={busy || conflict}

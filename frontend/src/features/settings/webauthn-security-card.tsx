@@ -101,7 +101,7 @@ export function WebAuthnSecurityCard({
       errorText={errorText ?? undefined}
       onRetry={onRetry}
       headerRight={
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#1677ff]/25 bg-[var(--accent-soft)] px-2.5 py-0.5 text-[12px] font-medium whitespace-nowrap text-[var(--accent)]">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-2.5 py-0.5 text-[12px] font-medium whitespace-nowrap text-[var(--badge-blue-text)]">
           <KeyRound className="size-3" aria-hidden="true" />
           <span>
             {credentials.length > 0
@@ -207,7 +207,7 @@ export function WebAuthnSecurityCard({
                             : '删除此通行密钥'
                         }
                         onClick={() => onDeleteRequest(cred)}
-                        className="inline-flex h-7 items-center gap-1 rounded-lg border border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] px-2 text-[11.5px] font-medium text-[#c54646] hover:bg-[#e45d5d]/[0.16] disabled:cursor-not-allowed disabled:opacity-45"
+                        className="inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-2 text-[11.5px] font-medium text-[var(--badge-red-text)] hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45"
                       >
                         <Trash2 className="size-3" aria-hidden="true" />
                         <span>删除</span>
@@ -232,12 +232,12 @@ export function WebAuthnSecurityCard({
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="设备名称（如 MacBook Touch ID）"
-            className="h-9 min-w-[180px] flex-1 rounded-xl border border-[#cdddf0] bg-white/80 px-3 text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/80 focus:border-[var(--accent)] focus:outline-none"
+            className="h-9 min-w-[180px] flex-1 rounded-xl border border-[var(--border)] bg-white/80 px-3 text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/80 focus:border-[var(--accent)] focus:outline-none"
           />
           <button
             type="submit"
             disabled={registering || !supported}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3.5 text-[12.5px] font-medium text-white shadow-[0_4px_12px_rgba(22,119,255,0.22)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3.5 text-[12.5px] font-medium text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(22,119,255,0.22)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-50"
           >
             <Plus className="size-3.5" aria-hidden="true" />
             <span>{registering ? '等待认证器…' : '绑定新通行密钥'}</span>
@@ -252,7 +252,7 @@ export function WebAuthnSecurityCard({
         )}
 
         {localError && (
-          <p role="alert" className="text-[12px] text-[#c54646]">
+          <p role="alert" className="text-[12px] text-[var(--danger-text)]">
             {localError}
           </p>
         )}

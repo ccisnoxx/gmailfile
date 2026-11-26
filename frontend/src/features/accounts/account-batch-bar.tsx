@@ -50,6 +50,9 @@ export function BatchBar({
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
 
+  const selectedTag = tags.find((t) => t.id === tag) ?? null;
+  const effectiveTagId = selectedTag ? selectedTag.id : '';
+
   async function submit() {
     if (!confirmation) return;
     const actionKind = confirmation;
@@ -68,9 +71,10 @@ export function BatchBar({
       } else if (actionKind === 'status') {
         await accountsBatchStatus({ ...options, body: { ...base, status } });
       } else {
+        if (!effectiveTagId) return;
         await accountsBatchTags({
           ...options,
-          body: { ...base, tag_ids: [tag] },
+          body: { ...base, tag_ids: [effectiveTagId] },
         });
       }
       setConfirmation(null);
@@ -130,6 +134,7 @@ export function BatchBar({
             aria-label="批量目标状态"
             value={status}
             onChange={(e) => setStatus(e.target.value as typeof status)}
+            className="w-auto min-w-[120px]"
           >
             {Object.entries(statusLabels).map(([v, label]) => (
               <option value={v} key={v}>
@@ -149,8 +154,9 @@ export function BatchBar({
           </Button>
           <NativeSelect
             aria-label="批量添加标签"
-            value={tag}
+            value={effectiveTagId}
             onChange={(e) => setTag(e.target.value)}
+            className="w-auto min-w-[140px]"
           >
             <option value="">请选择标签</option>
             {tags.map((t) => (
@@ -161,7 +167,7 @@ export function BatchBar({
           </NativeSelect>
           <Button
             variant="outline"
-            disabled={!selected.length || !tag || busy || failed}
+            disabled={!selected.length || !effectiveTagId || busy || failed}
             onClick={() => {
               returnFocus.current = document.activeElement as HTMLElement;
               setConfirmation('tags');
@@ -194,7 +200,7 @@ export function BatchBar({
                 ? '已删除账号执行原子恢复（保留原状态、归档标记与标签）'
                 : confirmation === 'status'
                   ? `修改为“${statusLabels[status]}”`
-                  : '追加标签（保留原标签）'}
+                  : `追加标签“${selectedTag?.name ?? ''}”（保留原标签）`}
               。整批成功或整批回滚，不包含其他页面的账号。
             </AlertDialogDescription>
           </AlertDialogHeader>

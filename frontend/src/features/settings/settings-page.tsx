@@ -49,6 +49,7 @@ import {
 } from './settings-modals';
 import { SettingsSegmentedTabs } from './settings-segmented-tabs';
 import { TotpSecurityCard } from './totp-security-card';
+import { TotpSetupModal } from './totp-setup-modal';
 import { WebAuthnSecurityCard } from './webauthn-security-card';
 import { isWebAuthnSupported } from '@/lib/webauthn';
 import {
@@ -103,10 +104,11 @@ export type SettingsPageProps = {
   onFailure?: (error: unknown) => void;
   onRefreshSession?: () => void;
   onSignedOut?: (revocation: Promise<unknown>) => void;
-  onNavigateAccounts?: (filter?: 'all' | 'archived' | 'trash') => void;
+  onNavigateAccounts?: (filter?: 'all' | 'archived' | 'trash' | 'tags') => void;
   onNavigateOperations?: (
     tab?: 'status' | 'import' | 'export' | 'audit',
   ) => void;
+  onNavigateRecoveryUsage?: () => void;
   onLogout?: () => void;
   uiStateOverride?: CardStateMode;
   simulateActionFailure?: boolean;
@@ -229,6 +231,14 @@ function RoutedSettingsPage(props: SettingsPageProps) {
         handleSectionRoute('security');
         return;
       }
+      if (key === 'audit') {
+        handleSectionRoute('audit');
+        return;
+      }
+      if (key === 'backup') {
+        handleSectionRoute('backup');
+        return;
+      }
       if (
         props.onNavigateAccounts &&
         (key === 'dashboard' ||
@@ -238,17 +248,18 @@ function RoutedSettingsPage(props: SettingsPageProps) {
           key === 'trash')
       ) {
         props.onNavigateAccounts(
-          key === 'archived' ? 'archived' : key === 'trash' ? 'trash' : 'all',
+          key === 'archived'
+            ? 'archived'
+            : key === 'trash'
+              ? 'trash'
+              : key === 'tags'
+                ? 'tags'
+                : 'all',
         );
         return;
       }
-      if (
-        props.onNavigateOperations &&
-        (key === 'transfer' || key === 'audit' || key === 'backup')
-      ) {
-        props.onNavigateOperations(
-          key === 'transfer' ? 'import' : key === 'audit' ? 'audit' : 'status',
-        );
+      if (props.onNavigateOperations && key === 'transfer') {
+        props.onNavigateOperations('import');
         return;
       }
       if (isPreview) {
@@ -260,27 +271,21 @@ function RoutedSettingsPage(props: SettingsPageProps) {
           key === 'trash'
         ) {
           void navigate('/preview/accounts');
-        } else if (key === 'audit') {
-          handleSectionRoute('audit');
-        } else if (key === 'backup') {
-          handleSectionRoute('backup');
         } else if (key === 'transfer') {
-          handleSectionRoute('system');
+          void navigate('/preview/transfers/csv');
         }
         return;
       }
-      if (key === 'dashboard' || key === 'accounts' || key === 'tags') {
+      if (key === 'dashboard' || key === 'accounts') {
         void navigate('/accounts');
+      } else if (key === 'tags') {
+        void navigate('/accounts?modal=tags');
       } else if (key === 'archived') {
         void navigate('/accounts?archived=true');
       } else if (key === 'trash') {
         void navigate('/accounts?deleted=true');
       } else if (key === 'transfer') {
-        void navigate('/operations?tab=import');
-      } else if (key === 'audit') {
-        void navigate('/operations?tab=audit');
-      } else if (key === 'backup') {
-        void navigate('/operations?tab=status');
+        void navigate('/transfers/csv');
       }
     },
     [
@@ -314,6 +319,7 @@ function SettingsPageBody({
   onRefreshSession,
   onSignedOut,
   onNavigateOperations,
+  onNavigateRecoveryUsage,
   onLogout,
   uiStateOverride,
   simulateActionFailure = false,
@@ -367,10 +373,27 @@ function SettingsPageBody({
   const [searchQuery, setSearchQuery] = useState('');
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
+  const [totpSetupModalOpen, setTotpSetupModalOpen] = useState(false);
   const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [selectedRestoreArchiveId, setSelectedRestoreArchiveId] = useState<
+    string | null
+  >(null);
   const [retentionSheetOpen, setRetentionSheetOpen] = useState(false);
   const [sensitiveAction, setSensitiveAction] =
     useState<PendingSensitiveAction | null>(null);
+
+  // 支持从全局 /settings/security?action=reverify 快捷入口直接弹出二次验证弹窗
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'reverify') {
+      setSensitiveAction({ kind: 'reverify' });
+      params.delete('action');
+      const nextSearch = params.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+      window.history.replaceState(null, '', nextUrl);
+    }
+  }, []);
 
   const handleRunBackup = useCallback(async () => {
     const result = await data.handlers.runImmediateBackup();
@@ -435,6 +458,7 @@ function SettingsPageBody({
             state={resolvedUiState ?? 'ready'}
             canDisable={data.webauthnCredentials.length > 0}
             onOpenRecoveryCodes={() => setRecoveryModalOpen(true)}
+            onOpenTotpSetup={() => setTotpSetupModalOpen(true)}
             onDisableTotp={() => setSensitiveAction({ kind: 'disable-totp' })}
             onRetry={data.handlers.retryAll}
           />
@@ -503,7 +527,10 @@ function SettingsPageBody({
             errorText={data.backupError}
             webActionsSupported={mode === 'mock'}
             onRunBackup={() => void handleRunBackup()}
-            onOpenRestoreVerify={() => setRestoreModalOpen(true)}
+            onOpenRestoreVerify={() => {
+              setSelectedRestoreArchiveId(null);
+              setRestoreModalOpen(true);
+            }}
             onRetry={data.handlers.retryAll}
           />
         );
@@ -550,7 +577,7 @@ function SettingsPageBody({
             title="运行环境与会话安全"
             subtitle="服务版本、数据库 Schema 与空闲自动锁定策略"
             icon={<Cpu className="size-4" />}
-            state={resolvedUiState ?? 'ready'}
+            state={data.runtimeState}
             onRetry={data.handlers.retryAll}
             headerRight={
               <button
@@ -591,7 +618,7 @@ function SettingsPageBody({
                 <dt className="text-[12px] text-[var(--text-secondary)]">
                   敏感缓存策略
                 </dt>
-                <dd className="mt-0.5 font-medium text-[#116b3b]">
+                <dd className="mt-0.5 font-medium text-[var(--success-text)]">
                   禁止写入 Query Cache 与 localStorage
                 </dd>
               </div>
@@ -714,8 +741,11 @@ function SettingsPageBody({
                       </div>
                       <button
                         type="button"
-                        onClick={() => setRestoreModalOpen(true)}
-                        className="rounded-lg border border-white/85 bg-white/75 px-2.5 py-1 text-[12px] font-medium text-[var(--accent)] hover:bg-white"
+                        onClick={() => {
+                          setSelectedRestoreArchiveId(archive.id);
+                          setRestoreModalOpen(true);
+                        }}
+                        className="rounded-lg border border-white/85 bg-white/75 px-2.5 py-1 text-[12px] font-medium text-[var(--accent-text)] hover:bg-white"
                       >
                         验证此备份
                       </button>
@@ -754,7 +784,7 @@ function SettingsPageBody({
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-[var(--text-secondary)]">私钥隔离</dt>
-                    <dd className="text-[#116b3b] font-medium">
+                    <dd className="font-medium text-[var(--success-text)]">
                       在线服务器仅持有加密公钥
                     </dd>
                   </div>
@@ -773,7 +803,7 @@ function SettingsPageBody({
                 title="防篡改哈希链校验"
                 subtitle="逐条验证审计事件序列连续性与 SHA-256 链尾摘要"
                 icon={<ShieldCheck className="size-4" />}
-                state={resolvedUiState ?? 'ready'}
+                state={data.auditIntegrityState}
                 onRetry={data.handlers.retryAll}
               >
                 {data.auditIntegrity ? (
@@ -781,8 +811,8 @@ function SettingsPageBody({
                     <div
                       className={
                         data.auditIntegrity.valid
-                          ? 'flex items-center gap-2 rounded-2xl border border-[#2fbf71]/28 bg-[#2fbf71]/[0.08] px-3.5 py-2.5 text-[13px] font-medium text-[#116b3b]'
-                          : 'flex items-center gap-2 rounded-2xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] px-3.5 py-2.5 text-[13px] font-medium text-[#a83838]'
+                          ? 'flex items-center gap-2 rounded-2xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--badge-green-text)]'
+                          : 'flex items-center gap-2 rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-2.5 text-[13px] font-medium text-[var(--badge-red-text)]'
                       }
                     >
                       {data.auditIntegrity.valid ? (
@@ -863,13 +893,13 @@ function SettingsPageBody({
               <dl className="space-y-2.5 rounded-2xl border border-white/75 bg-white/44 p-3.5 text-[13px]">
                 <div className="flex items-center justify-between gap-2">
                   <dt className="text-[var(--text-secondary)]">聚焦设置搜索</dt>
-                  <dd className="rounded-md border border-[#cdddf0] bg-white/80 px-2 py-0.5 font-mono text-[12px]">
-                    ⌘F / Ctrl+F
+                  <dd className="rounded-md border border-[var(--border)] bg-white/80 px-2 py-0.5 font-mono text-[12px]">
+                    ⌘K / Ctrl+K
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <dt className="text-[var(--text-secondary)]">切换分类标签</dt>
-                  <dd className="rounded-md border border-[#cdddf0] bg-white/80 px-2 py-0.5 font-mono text-[12px]">
+                  <dd className="rounded-md border border-[var(--border)] bg-white/80 px-2 py-0.5 font-mono text-[12px]">
                     ← / → / Home / End
                   </dd>
                 </div>
@@ -877,7 +907,7 @@ function SettingsPageBody({
                   <dt className="text-[var(--text-secondary)]">
                     关闭弹窗与抽屉
                   </dt>
-                  <dd className="rounded-md border border-[#cdddf0] bg-white/80 px-2 py-0.5 font-mono text-[12px]">
+                  <dd className="rounded-md border border-[var(--border)] bg-white/80 px-2 py-0.5 font-mono text-[12px]">
                     Esc
                   </dd>
                 </div>
@@ -923,7 +953,8 @@ function SettingsPageBody({
         ],
         confirmLabel: target.current ? '确认退出当前会话' : '确认终止会话',
         tone: 'danger' as const,
-        requireTotp: data.adminSecurity.stepUpTotpRequired,
+        requireTotp:
+          data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled,
         alwaysRequireCredentials: false,
         onConfirm: (verify?: { password?: string; totpCode?: string }) =>
           data.handlers.terminateSession(target.id, verify),
@@ -941,7 +972,8 @@ function SettingsPageBody({
         ],
         confirmLabel: '确认退出其他会话',
         tone: 'danger' as const,
-        requireTotp: data.adminSecurity.stepUpTotpRequired,
+        requireTotp:
+          data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled,
         alwaysRequireCredentials: false,
         onConfirm: (verify?: { password?: string; totpCode?: string }) =>
           data.handlers.logoutOtherSessions(verify),
@@ -1028,27 +1060,38 @@ function SettingsPageBody({
     sensitiveAction,
   ]);
 
+  const canUsePasskey =
+    data.webauthnCredentials.length > 0 && isWebAuthnSupported();
+  const requireStepUpTotp =
+    data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled;
+
   return (
     <>
       <SettingsLayout
         navAlpha={navAlpha}
+        onNavAlphaChange={handleNavAlphaChange}
         displaySettings={displaySettings}
+        onDisplaySettingsChange={handleDisplaySettingsChange}
         activeSection={activeSection}
         onSelectSection={handleSelectSection}
         onSelectWorkspaceNav={handleWorkspaceNavFallback}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
         runtime={data.runtime}
+        totpEnabled={data.totpSecurity.enabled}
         lastBackupLabel={data.backup.lastBackupAt ?? '尚未运行'}
-        notifications={[
-          '已启用防篡改哈希链审计与高风险操作最近重新验证。',
-          `最近加密备份：${data.backup.lastBackupAt ?? '尚未运行'}（${data.backup.statusLabel}）`,
-        ]}
+        notifications={
+          mode === 'live'
+            ? []
+            : [
+                '已启用防篡改哈希链审计与高风险操作最近重新验证。',
+                `最近加密备份：${data.backup.lastBackupAt ?? '尚未运行'}（${data.backup.statusLabel}）`,
+              ]
+        }
         onOpenSecurity={() => handleSelectSection('security')}
-        onOpenOperations={
-          onNavigateOperations
-            ? () => onNavigateOperations('status')
-            : undefined
+        onOpenRecoveryUsage={
+          onNavigateRecoveryUsage ??
+          (() => handleWorkspaceNavFallback('accounts'))
         }
         onLogout={() => {
           if (onLogout) onLogout();
@@ -1090,7 +1133,9 @@ function SettingsPageBody({
         open={passwordModalOpen}
         onOpenChange={setPasswordModalOpen}
         isRecentlyVerified={data.isRecentlyVerified}
-        requireStepUpTotp={data.adminSecurity.stepUpTotpRequired}
+        requireStepUpTotp={requireStepUpTotp}
+        canUsePasskey={canUsePasskey}
+        onPasskeyVerify={data.handlers.passkeyReverify}
         onSubmit={data.handlers.changePassword}
         onSuccess={(msg) => showToast(msg ?? '管理员密码已修改。', 'success')}
       />
@@ -1107,11 +1152,30 @@ function SettingsPageBody({
         }
       />
 
+      {/* 绑定 / 重绑 TOTP 验证器 Modal */}
+      <TotpSetupModal
+        open={totpSetupModalOpen}
+        onOpenChange={setTotpSetupModalOpen}
+        isRebind={data.totpSecurity.enabled}
+        isRecentlyVerified={data.isRecentlyVerified}
+        canUsePasskey={canUsePasskey}
+        onPasskeyVerify={data.handlers.passkeyReverify}
+        onStartSetup={data.handlers.startTotpSetup}
+        onConfirmSetup={data.handlers.confirmTotpSetup}
+        onSuccess={(msg) =>
+          showToast(msg ?? 'TOTP 验证器已更新，请妥善保存新恢复码。', 'success')
+        }
+      />
+
       {/* 步骤式恢复验证 Modal */}
       <RestoreVerifyModal
         open={restoreModalOpen}
-        onOpenChange={setRestoreModalOpen}
+        onOpenChange={(next) => {
+          setRestoreModalOpen(next);
+          if (!next) setSelectedRestoreArchiveId(null);
+        }}
         archives={data.backup.archives}
+        initialArchiveId={selectedRestoreArchiveId}
         onRunVerification={data.handlers.runRestoreVerification}
         onComplete={(report) => {
           showToast(
@@ -1131,8 +1195,10 @@ function SettingsPageBody({
         idleMinutes={data.runtime.idleMinutes}
         maxIdleMinutes={data.runtime.maxIdleMinutes}
         isRecentlyVerified={data.isRecentlyVerified}
-        requireStepUpTotp={data.adminSecurity.stepUpTotpRequired}
+        requireStepUpTotp={requireStepUpTotp}
         readOnlyRetentionDays={mode === 'live'}
+        canUsePasskey={canUsePasskey}
+        onPasskeyVerify={data.handlers.passkeyReverify}
         onSave={data.handlers.updateRetentionPolicy}
         onSuccess={(msg) =>
           showToast(msg ?? '日志保留与数据生命周期策略已更新。', 'success')
@@ -1157,9 +1223,7 @@ function SettingsPageBody({
           alwaysRequireCredentials={
             sensitiveDialogConfig.alwaysRequireCredentials
           }
-          canUsePasskey={
-            data.webauthnCredentials.length > 0 && isWebAuthnSupported()
-          }
+          canUsePasskey={canUsePasskey}
           onPasskeyVerify={data.handlers.passkeyReverify}
           onConfirm={sensitiveDialogConfig.onConfirm}
           onSuccess={(msg) => showToast(msg ?? '操作已完成。', 'success')}

@@ -33,6 +33,7 @@ CsvField = Literal[
 class CsvOptions(Input):
     mapping: dict[CsvField, int] | None = None
     strategy: Literal["skip", "update", "error"] = "skip"
+    skip_empty_fields: bool = False
 
     @model_validator(mode="after")
     def valid_mapping(self) -> Self:
@@ -64,6 +65,7 @@ class CsvPreview(BaseModel):
     expires_at: datetime | None
     mapping: dict[CsvField, int]
     strategy: Literal["skip", "update", "error"]
+    skip_empty_fields: bool = False
     columns: list[CsvColumn]
     rows: list[CsvRow]
     errors: list[CsvIssue]

@@ -35,7 +35,7 @@ export function ImportHistoryDialog({
       >
         <DialogHeader>
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]">
+            <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
               <History className="size-4" aria-hidden="true" />
             </span>
             <div>
@@ -87,18 +87,20 @@ export function ImportHistoryDialog({
                       {rec.strategyLabel}
                     </td>
                     <td className="px-3 py-2.5 tabular-nums text-[var(--text-primary)]">
-                      +{rec.created.toLocaleString('en-US')} / ~
-                      {rec.updated.toLocaleString('en-US')} / 跳过{' '}
-                      {rec.skipped.toLocaleString('en-US')}
+                      {rec.created !== null &&
+                      rec.updated !== null &&
+                      rec.skipped !== null
+                        ? `+${rec.created.toLocaleString('en-US')} / ~${rec.updated.toLocaleString('en-US')} / 跳过 ${rec.skipped.toLocaleString('en-US')}`
+                        : (rec.summaryText ?? '已写入审计日志')}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       {rec.status === 'committed' ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[#2fbf71]/25 bg-[#e7f8ef] px-2.5 py-0.5 text-[11px] font-medium text-[#116b3b]">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--badge-green-text)]">
                           <CheckCircle2 className="size-3" aria-hidden="true" />
                           已提交
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-[#e45d5d]/28 bg-[#fdecec] px-2.5 py-0.5 text-[11px] font-medium text-[#b93838]">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--badge-red-text)]">
                           <XCircle className="size-3" aria-hidden="true" />
                           已回滚
                         </span>
@@ -118,7 +120,7 @@ export function ImportHistoryDialog({
               onOpenChange(false);
               onOpenAuditLog();
             }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#1677ff]/25 bg-[#eaf3ff] px-3.5 text-[13px] font-semibold text-[#1158c7] hover:bg-[#dcebff]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-3.5 text-[13px] font-semibold text-[var(--badge-blue-text)] hover:brightness-95"
           >
             <FileText className="size-4" aria-hidden="true" />
             前往完整审计日志
@@ -157,7 +159,7 @@ export function ExportDataDialog({
       >
         <DialogHeader>
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]">
+            <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent)]">
               <Download className="size-4" aria-hidden="true" />
             </span>
             <div>
@@ -182,7 +184,7 @@ export function ExportDataDialog({
               value={scope}
               disabled={busy}
               onChange={(e) => setScope(e.target.value as 'all' | 'filtered')}
-              className="h-9.5 w-full rounded-xl border border-[#b9d0ec]/80 bg-white/88 px-3 text-[13px] font-medium text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
+              className="h-9.5 w-full rounded-xl border border-[var(--border)] bg-white/88 px-3 text-[13px] font-medium text-[var(--text-primary)] focus:border-[var(--accent)] focus:outline-none"
             >
               <option value="all">全部未删除账号（含归档）</option>
               <option value="filtered">当前筛选条件下的全部账号</option>
@@ -207,7 +209,7 @@ export function ExportDataDialog({
             type="button"
             disabled={busy}
             onClick={() => onConfirmExport(scope)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-white hover:bg-[var(--accent-hover)] disabled:opacity-55"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-semibold text-[var(--primary-foreground)] hover:bg-[var(--accent-hover)] disabled:opacity-55"
           >
             <Download className="size-3.5" aria-hidden="true" />
             <span>{busy ? '正在生成…' : '下载 CSV'}</span>

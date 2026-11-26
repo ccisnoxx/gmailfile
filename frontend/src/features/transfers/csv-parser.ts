@@ -415,12 +415,14 @@ export function evaluateParsedRows({
   mapping,
   strategy,
   conflictResolution,
+  skipEmptyFields = false,
   existingEmails = new Set<string>(),
 }: {
   rawRows: string[][];
   mapping: FieldMappingState;
   strategy: ImportStrategyOption;
   conflictResolution: ConflictResolutionOption;
+  skipEmptyFields?: boolean;
   existingEmails?: Set<string>;
 }): {
   rows: PreviewRow[];
@@ -524,7 +526,7 @@ export function evaluateParsedRows({
         reason: '辅助邮箱格式不正确',
         suggestion: '请填写有效的外部恢复邮箱地址',
       });
-    } else if (!recoveryRaw) {
+    } else if (!recoveryRaw && !(isExisting && skipEmptyFields)) {
       issues.push({
         field: 'recovery_email',
         fieldLabel: '辅助邮箱',

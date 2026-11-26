@@ -16,8 +16,9 @@ import {
   performPasskeyStepUp,
 } from '@/lib/webauthn';
 
-async function clipboardFingerprint(value: string) {
-  const bytes = await crypto.subtle.digest(
+async function clipboardFingerprint(value: string): Promise<string | null> {
+  if (!globalThis.crypto?.subtle) return null;
+  const bytes = await globalThis.crypto.subtle.digest(
     'SHA-256',
     new TextEncoder().encode(value),
   );
@@ -43,7 +44,7 @@ export function PasswordControl({
   const generation = useRef(0);
   const mounted = useRef(true);
   const expiry = useRef<number | undefined>(undefined);
-  const copied = useRef<Promise<string> | null>(null);
+  const copied = useRef<Promise<string | null> | null>(null);
   const clear = useCallback(() => {
     generation.current++;
     window.clearTimeout(expiry.current);
@@ -55,7 +56,10 @@ export function PasswordControl({
       void navigator.clipboard
         ?.readText()
         .then(async (text) => {
-          if ((await clipboardFingerprint(text)) === (await previous))
+          const prevHash = await previous;
+          if (!prevHash) return;
+          const currentHash = await clipboardFingerprint(text);
+          if (currentHash && currentHash === prevHash)
             return navigator.clipboard.writeText('');
         })
         .catch(() => {
@@ -284,8 +288,13 @@ export function PasswordControl({
                   mounted.current &&
                   ticket === generation.current &&
                   !document.hidden
-                )
+                ) {
+                  setMessage(
+                    (error as { error?: { message?: string } })?.error
+                      ?.message ?? '重新验证失败，请检查管理员凭据后重试。',
+                  );
                   onFailure(error);
+                }
               } finally {
                 setVerifying(false);
               }

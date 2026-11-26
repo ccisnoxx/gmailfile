@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *, [data-theme='dark'], [data-theme='dark'] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -27,9 +28,10 @@
   color-scheme: light;
 
   /* 共享 macOS 淡蓝桌面与语义色板 */
-  --desktop-start: #dceeff;
-  --desktop-mid: #c9e3ff;
-  --desktop-end: #afcfff;
+  --desktop-start: #d2e8ff;
+  --desktop-mid: #b9dbff;
+  --desktop-end: #9bc5ff;
+  --desktop-static-bg: #eef3f9;
   --accent: #0f62df;
   --accent-hover: #0a52c2;
   --accent-soft: #eaf3ff;
@@ -49,14 +51,16 @@
 
   /* 亚克力玻璃、导航透明度、圆角、阴影与动效变量 */
   --nav-alpha: 0.6;
+  --nav-rgb: 248, 252, 255;
   --nav-blur: 24px;
-  --nav-saturate: 145%;
-  --nav-bg: rgba(248, 252, 255, var(--nav-alpha));
+  --nav-saturate: 150%;
+  --nav-bg: rgba(var(--nav-rgb), var(--nav-alpha));
   --nav-border: rgba(255, 255, 255, 0.72);
   --nav-divider: rgba(148, 178, 214, 0.24);
   --nav-text-secondary: #475467;
 
-  --window-bg: rgba(248, 252, 255, 0.58);
+  --window-bg: transparent;
+  --main-tint: rgba(248, 252, 255, 0.26);
   --window-blur: 28px;
   --window-saturate: 135%;
   --window-border: rgba(255, 255, 255, 0.72);
@@ -104,11 +108,36 @@
   --muted-foreground: var(--text-secondary);
   --destructive: var(--danger);
   --border: rgba(173, 200, 232, 0.48);
-  --surface-control: rgba(255, 255, 255, 0.65);
-  --surface-control-hover: rgba(255, 255, 255, 0.9);
-  --surface-control-border: rgba(255, 255, 255, 0.8);
-  --surface-table-head: rgba(247, 251, 255, 0.9);
-  --surface-sticky-cell: rgba(255, 255, 255, 0.84);
+  --surface-control: rgba(255, 255, 255, 0.68);
+  --surface-control-hover: rgba(255, 255, 255, 0.92);
+  --surface-control-border: rgba(255, 255, 255, 0.82);
+  --surface-popover: rgba(253, 254, 255, 0.96);
+  --surface-toast: rgba(250, 253, 255, 0.96);
+  --surface-toast-success: rgba(244, 253, 248, 0.96);
+  --surface-toast-error: rgba(255, 245, 245, 0.96);
+  --surface-selected: rgba(234, 243, 255, 0.86);
+  --surface-table-head: rgba(244, 249, 255, 0.96);
+  --surface-sticky-cell: rgba(248, 251, 255, 0.97);
+  --accent-text: #0d4bb3;
+  --danger-text: #b42318;
+  --badge-blue-bg: #e8f2ff;
+  --badge-blue-text: #0f52ba;
+  --badge-blue-border: rgba(22, 119, 255, 0.22);
+  --badge-green-bg: #e6f7ee;
+  --badge-green-text: #116b3b;
+  --badge-green-border: rgba(47, 191, 113, 0.25);
+  --badge-orange-bg: #fef3df;
+  --badge-orange-text: #8a5000;
+  --badge-orange-border: rgba(245, 166, 35, 0.3);
+  --badge-red-bg: #fdecec;
+  --badge-red-text: #b42318;
+  --badge-red-border: rgba(228, 93, 93, 0.3);
+  --badge-purple-bg: #efeafd;
+  --badge-purple-text: #5637cf;
+  --badge-purple-border: rgba(132, 104, 245, 0.24);
+  --badge-gray-bg: #eef2f6;
+  --badge-gray-text: #475467;
+  --badge-gray-border: rgba(152, 162, 179, 0.28);
 }
 
 /* 深色模式：macOS 深海亚克力毛玻璃与 WCAG 2.2 AA 高对比语义色板 */
@@ -119,9 +148,10 @@
   --desktop-start: #09111f;
   --desktop-mid: #0e1a2e;
   --desktop-end: #152540;
-  --accent: #5aa2ff;
-  --accent-hover: #7bb6ff;
-  --accent-soft: rgba(90, 162, 255, 0.2);
+  --desktop-static-bg: #0d1626;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-soft: rgba(59, 130, 246, 0.22);
   --text-primary: #f1f5fb;
   --text-secondary: #b8c7dc;
   --success: #34d399;
@@ -136,50 +166,77 @@
   --purple-soft: rgba(167, 139, 250, 0.2);
   --purple-text: #ddd6fe;
 
-  --nav-bg: rgba(16, 26, 44, var(--nav-alpha));
+  --nav-rgb: 16, 26, 44;
+  --nav-bg: rgba(var(--nav-rgb), var(--nav-alpha));
   --nav-border: rgba(148, 178, 214, 0.24);
   --nav-divider: rgba(148, 178, 214, 0.2);
   --nav-text-secondary: #c7d5e8;
 
-  --window-bg: rgba(14, 23, 39, 0.78);
+  --window-bg: transparent;
+  --main-tint: rgba(14, 23, 39, 0.28);
   --window-border: rgba(148, 178, 214, 0.24);
   --window-shadow:
     0 24px 80px rgba(2, 6, 18, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
-  --panel-bg: rgba(21, 33, 54, 0.72);
-  --panel-bg-strong: rgba(24, 38, 62, 0.86);
-  --panel-bg-hover: rgba(31, 47, 76, 0.9);
+  --panel-bg: rgba(21, 33, 54, 0.78);
+  --panel-bg-strong: rgba(24, 38, 62, 0.9);
+  --panel-bg-hover: rgba(31, 47, 76, 0.92);
   --panel-border: rgba(148, 178, 214, 0.22);
   --panel-shadow:
     0 8px 28px rgba(2, 6, 18, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07);
   --panel-shadow-hover:
     0 12px 32px rgba(2, 6, 18, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 
-  --modal-bg: rgba(17, 27, 45, 0.94);
+  --modal-bg: rgba(15, 25, 42, 0.96);
   --modal-border: rgba(148, 178, 214, 0.28);
   --modal-shadow:
-    0 28px 80px rgba(2, 6, 18, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 28px 80px rgba(2, 6, 18, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
   --table-divider: rgba(148, 178, 214, 0.18);
-  --table-row-hover: rgba(148, 178, 214, 0.09);
-  --table-row-selected: rgba(90, 162, 255, 0.2);
+  --table-row-hover: rgba(148, 178, 214, 0.1);
+  --table-row-selected: rgba(59, 130, 246, 0.22);
 
   --background: #0d1626;
   --foreground: var(--text-primary);
-  --card: rgba(21, 33, 54, 0.88);
+  --card: rgba(21, 33, 54, 0.9);
   --primary: var(--accent);
-  --primary-foreground: #071224;
-  --secondary: rgba(90, 162, 255, 0.18);
+  --primary-foreground: #ffffff;
+  --secondary: rgba(59, 130, 246, 0.2);
   --secondary-foreground: #dbeafe;
-  --muted: rgba(34, 50, 78, 0.72);
+  --muted: rgba(34, 50, 78, 0.78);
   --muted-foreground: var(--text-secondary);
   --destructive: var(--danger);
   --border: rgba(148, 178, 214, 0.26);
-  --surface-control: rgba(28, 43, 70, 0.78);
-  --surface-control-hover: rgba(39, 58, 92, 0.92);
+  --surface-control: rgba(28, 43, 70, 0.86);
+  --surface-control-hover: rgba(41, 61, 96, 0.96);
   --surface-control-border: rgba(148, 178, 214, 0.28);
-  --surface-table-head: rgba(18, 29, 49, 0.94);
-  --surface-sticky-cell: rgba(20, 32, 53, 0.92);
+  --surface-popover: rgba(16, 26, 44, 0.97);
+  --surface-toast: rgba(20, 33, 56, 0.97);
+  --surface-toast-success: rgba(14, 46, 36, 0.97);
+  --surface-toast-error: rgba(58, 22, 28, 0.97);
+  --surface-selected: rgba(59, 130, 246, 0.24);
+  --surface-table-head: rgba(17, 28, 48, 0.97);
+  --surface-sticky-cell: rgba(20, 32, 54, 0.98);
+  --accent-text: #93c5fd;
+  --danger-text: #fca5a5;
+  --badge-blue-bg: rgba(59, 130, 246, 0.22);
+  --badge-blue-text: #93c5fd;
+  --badge-blue-border: rgba(96, 165, 250, 0.34);
+  --badge-green-bg: rgba(16, 185, 129, 0.2);
+  --badge-green-text: #86efac;
+  --badge-green-border: rgba(52, 211, 153, 0.32);
+  --badge-orange-bg: rgba(245, 158, 11, 0.22);
+  --badge-orange-text: #fde68a;
+  --badge-orange-border: rgba(251, 191, 36, 0.34);
+  --badge-red-bg: rgba(239, 68, 68, 0.22);
+  --badge-red-text: #fca5a5;
+  --badge-red-border: rgba(248, 113, 113, 0.34);
+  --badge-purple-bg: rgba(139, 92, 246, 0.24);
+  --badge-purple-text: #ddd6fe;
+  --badge-purple-border: rgba(167, 139, 250, 0.34);
+  --badge-gray-bg: rgba(148, 163, 184, 0.2);
+  --badge-gray-text: #cbd5e1;
+  --badge-gray-border: rgba(148, 163, 184, 0.32);
 }
 
 :root[data-theme='dark'] .macos-desktop-bg {
@@ -207,39 +264,127 @@
     );
 }
 
-/* 深色模式下兼容历史组件里的浅色亚克力表面与次级灰字，确保全页面满足 WCAG 2.2 AA 对比度 */
-:root[data-theme='dark'] [class*='bg-white/'],
-:root[data-theme='dark'] [class*='bg-[#f7fbff]'],
-:root[data-theme='dark'] [class*='bg-[rgba(253,254,255'] {
+/* 深色模式精准兜底：仅匹配独立常态类名，绝不误伤 hover:/focus: 变体 */
+:root[data-theme='dark'] [class^='bg-white/'],
+:root[data-theme='dark'] [class*=' bg-white/'],
+:root[data-theme='dark'] [class^='bg-[#f7fbff]'],
+:root[data-theme='dark'] [class*=' bg-[#f7fbff]'],
+:root[data-theme='dark'] [class^='bg-[rgba(253,254,255'],
+:root[data-theme='dark'] [class*=' bg-[rgba(253,254,255'],
+:root[data-theme='dark'] [class^='bg-[rgba(250,253,255'],
+:root[data-theme='dark'] [class*=' bg-[rgba(250,253,255'],
+:root[data-theme='dark'] [class^='bg-[rgba(248,252,255'],
+:root[data-theme='dark'] [class*=' bg-[rgba(248,252,255'],
+:root[data-theme='dark'] [class^='bg-[rgba(244,249,255'],
+:root[data-theme='dark'] [class*=' bg-[rgba(244,249,255'],
+:root[data-theme='dark'] [class^='bg-[rgba(242,248,255'],
+:root[data-theme='dark'] [class*=' bg-[rgba(242,248,255'] {
   background-color: var(--surface-control) !important;
 }
 
-:root[data-theme='dark'] [class*='border-white/'] {
+:root[data-theme='dark'] [class*='hover:bg-white']:hover {
+  background-color: var(--surface-control-hover) !important;
+}
+
+:root[data-theme='dark'] [class*='focus:bg-white']:focus {
+  background-color: var(--surface-control-hover) !important;
+}
+
+:root[data-theme='dark'] [class^='bg-[#eaf3ff'],
+:root[data-theme='dark'] [class*=' bg-[#eaf3ff'],
+:root[data-theme='dark'] [class^='bg-[#e8f2ff'],
+:root[data-theme='dark'] [class*=' bg-[#e8f2ff'] {
+  background-color: var(--badge-blue-bg) !important;
+}
+
+:root[data-theme='dark'] [class^='bg-[#e7f8ef'],
+:root[data-theme='dark'] [class*=' bg-[#e7f8ef'],
+:root[data-theme='dark'] [class^='bg-[#e6f7ee'],
+:root[data-theme='dark'] [class*=' bg-[#e6f7ee'],
+:root[data-theme='dark'] [class^='bg-[rgba(246,253,249'],
+:root[data-theme='dark'] [class*=' bg-[rgba(246,253,249'] {
+  background-color: var(--badge-green-bg) !important;
+}
+
+:root[data-theme='dark'] [class^='bg-[#fef3df'],
+:root[data-theme='dark'] [class*=' bg-[#fef3df'],
+:root[data-theme='dark'] [class^='bg-[#fff7e6'],
+:root[data-theme='dark'] [class*=' bg-[#fff7e6'],
+:root[data-theme='dark'] [class^='bg-[#fef6df'],
+:root[data-theme='dark'] [class*=' bg-[#fef6df'] {
+  background-color: var(--badge-orange-bg) !important;
+}
+
+:root[data-theme='dark'] [class^='bg-[#fdecec'],
+:root[data-theme='dark'] [class*=' bg-[#fdecec'],
+:root[data-theme='dark'] [class^='bg-[#fff5f5'],
+:root[data-theme='dark'] [class*=' bg-[#fff5f5'],
+:root[data-theme='dark'] [class^='bg-[#fff7f7'],
+:root[data-theme='dark'] [class*=' bg-[#fff7f7'],
+:root[data-theme='dark'] [class^='bg-[rgba(255,246,246'],
+:root[data-theme='dark'] [class*=' bg-[rgba(255,246,246'] {
+  background-color: var(--badge-red-bg) !important;
+}
+
+:root[data-theme='dark'] [class^='bg-[#efeafd'],
+:root[data-theme='dark'] [class*=' bg-[#efeafd'] {
+  background-color: var(--badge-purple-bg) !important;
+}
+
+:root[data-theme='dark'] [class^='bg-[#eef2f6'],
+:root[data-theme='dark'] [class*=' bg-[#eef2f6'],
+:root[data-theme='dark'] [class^='bg-[#eef2f7'],
+:root[data-theme='dark'] [class*=' bg-[#eef2f7'] {
+  background-color: var(--badge-gray-bg) !important;
+}
+
+:root[data-theme='dark'] [class^='border-white/'],
+:root[data-theme='dark'] [class*=' border-white/'] {
   border-color: var(--surface-control-border) !important;
 }
 
 :root[data-theme='dark'] [class*='text-[#475467]'],
-:root[data-theme='dark'] [class*='text-[#3b475c]'] {
+:root[data-theme='dark'] [class*='text-[#3b475c]'],
+:root[data-theme='dark'] [class*='text-[#526074]'],
+:root[data-theme='dark'] [class*='text-[#667085]'] {
   color: var(--text-secondary) !important;
 }
 
 :root[data-theme='dark'] [class*='text-[#0d4bb3]'],
 :root[data-theme='dark'] [class*='text-[#1158c7]'],
-:root[data-theme='dark'] [class*='text-[#1565d8]'] {
-  color: #93c5fd !important;
+:root[data-theme='dark'] [class*='text-[#1565d8]'],
+:root[data-theme='dark'] [class*='text-[#0f52ba]'],
+:root[data-theme='dark'] [class*='text-[#0f62df]'] {
+  color: var(--accent-text) !important;
 }
 
 :root[data-theme='dark'] [class*='text-[#b84040]'],
-:root[data-theme='dark'] [class*='text-[#a83838]'] {
-  color: #fca5a5 !important;
+:root[data-theme='dark'] [class*='text-[#a83838]'],
+:root[data-theme='dark'] [class*='text-[#b43636]'],
+:root[data-theme='dark'] [class*='text-[#c54646]'],
+:root[data-theme='dark'] [class*='text-[#b93838]'],
+:root[data-theme='dark'] [class*='text-[#8f2e2e]'],
+:root[data-theme='dark'] [class*='text-[#b42318]'] {
+  color: var(--danger-text) !important;
 }
 
-:root[data-theme='dark'] [class*='text-[#116b3b]'] {
+:root[data-theme='dark'] [class*='text-[#116b3b]'],
+:root[data-theme='dark'] [class*='text-[#147240]'],
+:root[data-theme='dark'] [class*='text-[#14683b]'] {
   color: var(--success-text) !important;
 }
 
+:root[data-theme='dark'] [class*='text-[#8a5000]'],
+:root[data-theme='dark'] [class*='text-[#9a5c05]'] {
+  color: var(--warning-text) !important;
+}
+
+:root[data-theme='dark'] [class*='text-[#5637cf]'] {
+  color: var(--purple-text) !important;
+}
+
 :root[data-theme='dark'] [data-slot='flowing-background'] {
-  opacity: 0.24;
+  opacity: 0.44;
 }
 
 @layer base {
@@ -269,6 +414,12 @@
   }
 }
 
+/* 主题切换瞬间禁用过渡，避免深浅色过渡期间出现半浅半深闪烁 */
+.theme-switching,
+.theme-switching * {
+  transition: none !important;
+}
+
 /* macOS 亚克力表面与交互类 */
 .macos-desktop-bg {
   background:
@@ -295,25 +446,29 @@
     );
 }
 
+.macos-desktop-bg[data-flowing-bg='false'] {
+  background: var(--desktop-static-bg) !important;
+}
+
 .macos-window {
   background: var(--window-bg);
-  backdrop-filter: blur(var(--window-blur)) saturate(var(--window-saturate));
-  -webkit-backdrop-filter: blur(var(--window-blur))
-    saturate(var(--window-saturate));
-  border: 1px solid var(--window-border);
-  border-radius: var(--window-radius);
-  box-shadow: var(--window-shadow);
+}
+
+.macos-window main {
+  background: var(--main-tint);
+}
+
+.macos-desktop-bg[data-flowing-bg='false'] .macos-window main {
+  background: transparent;
 }
 
 .macos-nav-surface {
-  background: var(--nav-bg);
+  background: rgba(var(--nav-rgb), var(--nav-alpha));
   backdrop-filter: blur(var(--nav-blur)) saturate(var(--nav-saturate));
   -webkit-backdrop-filter: blur(var(--nav-blur)) saturate(var(--nav-saturate));
   /* 在 35% 最低毛玻璃透明度下确保次级文字仍满足 WCAG AA (≥4.5:1) 对比度 */
   --text-secondary: var(--nav-text-secondary);
-  transition:
-    background-color var(--motion-duration) var(--motion-ease),
-    box-shadow var(--motion-duration) var(--motion-ease);
+  transition: box-shadow var(--motion-duration) var(--motion-ease);
 }
 
 .macos-glass-panel {
@@ -347,6 +502,30 @@
   -webkit-backdrop-filter: blur(var(--modal-blur)) saturate(145%);
   border: 1px solid var(--modal-border);
   box-shadow: var(--modal-shadow);
+}
+
+.macos-tooltip {
+  background: rgba(23, 32, 51, 0.94);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.macos-tooltip-arrow {
+  background: rgba(23, 32, 51, 0.94);
+}
+
+:root[data-theme='dark'] .macos-tooltip {
+  background: rgba(30, 47, 77, 0.96);
+  color: #f1f5fb;
+  border: 1px solid rgba(148, 178, 214, 0.3);
+  box-shadow: 0 10px 26px rgba(2, 6, 18, 0.55);
+}
+
+:root[data-theme='dark'] .macos-tooltip-arrow {
+  background: rgba(30, 47, 77, 0.96);
 }
 
 /* macOS 细滑块 */
@@ -400,6 +579,12 @@
     box-shadow var(--motion-duration) var(--motion-ease);
 }
 
+.macos-slider:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 0 0 3px rgba(22, 119, 255, 0.36),
+    0 1px 4px rgba(23, 32, 51, 0.22);
+}
+
 /* macOS 加载旋转动画 */
 @keyframes macos-spin {
   to {
@@ -418,12 +603,12 @@
     transform: translate3d(0, 0, 0) scale(1);
   }
   50% {
-    transform: translate3d(-1.5%, 1%, 0) scale(1.025);
+    transform: translate3d(-3%, 1.8%, 0) scale(1.05);
   }
 }
 
 .macos-flowing-bg {
-  animation: macos-wave-drift 18s ease-in-out infinite;
+  animation: macos-wave-drift 10s ease-in-out infinite;
   will-change: transform;
 }
 
@@ -507,10 +692,62 @@
   transform: none;
 }
 
-/* 紧凑模式密度变量 */
+/* 紧凑模式密度变量与全站间距收紧 */
 [data-compact='true'] {
   --detail-pad: 14px;
-  --detail-gap: 12px;
+  --detail-gap: 10px;
+}
+
+[data-compact='true'] [data-slot='glass-toolbar'] {
+  min-height: 50px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+[data-compact='true'] [data-slot='primary-sidebar'] {
+  padding: 10px 12px;
+  gap: 12px;
+}
+
+[data-compact='true'] [data-slot='primary-sidebar'] section {
+  padding-top: 10px;
+}
+
+[data-compact='true'] [data-slot='primary-sidebar'] section:first-child {
+  padding-top: 0;
+}
+
+[data-compact='true'] [data-slot='primary-sidebar'] button {
+  height: 31px;
+  font-size: 12.5px;
+}
+
+[data-compact='true'] [data-slot='app-window-shell'] main {
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+[data-compact='true'] [data-slot='stat-card'] {
+  padding: 8px 12px;
+}
+
+[data-compact='true'] table thead tr {
+  height: 36px;
+}
+
+[data-compact='true'] table tbody tr {
+  height: 36px;
+}
+
+[data-compact='true'] table th {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+[data-compact='true'] table td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 12.5px;
 }
 
 @media (prefers-reduced-motion: reduce) {

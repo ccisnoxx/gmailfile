@@ -11,13 +11,19 @@ import {
   AppWindowShell,
   EmptyState,
   GlassToolbar,
+  IconTooltip,
   LoadingState,
+  MobilePrimaryNavMenu,
+  persistDisplaySettings,
   persistNavAlpha,
   PrimarySidebar,
+  readDisplaySettings,
   readStoredNavAlpha,
   StatusPill,
+  subscribeDisplaySettings,
   subscribeNavAlpha,
   TagPill,
+  type DisplaySettingsState,
   type SidebarSectionKey,
   type TopNavKey,
 } from '@/components/macos';
@@ -116,7 +122,11 @@ function AccountsPreviewBody({
   goList,
 }: PreviewRouterProps) {
   const [navAlpha, setNavAlpha] = useState<number>(() => readStoredNavAlpha());
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettingsState>(
+    () => readDisplaySettings(),
+  );
   useEffect(() => subscribeNavAlpha(setNavAlpha), []);
+  useEffect(() => subscribeDisplaySettings(setDisplaySettings), []);
   const [accounts, setAccounts] = useState<AccountDetail[]>(() =>
     createMockAccounts(),
   );
@@ -159,6 +169,9 @@ function AccountsPreviewBody({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        if (document.querySelector('[role="dialog"], [role="alertdialog"]')) {
+          return;
+        }
         event.preventDefault();
         searchRef.current?.focus();
       }
@@ -181,6 +194,11 @@ function AccountsPreviewBody({
       } else {
         if (isDeleted) return false;
         if (section === 'normal' && account.status !== 'normal') return false;
+        if (
+          section === 'pending' &&
+          account.status !== 'pending_verification'
+        )
+          return false;
         if (
           section === 'risk' &&
           !['restricted', 'login_failed'].includes(account.status)
@@ -253,9 +271,13 @@ function AccountsPreviewBody({
 
   const sidebarCounts = useMemo(() => {
     const addedDelta = Math.max(0, accounts.length - 8);
+    const pending = accounts.filter(
+      (a) => a.deleted_at === null && a.status === 'pending_verification',
+    ).length;
     return {
       all: MOCK_COUNTS.all + addedDelta,
       normal: MOCK_COUNTS.normal + addedDelta,
+      pending,
       risk: MOCK_COUNTS.risk,
       disabled: MOCK_COUNTS.disabled,
       archived: MOCK_COUNTS.archived,
@@ -266,6 +288,7 @@ function AccountsPreviewBody({
   const stats: AccountStatsData = {
     all: sidebarCounts.all,
     normal: sidebarCounts.normal,
+    pending: sidebarCounts.pending,
     addedThisMonth: MOCK_COUNTS.addedThisMonth,
     risk: sidebarCounts.risk,
     disabled: sidebarCounts.disabled,
@@ -396,6 +419,15 @@ function AccountsPreviewBody({
             row_version: item.row_version + 1,
           };
         }
+        if (action === 'unarchive') {
+          return {
+            ...item,
+            status: 'normal',
+            archived_at: null,
+            updated_at: now,
+            row_version: item.row_version + 1,
+          };
+        }
         if (action === 'delete') {
           return {
             ...item,
@@ -436,24 +468,32 @@ function AccountsPreviewBody({
   return (
     <AppWindowShell
       navAlpha={navAlpha}
+      flowingBackground={displaySettings.flowingBackground}
+      animationsEnabled={displaySettings.animationsEnabled}
+      compactMode={displaySettings.compactMode}
+      mobileDrawerHeader={
+        <MobilePrimaryNavMenu
+          activeNav="accounts"
+          onSelectNav={handleTopNav}
+        />
+      }
       toolbar={
         <GlassToolbar
-          activeNav={viewMode === 'chart' ? 'dashboard' : 'accounts'}
+          activeNav="accounts"
           navAlpha={navAlpha}
           onNavAlphaChange={handleNavAlphaChange}
+          displaySettings={displaySettings}
+          onDisplaySettingsChange={(next) => {
+            setDisplaySettings(next);
+            persistDisplaySettings(next);
+          }}
           onSelectNav={handleTopNav}
           onOpenSecurity={() => setNotice('安全设置（预览模式）')}
           onToggleShowcase={() => setShowShowcase((prev) => !prev)}
           showcaseActive={showShowcase}
           onLogout={() => setNotice('当前为预览模式，未创建登录会话。')}
-          notifications={
-            notice
-              ? [notice]
-              : [
-                  'backup.main@gmail.com 存在异地登录提醒，建议核查。',
-                  '导航栏毛玻璃透明度支持实时调节并自动保存。',
-                ]
-          }
+          notifications={notice ? [notice] : []}
+          onClearNotifications={() => setNotice('')}
         />
       }
       sidebar={
@@ -474,7 +514,6 @@ function AccountsPreviewBody({
             setSelected({});
           }}
           onAddTag={() => setTagModalOpen(true)}
-          onOpenAudit={() => setNotice('审计日志入口（预览模式）')}
           onOpenBackup={() => setNotice('备份与恢复入口（预览模式）')}
         />
       }
@@ -500,7 +539,7 @@ function AccountsPreviewBody({
               ref={searchRef}
               type="search"
               aria-label="搜索账号"
-              placeholder="搜索邮箱、辅助邮箱、备注…"
+              placeholder="搜索邮箱、辅助邮箱或备注"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -510,60 +549,66 @@ function AccountsPreviewBody({
             />
             <kbd
               aria-hidden="true"
-              className="pointer-events-none absolute right-2.5 rounded-md border border-[#cdddf0] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
+              className="pointer-events-none absolute right-2.5 rounded-md border border-[var(--border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
             >
               ⌘K
             </kbd>
           </div>
 
-          <button
-            type="button"
-            aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen((o) => !o)}
-            className={cn(
-              'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-[13px] font-medium transition-all duration-[180ms] ease-out',
-              filtersOpen || statusFilter || twoFaFilter || archivedFilter
-                ? 'border-[#1677ff]/30 bg-[var(--accent-soft)] text-[var(--accent)]'
-                : 'border-white/80 bg-white/65 text-[var(--text-primary)] hover:-translate-y-[1px] hover:bg-white/85',
-            )}
-          >
-            <Filter className="size-3.5" aria-hidden="true" />
-            <span>筛选</span>
-          </button>
+          <IconTooltip label={filtersOpen ? '收起筛选条件' : '展开筛选条件'}>
+            <button
+              type="button"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((o) => !o)}
+              className={cn(
+                'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-[13px] font-medium transition-all duration-[180ms] ease-out',
+                filtersOpen || statusFilter || twoFaFilter || archivedFilter
+                  ? 'border-[var(--accent)]/30 bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                  : 'border-white/80 bg-white/65 text-[var(--text-primary)] hover:-translate-y-[1px] hover:bg-white/85',
+              )}
+            >
+              <Filter className="size-3.5" aria-hidden="true" />
+              <span>筛选</span>
+            </button>
+          </IconTooltip>
 
           <div
             role="group"
             aria-label="视图切换"
             className="inline-flex h-9 items-center rounded-xl border border-white/80 bg-white/60 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
           >
-            <button
-              type="button"
-              aria-label="列表视图"
-              aria-pressed={viewMode === 'list'}
-              onClick={() => setViewMode('list')}
-              className={cn(
-                'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
-                viewMode === 'list'
-                  ? 'bg-[var(--accent)] text-white shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
-              )}
-            >
-              <List className="size-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label="图表视图"
-              aria-pressed={viewMode === 'chart'}
-              onClick={() => setViewMode('chart')}
-              className={cn(
-                'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
-                viewMode === 'chart'
-                  ? 'bg-[var(--accent)] text-white shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
-              )}
-            >
-              <BarChart3 className="size-4" aria-hidden="true" />
-            </button>
+            <IconTooltip label="列表视图">
+              <button
+                type="button"
+                aria-label="列表视图"
+                aria-pressed={viewMode === 'list'}
+                onClick={() => setViewMode('list')}
+                className={cn(
+                  'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
+                  viewMode === 'list'
+                    ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                )}
+              >
+                <List className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+            <IconTooltip label="图表视图">
+              <button
+                type="button"
+                aria-label="图表视图"
+                aria-pressed={viewMode === 'chart'}
+                onClick={() => setViewMode('chart')}
+                className={cn(
+                  'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
+                  viewMode === 'chart'
+                    ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                )}
+              >
+                <BarChart3 className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
           </div>
 
           <button
@@ -572,7 +617,7 @@ function AccountsPreviewBody({
               setEditingAccount(null);
               setFormMode('new');
             }}
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_8px_20px_rgba(22,119,255,0.28)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_8px_20px_rgba(22,119,255,0.28)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
           >
             <Plus className="size-4" aria-hidden="true" />
             <span>新建账号</span>
@@ -809,18 +854,33 @@ function AccountsPreviewBody({
                   </Button>
                 ) : (
                   <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setConfirmAction({
-                          account: activeDetail,
-                          action: 'archive',
-                        })
-                      }
-                    >
-                      归档
-                    </Button>
+                    {activeDetail.status === 'archived' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setConfirmAction({
+                            account: activeDetail,
+                            action: 'unarchive',
+                          })
+                        }
+                      >
+                        取消归档
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setConfirmAction({
+                            account: activeDetail,
+                            action: 'archive',
+                          })
+                        }
+                      >
+                        归档
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="destructive"

@@ -13,27 +13,32 @@ const subscribe = (notify: () => void) => {
 export type AccountLocationChange = (
   values: Record<string, string>,
   reset?: boolean,
+  replace?: boolean,
 ) => void;
 
 export function useAccountLocation() {
   const search = useSyncExternalStore(subscribe, () => window.location.search);
   const params = useMemo(() => new URLSearchParams(search), [search]);
-  const change = useCallback<AccountLocationChange>((values, reset = false) => {
-    const next = reset
-      ? new URLSearchParams()
-      : new URLSearchParams(window.location.search);
-    for (const [key, value] of Object.entries(values)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
-    }
-    if (!('page' in values)) next.delete('page');
-    window.history.pushState(
-      null,
-      '',
-      `${window.location.pathname}${next.size ? '?' + next : ''}`,
-    );
-    window.dispatchEvent(new Event('accounts-query'));
-  }, []);
+  const change = useCallback<AccountLocationChange>(
+    (values, reset = false, replace = false) => {
+      const next = reset
+        ? new URLSearchParams()
+        : new URLSearchParams(window.location.search);
+      for (const [key, value] of Object.entries(values)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      if (!('page' in values)) next.delete('page');
+      const nextUrl = `${window.location.pathname}${next.size ? '?' + next : ''}`;
+      if (replace) {
+        window.history.replaceState(null, '', nextUrl);
+      } else {
+        window.history.pushState(null, '', nextUrl);
+      }
+      window.dispatchEvent(new Event('accounts-query'));
+    },
+    [],
+  );
   return { params, change, search };
 }
 
@@ -57,11 +62,33 @@ export function dateBoundary(value: string, nextDay = false) {
 export function accountQuery(
   params: URLSearchParams,
 ): NonNullable<AccountsListData['query']> {
+  const rawStatuses = params.get('statuses');
+  const parsedStatuses = rawStatuses
+    ? rawStatuses
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+  const rawPage = Number(params.get('page') || 1);
+  const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
+  const rawPageSize = params.has('page_size')
+    ? Number(params.get('page_size'))
+    : undefined;
+  const pageSize =
+    rawPageSize !== undefined &&
+    Number.isInteger(rawPageSize) &&
+    rawPageSize >= 1
+      ? rawPageSize
+      : undefined;
+
   return {
     search: params.get('search') || undefined,
     status: (params.get('status') || undefined) as NonNullable<
       AccountsListData['query']
     >['status'],
+    statuses: parsedStatuses.length
+      ? (parsedStatuses as NonNullable<AccountsListData['query']>['statuses'])
+      : undefined,
     purpose: params.get('purpose') || undefined,
     tag: params.get('tag') || undefined,
     two_factor_status: (params.get('two_factor_status') ||
@@ -76,10 +103,8 @@ export function accountQuery(
     sort: (params.get('sort') || '-account_no') as NonNullable<
       AccountsListData['query']
     >['sort'],
-    page: Number(params.get('page') || 1),
-    page_size: params.has('page_size')
-      ? Number(params.get('page_size'))
-      : undefined,
+    page,
+    page_size: pageSize,
   };
 }
 

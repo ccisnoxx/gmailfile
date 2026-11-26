@@ -15,6 +15,7 @@ import {
   accountsMarkVerified,
   accountsPatch,
   accountsRestore,
+  accountsUnarchive,
 } from '@/api/generated';
 import { actionLabels, type AccountAction } from './constants';
 
@@ -102,6 +103,7 @@ export function useAccountDetail({
     setBusy(false);
     setDrawer(false);
     setForm(null);
+    setConfirm(null);
     setDetail(null);
     setConflict(false);
     setSecretEpoch((n) => n + 1);
@@ -118,9 +120,12 @@ export function useAccountDetail({
     const hidden = () => {
       if (document.hidden) {
         generation.current++;
+        setBusy(false);
         setDrawer(false);
         setForm(null);
+        setConfirm(null);
         setDetail(null);
+        setConflict(false);
         setSecretEpoch((n) => n + 1);
       }
     };
@@ -236,6 +241,7 @@ export function useAccountDetail({
       await run(async () => {
         const fn = {
           archive: accountsArchive,
+          unarchive: accountsUnarchive,
           delete: accountsDelete,
           restore: accountsRestore,
           verified: accountsMarkVerified,

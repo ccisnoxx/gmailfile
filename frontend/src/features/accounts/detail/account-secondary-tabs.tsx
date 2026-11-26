@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
   Copy,
   Database,
@@ -13,6 +14,7 @@ import {
 import type { AccountDetail, SessionResponse } from '@/api/generated';
 import { GlassPanel } from '@/components/macos';
 import { CredentialForm } from '@/features/auth/credential-form';
+import { cn } from '@/lib/utils';
 import type { ActivityTimelineItem } from './activity-timeline';
 import { formatDetailDateTime, maskPhoneNumber } from './detail-mock-fixtures';
 import { PASSWORD_MASK_TEXT, usePasswordSecret } from './use-password-secret';
@@ -53,7 +55,7 @@ export function SecurityCredentialsTabPanel({
       className="space-y-4 rounded-[18px] p-[var(--detail-pad,20px)]"
     >
       <div className="flex items-center gap-2.5 border-b border-[var(--table-divider)] pb-3.5">
-        <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]">
+        <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]">
           <KeyRound className="size-4" aria-hidden="true" />
         </span>
         <div>
@@ -115,7 +117,18 @@ export function SecurityCredentialsTabPanel({
             </p>
           )}
           {secret.reauth && session && (
-            <div className="mt-3 rounded-xl border border-[#1677ff]/25 bg-white/85 p-3">
+            <div className="mt-3 space-y-2.5 rounded-xl border border-[var(--accent)]/25 bg-[var(--surface-popover)] p-3">
+              {secret.canUsePasskey && (
+                <button
+                  type="button"
+                  disabled={secret.verifying}
+                  onClick={() => void secret.reverifyWithPasskey()}
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-3 text-xs font-medium text-[var(--accent-text)] transition-colors hover:brightness-95 disabled:opacity-50"
+                >
+                  <KeyRound className="size-3.5" aria-hidden="true" />
+                  <span>使用通行密钥（Passkey）验证</span>
+                </button>
+              )}
               <CredentialForm
                 kind="reverify"
                 busy={secret.verifying}
@@ -139,7 +152,14 @@ export function SecurityCredentialsTabPanel({
           <dl className="mt-3 space-y-2 text-xs">
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--text-secondary)]">二步验证状态</dt>
-              <dd className="font-medium text-[#116b3b]">
+              <dd
+                className={cn(
+                  'font-medium',
+                  account.two_factor_status === 'enabled'
+                    ? 'text-[var(--success-text)]'
+                    : 'text-[var(--text-secondary)]',
+                )}
+              >
                 {account.two_factor_status === 'enabled'
                   ? '已启用（TOTP）'
                   : account.two_factor_status === 'disabled'
@@ -181,13 +201,26 @@ export function ContactsTabPanel({
 }) {
   const [showPhone, setShowPhone] = useState(false);
 
+  // 切换账号或隐藏标签页时必须立即重新遮蔽手机号，防止缓存详情复用导致明文串显。
+  useEffect(() => {
+    setShowPhone(false);
+  }, [account.id]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) setShowPhone(false);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   return (
     <GlassPanel
       variant="strong"
       className="space-y-4 rounded-[18px] p-[var(--detail-pad,20px)]"
     >
       <div className="flex items-center gap-2.5 border-b border-[var(--table-divider)] pb-3.5">
-        <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]">
+        <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]">
           <Link2 className="size-4" aria-hidden="true" />
         </span>
         <div>
@@ -213,8 +246,9 @@ export function ContactsTabPanel({
             {account.recovery_email && (
               <button
                 type="button"
+                aria-label="复制辅助邮箱"
                 onClick={() => onCopyField('辅助邮箱', account.recovery_email)}
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
               >
                 <Copy className="size-3.5" aria-hidden="true" />
                 <span>复制</span>
@@ -234,9 +268,10 @@ export function ContactsTabPanel({
                 : '未绑定'}
             </span>
             {account.phone && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5">
                 <button
                   type="button"
+                  aria-label={showPhone ? '隐藏手机号' : '显示手机号'}
                   onClick={() => setShowPhone((v) => !v)}
                   className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
                 >
@@ -244,6 +279,7 @@ export function ContactsTabPanel({
                 </button>
                 <button
                   type="button"
+                  aria-label="复制手机号"
                   onClick={() => onCopyField('手机号', account.phone!)}
                   className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
                 >
@@ -273,7 +309,7 @@ export function AuditTabPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--table-divider)] pb-3.5">
         <div className="flex items-center gap-2.5">
-          <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]">
+          <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]">
             <History className="size-4" aria-hidden="true" />
           </span>
           <div>
@@ -289,7 +325,7 @@ export function AuditTabPanel({
           <button
             type="button"
             onClick={onOpenGlobalAudit}
-            className="inline-flex h-8 items-center rounded-xl border border-white/85 bg-white/70 px-3 text-xs font-medium text-[var(--accent)] hover:bg-white"
+            className="inline-flex h-8 items-center rounded-xl border border-white/85 bg-white/70 px-3 text-xs font-medium text-[var(--accent-text)] hover:bg-white"
           >
             前往全局审计日志
           </button>
@@ -309,9 +345,11 @@ export function AuditTabPanel({
                 <p className="font-medium text-[var(--text-primary)]">
                   {item.title}
                 </p>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  操作来源：{item.source || '管理员（本地控制台）'}
-                </p>
+                {item.source && (
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    操作来源：{item.source}
+                  </p>
+                )}
               </div>
               <time className="text-xs tabular-nums text-[var(--text-secondary)]">
                 {item.timestamp}
@@ -327,17 +365,16 @@ export function AuditTabPanel({
 export function BackupsTabPanel({
   account,
   lastBackupLabel,
+  backupHealthy = null,
+  backupHeadline,
   onOpenBackupPage,
 }: {
   account: AccountDetail;
   lastBackupLabel: string;
+  backupHealthy?: boolean | null;
+  backupHeadline?: string;
   onOpenBackupPage?: () => void;
 }) {
-  const versions = Array.from(
-    { length: Math.min(4, Math.max(1, account.row_version)) },
-    (_, i) => account.row_version - i,
-  );
-
   return (
     <GlassPanel
       variant="strong"
@@ -345,15 +382,15 @@ export function BackupsTabPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--table-divider)] pb-3.5">
         <div className="flex items-center gap-2.5">
-          <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[#eaf3ff] text-[var(--accent)]">
+          <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]">
             <Database className="size-4" aria-hidden="true" />
           </span>
           <div>
             <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
-              备份版本
+              备份与记录版本
             </h2>
             <p className="text-xs text-[var(--text-secondary)]">
-              乐观锁版本追踪与最近一次加密备份快照
+              展示当前账号的实时乐观锁版本与系统备份状态
             </p>
           </div>
         </div>
@@ -361,43 +398,62 @@ export function BackupsTabPanel({
           <button
             type="button"
             onClick={onOpenBackupPage}
-            className="inline-flex h-8 items-center rounded-xl border border-white/85 bg-white/70 px-3 text-xs font-medium text-[var(--accent)] hover:bg-white"
+            className="inline-flex h-8 items-center rounded-xl border border-white/85 bg-white/70 px-3 text-xs font-medium text-[var(--accent-text)] hover:bg-white"
           >
-            查看系统备份状态
+            前往系统备份与恢复
           </button>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#2fbf71]/25 bg-[#e7f8ef]/70 px-4 py-3 text-xs text-[#116b3b]">
+      <div
+        className={cn(
+          'flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-xs',
+          backupHealthy === true
+            ? 'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
+            : backupHealthy === false
+              ? 'border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]'
+              : 'border-[var(--badge-slate-border)] bg-[var(--badge-slate-bg)] text-[var(--badge-slate-text)]',
+        )}
+      >
         <span className="inline-flex items-center gap-2 font-medium">
-          <CheckCircle2 className="size-4" aria-hidden="true" />
-          <span>AES-256-GCM 密文快照已同步</span>
+          {backupHealthy === true ? (
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+          ) : (
+            <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+          )}
+          <span>
+            {backupHeadline ??
+              (backupHealthy === true
+                ? '系统加密备份状态正常'
+                : backupHealthy === false
+                  ? '系统备份存在告警或尚未完成首次备份'
+                  : '等待同步系统备份状态')}
+          </span>
         </span>
         <span className="tabular-nums">最近备份：{lastBackupLabel}</span>
       </div>
 
-      <ul className="divide-y divide-[var(--table-divider)] text-[13px]">
-        {versions.map((ver, index) => (
-          <li
-            key={ver}
-            className="flex items-center justify-between gap-3 py-2.5"
-          >
-            <div className="flex items-center gap-2.5">
-              <span className="inline-flex items-center rounded-full border border-[#14b8a6]/28 bg-[#e6f7f2] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#0b6e56]">
-                v{ver}
-              </span>
-              <span className="font-medium text-[var(--text-primary)]">
-                {index === 0 ? '当前活跃版本' : `历史修订快照 #${ver}`}
-              </span>
-            </div>
-            <span className="text-xs tabular-nums text-[var(--text-secondary)]">
-              {index === 0
-                ? formatDetailDateTime(account.updated_at)
-                : `已归档校验`}
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-white/80 bg-white/60 p-4">
+          <dt className="text-xs text-[var(--text-secondary)]">
+            当前乐观锁版本
+          </dt>
+          <dd className="mt-2 flex items-center gap-2">
+            <span className="inline-flex items-center rounded-full border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[var(--badge-green-text)]">
+              v{account.row_version}
             </span>
-          </li>
-        ))}
-      </ul>
+            <span className="text-xs text-[var(--text-secondary)]">
+              单条记录变更时递增
+            </span>
+          </dd>
+        </div>
+        <div className="rounded-2xl border border-white/80 bg-white/60 p-4">
+          <dt className="text-xs text-[var(--text-secondary)]">最后更新时间</dt>
+          <dd className="mt-2 text-sm font-medium tabular-nums text-[var(--text-primary)]">
+            {formatDetailDateTime(account.updated_at)}
+          </dd>
+        </div>
+      </dl>
     </GlassPanel>
   );
 }

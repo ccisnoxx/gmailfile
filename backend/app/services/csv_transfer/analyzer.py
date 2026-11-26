@@ -42,7 +42,13 @@ class CsvImportAnalyzer:
         return columns, mapping
 
     def _collect_scalar_fields(
-        self, line: int, values: dict[str, str], existing: GmailAccount | None, row_errors: list
+        self,
+        line: int,
+        values: dict[str, str],
+        existing: GmailAccount | None,
+        row_errors: list,
+        *,
+        skip_empty_fields: bool = False,
     ) -> dict:
         account_no = values.pop("account_no", "").strip()
         if account_no and (not existing or account_no != f"GM-{existing.account_no:06d}"):
@@ -55,6 +61,8 @@ class CsvImportAnalyzer:
                 continue
             if field == "password" and not value:
                 continue  # Update preserves password; create validation requires it.
+            if existing and skip_empty_fields and not value.strip():
+                continue  # 跳过空值字段：更新已有账号时保留数据库原值。
             if not value and field in {"registered_at", "status", "two_factor_status"}:
                 if existing:
                     row_errors.append(issue(line, field, "必填字段不能清空"))
@@ -71,11 +79,16 @@ class CsvImportAnalyzer:
         snapshot: list,
         row_errors: list,
         recovery_cache: dict[str, GmailAccount | None],
+        *,
+        existing: GmailAccount | None = None,
+        skip_empty_fields: bool = False,
     ) -> None:
         if "recovery_email" not in mapping and "recovery_account" not in mapping:
             return
         recovery = values.get("recovery_email", "").strip()
         link = values.get("recovery_account", "").strip()
+        if existing and skip_empty_fields and not recovery and not link:
+            return
         data.update(recovery_account_id=None, recovery_email_external=recovery or None)
         if link:
             if link in recovery_cache:
@@ -235,15 +248,31 @@ class CsvImportAnalyzer:
                     row_errors.append(
                         issue(line, "gmail_email", "已软删除账号不能由导入更新，请先恢复")
                     )
-                data = self._collect_scalar_fields(line, values, existing, row_errors)
+                skip_empty = bool(getattr(options, "skip_empty_fields", False))
+                data = self._collect_scalar_fields(
+                    line,
+                    values,
+                    existing,
+                    row_errors,
+                    skip_empty_fields=skip_empty,
+                )
                 self._resolve_recovery(
-                    line, values, mapping, data, snapshot, row_errors, recovery_cache
+                    line,
+                    values,
+                    mapping,
+                    data,
+                    snapshot,
+                    row_errors,
+                    recovery_cache,
+                    existing=existing,
+                    skip_empty_fields=skip_empty,
                 )
-                tag_names = (
-                    self._parse_tags(line, values["tags"], row_errors, valid_tags)
-                    if "tags" in mapping
-                    else None
-                )
+                if "tags" in mapping and not (
+                    existing and skip_empty and not values["tags"].strip()
+                ):
+                    tag_names = self._parse_tags(line, values["tags"], row_errors, valid_tags)
+                else:
+                    tag_names = None
                 model = self._build_model(line, existing, data, default_time, row_errors)
                 if not row_errors and model is not None:
                     plans.append((line, existing, model, tag_names))

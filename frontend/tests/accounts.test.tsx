@@ -660,6 +660,11 @@ it('账号列表精确展示注册时间与最后验证列，全局统计不被�
           normal: 30,
           pending_verification: 5,
           abnormal: 10,
+          risk: 6,
+          disabled: 4,
+          archived: 5,
+          deleted_count: 0,
+          tag_counts: {},
           added_this_month: 4,
           unverified_over_30_days: 2,
         });
@@ -697,11 +702,17 @@ it('账号列表精确展示注册时间与最后验证列，全局统计不被�
   expect(within(table).getByText('2025-06-01')).toBeInTheDocument();
   expect(within(table).queryByText('2026-11-24')).not.toBeInTheDocument();
 
-  // 全局风险账号应忠实展示后端 abnormal=10（不被当前页 1 条 disabled 减成 9），已归档=50-30-10-5=5
+  // 全局统计精确展示后端返回的 risk=6、disabled=4、pending_verification=5、archived=5
   const summarySection = screen.getByLabelText('账号全局统计');
   expect(
+    within(summarySection).getByRole('button', { name: /待验证/ }),
+  ).toHaveTextContent('5');
+  expect(
     within(summarySection).getByRole('button', { name: /风险账号/ }),
-  ).toHaveTextContent('10');
+  ).toHaveTextContent('6');
+  expect(
+    within(summarySection).getByRole('button', { name: /停用账号/ }),
+  ).toHaveTextContent('4');
   expect(
     within(summarySection).getByRole('button', { name: /已归档/ }),
   ).toHaveTextContent('5');

@@ -4,17 +4,20 @@ import { cn } from '@/lib/utils';
 type StatTone = 'blue' | 'green' | 'orange' | 'slate';
 
 const iconToneClasses: Record<StatTone, string> = {
-  blue: 'bg-[#eaf3ff] text-[#1677ff]',
-  green: 'bg-[#e7f8ef] text-[#2fbf71]',
-  orange: 'bg-[#fef3df] text-[#f5a623]',
-  slate: 'bg-[#eef2f7] text-[#667085]',
+  blue: 'bg-[var(--badge-blue-bg)] text-[var(--badge-blue-text)] border-[var(--badge-blue-border)]',
+  green:
+    'bg-[var(--badge-green-bg)] text-[var(--badge-green-text)] border-[var(--badge-green-border)]',
+  orange:
+    'bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)] border-[var(--badge-orange-border)]',
+  slate:
+    'bg-[var(--badge-gray-bg)] text-[var(--badge-gray-text)] border-[var(--badge-gray-border)]',
 };
 
 const trendToneClasses: Record<StatTone, string> = {
-  blue: 'text-[#0f62df]',
-  green: 'text-[#116b3b]',
-  orange: 'text-[#8a5000]',
-  slate: 'text-[#526074]',
+  blue: 'text-[var(--badge-blue-text)]',
+  green: 'text-[var(--badge-green-text)]',
+  orange: 'text-[var(--badge-orange-text)]',
+  slate: 'text-[var(--badge-gray-text)]',
 };
 
 export function StatCard({
@@ -40,7 +43,7 @@ export function StatCard({
     <div className="flex items-start gap-3">
       <span
         className={cn(
-          'inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]',
+          'inline-flex size-10 shrink-0 items-center justify-center rounded-xl border',
           iconToneClasses[tone],
         )}
       >
@@ -51,7 +54,7 @@ export function StatCard({
           {title}
         </p>
         <div className="mt-1 flex flex-wrap items-baseline gap-2">
-          <span className="text-[26px] leading-none font-bold tracking-tight tabular-nums text-[var(--text-primary)]">
+          <span className="text-[24px] leading-none font-bold tracking-tight tabular-nums text-[var(--text-primary)]">
             {value}
           </span>
           {trend && (
@@ -70,9 +73,9 @@ export function StatCard({
   );
 
   const sharedClasses = cn(
-    'macos-glass-panel macos-glass-interactive w-full px-4 py-3.5 text-left',
+    'macos-glass-panel macos-glass-interactive w-full px-3.5 py-3 text-left',
     active &&
-      'border-[#1677ff]/35 bg-white/78 shadow-[0_10px_28px_rgba(22,119,255,0.12)]',
+      'border-[var(--accent)]/45 bg-[var(--surface-selected)] shadow-[0_10px_28px_rgba(22,119,255,0.12)]',
     className,
   );
 
@@ -81,6 +84,7 @@ export function StatCard({
       <button
         type="button"
         data-slot="stat-card"
+        aria-pressed={active}
         onClick={onClick}
         className={sharedClasses}
       >

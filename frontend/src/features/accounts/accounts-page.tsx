@@ -20,11 +20,17 @@ import {
   AppWindowShell,
   EmptyState,
   GlassToolbar,
+  IconTooltip,
   LoadingState,
+  MobilePrimaryNavMenu,
+  persistDisplaySettings,
   persistNavAlpha,
   PrimarySidebar,
+  readDisplaySettings,
   readStoredNavAlpha,
+  subscribeDisplaySettings,
   subscribeNavAlpha,
+  type DisplaySettingsState,
   type SidebarSectionKey,
   type SidebarTagItem,
   type TopNavKey,
@@ -149,6 +155,9 @@ function AccountsPageBody({
   const isRecoveryView = initialRecoveryView || queryState.recoveryView;
 
   const [navAlpha, setNavAlpha] = useState<number>(() => readStoredNavAlpha());
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettingsState>(
+    () => readDisplaySettings(),
+  );
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showcaseToggle, setShowcaseToggle] = useState(false);
@@ -159,7 +168,16 @@ function AccountsPageBody({
     persistNavAlpha(next);
   }, []);
 
+  const handleDisplaySettingsChange = useCallback(
+    (next: DisplaySettingsState) => {
+      setDisplaySettings(next);
+      persistDisplaySettings(next);
+    },
+    [],
+  );
+
   useEffect(() => subscribeNavAlpha(setNavAlpha), []);
+  useEffect(() => subscribeDisplaySettings(setDisplaySettings), []);
 
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const stableRefresh = useCallback(() => refreshRef.current(), []);
@@ -198,22 +216,36 @@ function AccountsPageBody({
 
   const tagState = useTagManager({
     headers: detailState.headers,
-    run: detailState.run,
+    onFailure: detailState.fail,
     onRefresh: listState.refresh,
     onCaptureFocus: detailState.captureFocus,
   });
 
-  // ⌘K / Ctrl+K 聚焦搜索框
+  // 支持通过 /accounts?modal=tags 从其他页面直达标签管理弹窗
+  useEffect(() => {
+    if (queryState.params.get('modal') === 'tags') {
+      tagState.openDialog();
+      queryState.change({ modal: '' }, false, true);
+    }
+  }, [queryState, tagState]);
+
+  // ⌘K / Ctrl+K 聚焦搜索框（存在弹窗或位于辅助邮箱视图时让位）
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        if (
+          isRecoveryView ||
+          document.querySelector('[role="dialog"], [role="alertdialog"]')
+        ) {
+          return;
+        }
         event.preventDefault();
         searchInputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [isRecoveryView]);
 
   // URL /accounts/:accountId 自动同步打开对应详情抽屉
   const openedRouteIdRef = useRef<string | null>(null);
@@ -267,8 +299,20 @@ function AccountsPageBody({
       return 'archived';
     }
     const status = queryState.params.get('status');
+    const statuses = (queryState.params.get('statuses') || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (status === 'normal') return 'normal';
-    if (status === 'restricted' || status === 'login_failed') return 'risk';
+    if (status === 'pending_verification') return 'pending';
+    if (
+      status === 'restricted' ||
+      status === 'login_failed' ||
+      (statuses.length > 0 &&
+        statuses.every((s) => s === 'restricted' || s === 'login_failed'))
+    ) {
+      return 'risk';
+    }
     if (status === 'disabled') return 'disabled';
     return 'all';
   }, [queryState.deleted, queryState.params]);
@@ -301,7 +345,8 @@ function AccountsPageBody({
         const map: Record<SidebarSectionKey, string> = {
           all: '',
           normal: 'status=normal',
-          risk: 'status=restricted',
+          pending: 'status=pending_verification',
+          risk: 'statuses=restricted,login_failed',
           disabled: 'status=disabled',
           archived: 'archived=true',
           trash: 'deleted=true',
@@ -313,8 +358,10 @@ function AccountsPageBody({
         queryState.change({}, true);
       } else if (section === 'normal') {
         queryState.change({ status: 'normal' }, true);
+      } else if (section === 'pending') {
+        queryState.change({ status: 'pending_verification' }, true);
       } else if (section === 'risk') {
-        queryState.change({ status: 'restricted' }, true);
+        queryState.change({ statuses: 'restricted,login_failed' }, true);
       } else if (section === 'disabled') {
         queryState.change({ status: 'disabled' }, true);
       } else if (section === 'archived') {
@@ -396,44 +443,31 @@ function AccountsPageBody({
   );
 
   const visibleCounts = useMemo(() => {
-    const items = listState.items;
     const summary = summaryQuery.data;
-    const disabledVisible = items.filter((i) => i.status === 'disabled').length;
-    const archivedVisible = items.filter((i) => i.status === 'archived').length;
-    const abnormal = summary?.abnormal ?? 0;
     const all = summary?.total ?? listState.list.data?.total ?? 0;
     const normal = summary?.normal ?? 0;
     const pending = summary?.pending_verification ?? 0;
-    const inferredArchived = summary
-      ? Math.max(0, all - normal - abnormal - pending)
-      : archivedVisible;
-    const disabled =
-      queryState.params.get('status') === 'disabled'
-        ? (listState.list.data?.total ?? disabledVisible)
-        : disabledVisible;
-    const risk = abnormal;
+    const risk = summary?.risk ?? summary?.abnormal ?? 0;
+    const disabled = summary?.disabled ?? 0;
+    const archived = summary?.archived ?? 0;
     return {
       all,
       normal,
+      pending,
       addedThisMonth: summary?.added_this_month ?? 0,
       risk,
       disabled,
-      archived: inferredArchived,
+      archived,
       trash:
         summary?.deleted_count ??
         (queryState.deleted ? (listState.list.data?.total ?? 0) : 0),
     };
-  }, [
-    listState.items,
-    listState.list.data?.total,
-    queryState.deleted,
-    queryState.params,
-    summaryQuery.data,
-  ]);
+  }, [listState.list.data?.total, queryState.deleted, summaryQuery.data]);
 
   const stats: AccountStatsData = {
     all: visibleCounts.all,
     normal: visibleCounts.normal,
+    pending: visibleCounts.pending,
     addedThisMonth: visibleCounts.addedThisMonth,
     risk: visibleCounts.risk,
     disabled: visibleCounts.disabled,
@@ -441,18 +475,13 @@ function AccountsPageBody({
   };
 
   const sidebarTags: SidebarTagItem[] = useMemo(() => {
-    const countMap = new Map<string, number>();
-    for (const item of listState.items) {
-      for (const tag of item.tags) {
-        countMap.set(tag.id, (countMap.get(tag.id) ?? 0) + 1);
-      }
-    }
+    const tagCounts = summaryQuery.data?.tag_counts;
     return (listState.tags.data ?? []).map((tag) => ({
       id: tag.id,
       name: tag.name,
-      count: countMap.get(tag.id),
+      count: tagCounts ? (tagCounts[tag.id] ?? 0) : undefined,
     }));
-  }, [listState.items, listState.tags.data]);
+  }, [listState.tags.data, summaryQuery.data?.tag_counts]);
 
   const allowDebugUiState = import.meta.env.DEV;
   const uiStateParam = allowDebugUiState
@@ -465,6 +494,7 @@ function AccountsPageBody({
   const effectiveItems = uiStateParam === 'empty' ? [] : listState.items;
   const activeFilterCount = [
     'status',
+    'statuses',
     'two_factor_status',
     'tag',
     'archived',
@@ -479,16 +509,28 @@ function AccountsPageBody({
   return (
     <AppWindowShell
       navAlpha={navAlpha}
+      flowingBackground={displaySettings.flowingBackground}
+      animationsEnabled={displaySettings.animationsEnabled}
+      compactMode={displaySettings.compactMode}
+      mobileDrawerHeader={
+        <MobilePrimaryNavMenu
+          activeNav="accounts"
+          onSelectNav={handleTopNav}
+        />
+      }
       toolbar={
         <GlassToolbar
-          activeNav={viewMode === 'chart' ? 'dashboard' : 'accounts'}
+          activeNav="accounts"
           navAlpha={navAlpha}
           onNavAlphaChange={handleNavAlphaChange}
+          displaySettings={displaySettings}
+          onDisplaySettingsChange={handleDisplaySettingsChange}
           onSelectNav={handleTopNav}
           onOpenSecurity={() => {
             handleCloseDetail();
             onSecurity();
           }}
+          onOpenTransfer={() => handleTopNav('transfer')}
           onOpenRecoveryUsage={handleOpenRecoveryUsage}
           onToggleShowcase={
             allowDebugUiState
@@ -500,11 +542,8 @@ function AccountsPageBody({
             handleCloseDetail();
             onLogout();
           }}
-          notifications={
-            detailState.notice
-              ? [detailState.notice]
-              : ['已启用防篡改哈希链审计与高风险操作 TOTP 二次验证。']
-          }
+          notifications={detailState.notice ? [detailState.notice] : []}
+          onClearNotifications={() => detailState.setNotice('')}
         />
       }
       sidebar={
@@ -518,11 +557,7 @@ function AccountsPageBody({
           onAddTag={tagState.openDialog}
           onOpenRecoveryUsage={handleOpenRecoveryUsage}
           recoveryActive={isRecoveryView}
-          onOpenAudit={() => {
-            handleCloseDetail();
-            if (onOperations) onOperations('audit');
-            else onSecurity();
-          }}
+          onOpenAudit={() => handleTopNav('audit')}
           onOpenBackup={() => {
             handleCloseDetail();
             if (onOperations) onOperations('status');
@@ -550,117 +585,138 @@ function AccountsPageBody({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* 搜索框 + ⌘K */}
-          <div className="relative flex items-center">
-            <Search
-              className="pointer-events-none absolute left-3 size-4 text-[var(--text-secondary)]"
-              aria-hidden="true"
-            />
-            <input
-              ref={searchInputRef}
-              type="search"
-              aria-label="搜索账号"
-              placeholder="搜索邮箱、辅助邮箱、备注…"
-              value={queryState.params.get('search') || ''}
-              onChange={(e) => queryState.change({ search: e.target.value })}
-              maxLength={254}
-              className="h-9 w-56 rounded-xl border border-white/80 bg-white/65 pr-11 pl-9 text-[13px] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md transition-all duration-[180ms] ease-out placeholder:text-[var(--text-secondary)] focus:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-64"
-            />
-            <kbd
-              aria-hidden="true"
-              className="pointer-events-none absolute right-2.5 rounded-md border border-[#cdddf0] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
-            >
-              ⌘K
-            </kbd>
-          </div>
-
-          {/* 筛选开关按钮 */}
+        {isRecoveryView ? (
           <button
             type="button"
-            aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen((open) => !open)}
-            className={cn(
-              'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-[13px] font-medium transition-all duration-[180ms] ease-out',
-              filtersOpen || activeFilterCount > 0
-                ? 'border-[#1677ff]/30 bg-[var(--accent-soft)] text-[var(--accent)]'
-                : 'border-white/80 bg-white/65 text-[var(--text-primary)] hover:-translate-y-[1px] hover:bg-white/85',
-            )}
+            onClick={() => handleSelectSection('all')}
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/80 bg-white/70 px-3.5 text-[13px] font-medium text-[var(--text-primary)] transition-colors hover:bg-white"
           >
-            <Filter className="size-3.5" aria-hidden="true" />
-            <span>筛选</span>
-            {activeFilterCount > 0 && (
-              <span className="rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-semibold text-white">
-                {activeFilterCount}
-              </span>
-            )}
+            返回账号列表
           </button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* 搜索框 + ⌘K */}
+            <div className="relative flex items-center">
+              <Search
+                className="pointer-events-none absolute left-3 size-4 text-[var(--text-secondary)]"
+                aria-hidden="true"
+              />
+              <input
+                ref={searchInputRef}
+                type="search"
+                aria-label="搜索账号"
+                placeholder="搜索邮箱、辅助邮箱或备注"
+                value={queryState.params.get('search') || ''}
+                onChange={(e) =>
+                  queryState.change({ search: e.target.value }, false, true)
+                }
+                maxLength={254}
+                className="h-9 w-56 rounded-xl border border-white/80 bg-white/65 pr-11 pl-9 text-[13px] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md transition-all duration-[180ms] ease-out placeholder:text-[var(--text-secondary)] focus:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-64"
+              />
+              <kbd
+                aria-hidden="true"
+                className="pointer-events-none absolute right-2.5 rounded-md border border-[var(--border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
+              >
+                ⌘K
+              </kbd>
+            </div>
 
-          {/* 列表 / 图表视图切换 */}
-          <div
-            role="group"
-            aria-label="视图切换"
-            className="inline-flex h-9 items-center rounded-xl border border-white/80 bg-white/60 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
-          >
-            <button
-              type="button"
-              aria-label="列表视图"
-              aria-pressed={viewMode === 'list'}
-              onClick={() => setViewMode('list')}
-              className={cn(
-                'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
-                viewMode === 'list'
-                  ? 'bg-[var(--accent)] text-white shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
-              )}
+            {/* 筛选开关按钮 */}
+            <IconTooltip label={filtersOpen ? '收起筛选条件' : '展开筛选条件'}>
+              <button
+                type="button"
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen((open) => !open)}
+                className={cn(
+                  'inline-flex h-9 items-center gap-1.5 rounded-xl border px-3.5 text-[13px] font-medium transition-all duration-[180ms] ease-out',
+                  filtersOpen || activeFilterCount > 0
+                    ? 'border-[var(--accent)]/30 bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                    : 'border-white/80 bg-white/65 text-[var(--text-primary)] hover:-translate-y-[1px] hover:bg-white/85',
+                )}
+              >
+                <Filter className="size-3.5" aria-hidden="true" />
+                <span>筛选</span>
+                {activeFilterCount > 0 && (
+                  <span className="rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-semibold text-[var(--primary-foreground)]">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            </IconTooltip>
+
+            {/* 列表 / 图表视图切换 */}
+            <div
+              role="group"
+              aria-label="视图切换"
+              className="inline-flex h-9 items-center rounded-xl border border-white/80 bg-white/60 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
             >
-              <List className="size-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label="图表视图"
-              aria-pressed={viewMode === 'chart'}
-              onClick={() => setViewMode('chart')}
-              className={cn(
-                'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
-                viewMode === 'chart'
-                  ? 'bg-[var(--accent)] text-white shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
-                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
-              )}
-            >
-              <BarChart3 className="size-4" aria-hidden="true" />
-            </button>
+              <IconTooltip label="列表视图">
+                <button
+                  type="button"
+                  aria-label="列表视图"
+                  aria-pressed={viewMode === 'list'}
+                  onClick={() => setViewMode('list')}
+                  className={cn(
+                    'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
+                    viewMode === 'list'
+                      ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                  )}
+                >
+                  <List className="size-4" aria-hidden="true" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="图表视图">
+                <button
+                  type="button"
+                  aria-label="图表视图"
+                  aria-pressed={viewMode === 'chart'}
+                  onClick={() => setViewMode('chart')}
+                  className={cn(
+                    'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
+                    viewMode === 'chart'
+                      ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(22,119,255,0.28)]'
+                      : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                  )}
+                >
+                  <BarChart3 className="size-4" aria-hidden="true" />
+                </button>
+              </IconTooltip>
+            </div>
+
+            <IconTooltip label="刷新列表">
+              <button
+                type="button"
+                aria-label="刷新列表"
+                onClick={() => void listState.refresh()}
+                className="inline-flex size-9 items-center justify-center rounded-xl border border-white/80 bg-white/65 text-[var(--text-secondary)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/90 hover:text-[var(--text-primary)]"
+              >
+                <RefreshCw className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+
+            {!queryState.deleted && (
+              <button
+                type="button"
+                onClick={detailState.openNew}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_8px_20px_rgba(22,119,255,0.28)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
+              >
+                <Plus className="size-4" aria-hidden="true" />
+                <span>新建账号</span>
+              </button>
+            )}
           </div>
-
-          <button
-            type="button"
-            aria-label="刷新列表"
-            title="刷新列表"
-            onClick={() => void listState.refresh()}
-            className="inline-flex size-9 items-center justify-center rounded-xl border border-white/80 bg-white/65 text-[var(--text-secondary)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/90 hover:text-[var(--text-primary)]"
-          >
-            <RefreshCw className="size-4" aria-hidden="true" />
-          </button>
-
-          {!queryState.deleted && (
-            <button
-              type="button"
-              onClick={detailState.openNew}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_8px_20px_rgba(22,119,255,0.28)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              <span>新建账号</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* 5 张全局统计卡片 */}
-      <Summary
-        stats={stats}
-        activeSection={activeSection}
-        onSelectSection={handleSelectSection}
-      />
+      {/* 全局统计卡片（仅在账号管理视图展示，避免与辅助邮箱统计卡重复） */}
+      {!isRecoveryView && (
+        <Summary
+          stats={stats}
+          activeSection={activeSection}
+          onSelectSection={handleSelectSection}
+        />
+      )}
 
       {detailState.notice && (
         <Alert
@@ -835,8 +891,8 @@ function AccountsPageBody({
             target={tagState.target}
             name={tagState.name}
             deleteTarget={tagState.deleteTarget}
-            busy={detailState.busy}
-            notice={detailState.notice}
+            busy={tagState.busy}
+            notice={tagState.notice}
             onOpenChange={tagState.setOpen}
             onRestoreFocus={detailState.restoreFocus}
             onNameChange={tagState.setName}

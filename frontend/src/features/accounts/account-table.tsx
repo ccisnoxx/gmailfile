@@ -102,22 +102,33 @@ export function ColumnToggle({
   );
 }
 
+function getAriaSort(
+  field: AccountSortField,
+  currentSort?: string,
+): 'ascending' | 'descending' | 'none' {
+  if (currentSort === field) return 'ascending';
+  if (currentSort === `-${field}`) return 'descending';
+  return 'none';
+}
+
 function SortableHeader({
   label,
   field,
   currentSort,
   onSort,
+  title,
 }: {
   label: string;
   field: AccountSortField;
   currentSort?: string;
   onSort?: (nextSort: string) => void;
+  title?: string;
 }) {
   const isDesc = currentSort === `-${field}`;
   const isAsc = currentSort === field;
   if (!onSort) {
     return (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
         {label}
         <ArrowUpDown
           className="size-3 text-[var(--text-secondary)]/70"
@@ -130,13 +141,14 @@ function SortableHeader({
   return (
     <button
       type="button"
+      title={title}
       onClick={() => onSort(isDesc ? field : `-${field}`)}
-      className="inline-flex min-h-6 items-center gap-1 rounded-md py-0.5 text-left font-medium text-[var(--text-primary)] transition-colors hover:text-[var(--accent)]"
+      className="inline-flex min-h-6 items-center gap-1 rounded-md py-0.5 text-left font-medium whitespace-nowrap text-[var(--text-primary)] transition-colors hover:text-[var(--accent)]"
     >
       <span>{label}</span>
       <Icon
         className={cn(
-          'size-3.5',
+          'size-3.5 shrink-0',
           isAsc || isDesc
             ? 'text-[var(--accent)]'
             : 'text-[var(--text-secondary)]/70',
@@ -244,7 +256,15 @@ function RowActionsMenu({
               </DropdownMenuPrimitive.Item>
             ) : (
               <>
-                {account.status !== 'archived' && (
+                {account.status === 'archived' ? (
+                  <DropdownMenuPrimitive.Item
+                    onSelect={() => onOpen(account, false, 'unarchive')}
+                    className={cn(itemClass, 'text-[var(--accent-text)]')}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>取消归档</span>
+                  </DropdownMenuPrimitive.Item>
+                ) : (
                   <DropdownMenuPrimitive.Item
                     onSelect={() => onOpen(account, false, 'archive')}
                     className={itemClass}
@@ -255,7 +275,7 @@ function RowActionsMenu({
                 )}
                 <DropdownMenuPrimitive.Item
                   onSelect={() => onOpen(account, false, 'delete')}
-                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] text-[var(--danger)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)]"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-[13px] text-[var(--danger-text)] outline-none transition-colors data-[highlighted]:bg-[var(--danger-soft)] focus:bg-[var(--danger-soft)]"
                 >
                   <Trash2 className="size-3.5" />
                   <span>删除</span>
@@ -326,6 +346,7 @@ export function AccountTable({
         description="检查网络连接与服务状态后重试。"
         onCreate={onRetry}
         createLabel="重试加载"
+        actionIcon="refresh"
       />
     );
   }
@@ -341,12 +362,14 @@ export function AccountTable({
               : '暂无账号'
         }
         description={
-          deleted
-            ? '软删除的 Gmail 账号会保留在这里，支持单条或批量恢复。'
-            : '还没有创建任何 Gmail 账号，点击下方按钮开始添加。'
+          total > 0
+            ? '当前页码超出已有记录范围，请使用下方分页控件切换页面。'
+            : deleted
+              ? '软删除的 Gmail 账号会保留在这里，支持单条或批量恢复。'
+              : '还没有创建任何 Gmail 账号，点击下方按钮开始添加。'
         }
-        onCreate={!deleted ? onCreate : undefined}
-        onImportCsv={!deleted ? onImportCsv : undefined}
+        onCreate={!deleted && total === 0 ? onCreate : undefined}
+        onImportCsv={!deleted && total === 0 ? onImportCsv : undefined}
         className={
           footer && total > 0
             ? 'rounded-none border-0 bg-transparent shadow-none'
@@ -361,7 +384,7 @@ export function AccountTable({
           className="macos-glass-panel macos-glass-panel-strong overflow-hidden"
         >
           {emptyNode}
-          <div className="border-t border-[var(--table-divider)] bg-white/45 px-4 py-3">
+          <div className="border-t border-[var(--table-divider)] bg-[var(--surface-table-head)] px-4 py-3">
             {footer}
           </div>
         </div>
@@ -371,6 +394,7 @@ export function AccountTable({
   }
 
   const allChecked = items.length > 0 && items.every((a) => selected[a.id]);
+  const someChecked = items.some((a) => selected[a.id]);
 
   return (
     <div
@@ -380,33 +404,54 @@ export function AccountTable({
       <div className="macos-thin-scrollbar max-h-[540px] w-full overflow-x-auto overflow-y-auto">
         <table
           aria-label={deleted ? '已删除账号列表' : '账号列表'}
-          className="w-full min-w-[920px] border-collapse text-left text-[13px]"
+          className="w-full border-collapse text-left text-[12.5px] xl:text-[13px]"
         >
-          <thead className="sticky top-0 z-20 border-b border-[var(--table-divider)] bg-[#f7fbff]/88 backdrop-blur-md">
+          <thead className="sticky top-0 z-20 border-b border-[var(--table-divider)] bg-[var(--surface-table-head)] backdrop-blur-md">
             <tr className="h-11 text-xs font-semibold text-[var(--text-secondary)]">
-              <th className="w-11 pr-2 pl-4">
+              <th className="w-9 pr-1 pl-3 whitespace-nowrap">
                 <input
                   type="checkbox"
                   aria-label="选择当前页全部账号"
                   checked={allChecked}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someChecked && !allChecked;
+                  }}
                   onChange={(e) => onToggleAll(e.target.checked)}
                   className="size-4 rounded border-[#b8cce4] accent-[var(--accent)]"
                 />
               </th>
-              <th className="px-3">
+              <th
+                className="px-2 2xl:px-2.5 whitespace-nowrap"
+                aria-sort={getAriaSort('account_no', sort)}
+              >
                 <SortableHeader
                   label="Gmail 地址"
                   field="account_no"
                   currentSort={sort}
                   onSort={onSort}
+                  title="按账号编号排序"
                 />
               </th>
-              {columns.status && <th className="px-3">状态</th>}
-              {columns.factor && <th className="px-3">双重验证 (2FA)</th>}
-              {columns.recovery && <th className="px-3">辅助邮箱</th>}
-              {columns.tags && <th className="px-3">标签</th>}
+              {columns.status && (
+                <th className="px-2 2xl:px-2.5 whitespace-nowrap">状态</th>
+              )}
+              {columns.factor && (
+                <th className="px-2 2xl:px-2.5 whitespace-nowrap">二步验证</th>
+              )}
+              {columns.recovery && (
+                <th className="px-2 2xl:px-2.5 whitespace-nowrap">辅助邮箱</th>
+              )}
+              {columns.purpose && (
+                <th className="px-2 2xl:px-2.5 whitespace-nowrap">用途</th>
+              )}
+              {columns.tags && (
+                <th className="px-2 2xl:px-2.5 whitespace-nowrap">标签</th>
+              )}
               {columns.verified && (
-                <th className="px-3">
+                <th
+                  className="px-2 2xl:px-2.5 whitespace-nowrap"
+                  aria-sort={getAriaSort('last_verified_at', sort)}
+                >
                   <SortableHeader
                     label="最后验证"
                     field="last_verified_at"
@@ -416,7 +461,10 @@ export function AccountTable({
                 </th>
               )}
               {columns.registered && (
-                <th className="px-3">
+                <th
+                  className="px-2 2xl:px-2.5 whitespace-nowrap"
+                  aria-sort={getAriaSort('registered_at', sort)}
+                >
                   <SortableHeader
                     label="注册时间"
                     field="registered_at"
@@ -426,7 +474,10 @@ export function AccountTable({
                 </th>
               )}
               {columns.updated && (
-                <th className="px-3">
+                <th
+                  className="px-2 2xl:px-2.5 whitespace-nowrap"
+                  aria-sort={getAriaSort('updated_at', sort)}
+                >
                   <SortableHeader
                     label="更新时间"
                     field="updated_at"
@@ -435,7 +486,7 @@ export function AccountTable({
                   />
                 </th>
               )}
-              <th className="sticky right-0 z-10 w-16 bg-[#f7fbff]/92 pr-4 pl-2 text-right backdrop-blur-md">
+              <th className="sticky right-0 z-30 w-13 border-l border-[var(--table-divider)] bg-[var(--surface-sticky-cell)] pr-3 pl-2 text-right whitespace-nowrap shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.12)]">
                 操作
               </th>
             </tr>
@@ -463,7 +514,7 @@ export function AccountTable({
                       : 'hover:bg-[var(--table-row-hover)]',
                   )}
                 >
-                  <td className="w-11 pr-2 pl-4">
+                  <td className="w-9 pr-1 pl-3">
                     <input
                       type="checkbox"
                       aria-label={`选择 ${account.account_no}`}
@@ -474,53 +525,56 @@ export function AccountTable({
                       className="size-4 rounded border-[#b8cce4] accent-[var(--accent)]"
                     />
                   </td>
-                  <td className="px-3 whitespace-nowrap">
-                    <div className="flex items-center gap-2.5">
+                  <td className="px-2 2xl:px-2.5 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
                       <GmailMark size="sm" />
                       <button
                         type="button"
+                        title={account.gmail_email}
                         onClick={() => onOpen(account)}
-                        className="inline-flex min-h-6 items-center py-0.5 text-left font-medium text-[var(--text-primary)] underline-offset-4 transition-colors hover:text-[var(--accent)] hover:underline"
+                        className="inline-flex min-h-6 max-w-[144px] items-center py-0.5 text-left font-medium text-[var(--text-primary)] underline-offset-4 transition-colors hover:text-[var(--accent)] hover:underline min-[1360px]:max-w-[200px] 2xl:max-w-[235px]"
                       >
-                        {account.gmail_email}
+                        <span className="block truncate">
+                          {account.gmail_email}
+                        </span>
                       </button>
                       <button
                         type="button"
                         aria-label={`复制邮箱 ${account.gmail_email}`}
                         onClick={() => onCopy(account.gmail_email)}
-                        className="inline-flex size-6 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
+                        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
                       >
                         <Copy className="size-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </td>
                   {columns.status && (
-                    <td className="px-3 whitespace-nowrap">
+                    <td className="px-2 2xl:px-2.5 whitespace-nowrap">
                       <StatusPill status={account.status} />
                     </td>
                   )}
                   {columns.factor && (
-                    <td className="px-3 whitespace-nowrap">
+                    <td className="px-2 2xl:px-2.5 whitespace-nowrap">
                       {account.two_factor_status === 'enabled' ? (
-                        <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--text-primary)]">
+                        <span className="inline-flex items-center gap-1 font-medium text-[var(--text-primary)]">
                           <CheckCircle2
-                            className="size-4 text-[var(--success)]"
+                            className="size-3.5 shrink-0 text-[var(--success)]"
                             aria-hidden="true"
                           />
                           <span>已启用</span>
                         </span>
                       ) : account.two_factor_status === 'disabled' ? (
-                        <span className="inline-flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)]">
+                        <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
                           <MinusCircle
-                            className="size-4 text-[#98a2b3]"
+                            className="size-3.5 shrink-0 text-[#98a2b3]"
                             aria-hidden="true"
                           />
                           <span>未启用</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 text-[13px] text-[var(--text-secondary)]">
+                        <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
                           <HelpCircle
-                            className="size-4 text-[#98a2b3]"
+                            className="size-3.5 shrink-0 text-[#98a2b3]"
                             aria-hidden="true"
                           />
                           <span>未知</span>
@@ -529,11 +583,11 @@ export function AccountTable({
                     </td>
                   )}
                   {columns.recovery && (
-                    <td className="px-3 whitespace-nowrap text-[var(--text-primary)]/90">
+                    <td className="px-2 2xl:px-2.5 whitespace-nowrap text-[var(--text-primary)]/90">
                       {account.recovery_email ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                           <span
-                            className="max-w-48 truncate"
+                            className="max-w-[110px] truncate 2xl:max-w-[190px]"
                             title={account.recovery_email}
                           >
                             {account.recovery_email}
@@ -542,7 +596,7 @@ export function AccountTable({
                             type="button"
                             aria-label={`复制辅助邮箱 ${account.recovery_email}`}
                             onClick={() => onCopy(account.recovery_email)}
-                            className="inline-flex size-6 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
+                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
                           >
                             <Copy className="size-3.5" aria-hidden="true" />
                           </button>
@@ -552,19 +606,33 @@ export function AccountTable({
                       )}
                     </td>
                   )}
+                  {columns.purpose && (
+                    <td className="px-2 2xl:px-2.5 whitespace-nowrap text-[var(--text-secondary)]">
+                      {account.purpose ? (
+                        <span
+                          className="inline-block max-w-[78px] truncate align-bottom 2xl:max-w-[140px]"
+                          title={account.purpose}
+                        >
+                          {account.purpose}
+                        </span>
+                      ) : (
+                        <span>—</span>
+                      )}
+                    </td>
+                  )}
                   {columns.tags && (
-                    <td className="px-3 whitespace-nowrap">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {account.tags.slice(0, 3).map((tag) => (
+                    <td className="px-2 2xl:px-2.5 whitespace-nowrap">
+                      <div className="flex max-w-[104px] flex-wrap items-center gap-1 2xl:max-w-[142px]">
+                        {account.tags.slice(0, 2).map((tag) => (
                           <TagPill key={tag.id} name={tag.name} />
                         ))}
                         {account.status === 'archived' &&
                           !account.tags.some((t) =>
                             t.name.includes('归档'),
                           ) && <TagPill name="已归档" tone="gray" />}
-                        {account.tags.length > 3 && (
+                        {account.tags.length > 2 && (
                           <span className="text-[11px] text-[var(--text-secondary)]">
-                            +{account.tags.length - 3}
+                            +{account.tags.length - 2}
                           </span>
                         )}
                       </div>
@@ -573,7 +641,7 @@ export function AccountTable({
                   {columns.verified && (
                     <td
                       data-dynamic="timestamp"
-                      className="px-3 whitespace-nowrap tabular-nums text-[var(--text-primary)]/90"
+                      className="px-2 2xl:px-2.5 whitespace-nowrap tabular-nums text-[var(--text-primary)]/90"
                       title={localDate(account.last_verified_at)}
                     >
                       {formatActivityDate(account.last_verified_at)}
@@ -582,7 +650,7 @@ export function AccountTable({
                   {columns.registered && (
                     <td
                       data-dynamic="timestamp"
-                      className="px-3 whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
+                      className="px-2 2xl:px-2.5 whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
                       title={localDate(account.registered_at)}
                     >
                       {formatShortDate(account.registered_at)}
@@ -591,12 +659,12 @@ export function AccountTable({
                   {columns.updated && (
                     <td
                       data-dynamic="timestamp"
-                      className="px-3 whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
+                      className="px-2 2xl:px-2.5 whitespace-nowrap tabular-nums text-[var(--text-secondary)]"
                     >
                       {localDate(account.updated_at)}
                     </td>
                   )}
-                  <td className="sticky right-0 bg-white/80 pr-4 pl-2 text-right whitespace-nowrap backdrop-blur-sm">
+                  <td className="sticky right-0 z-10 border-l border-[var(--table-divider)] bg-[var(--surface-sticky-cell)] pr-3 pl-2 text-right whitespace-nowrap shadow-[-6px_0_12px_-4px_rgba(15,23,42,0.12)]">
                     <RowActionsMenu
                       account={account}
                       deleted={deleted}
@@ -613,7 +681,7 @@ export function AccountTable({
         </table>
       </div>
       {footer && (
-        <div className="border-t border-[var(--table-divider)] bg-white/45 px-4 py-3">
+        <div className="border-t border-[var(--table-divider)] bg-[var(--surface-table-head)] px-4 py-3">
           {footer}
         </div>
       )}

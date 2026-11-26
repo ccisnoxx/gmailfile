@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Filter, Plus, Star } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Filter, Plus, Search, Star, X } from 'lucide-react';
 import type { AccountSummary } from '@/api/generated';
 import {
   EmptyState,
@@ -9,7 +9,6 @@ import {
   TagPill,
 } from '@/components/macos';
 import { cn } from '@/lib/utils';
-import { compactListTagLabel } from './detail-mock-fixtures';
 
 export type AccountListFilterTab = 'all' | 'normal' | 'disabled' | 'archived';
 
@@ -24,7 +23,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
   switch (status) {
     case 'normal':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#116b3b]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--success-text)]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[var(--success)]"
@@ -34,7 +33,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     case 'disabled':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#526074]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-secondary)]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[#98a2b3]"
@@ -44,7 +43,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     case 'archived':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#526074]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--text-secondary)]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full border border-[#8492a6] bg-transparent"
@@ -54,7 +53,7 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
       );
     case 'pending_verification':
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#8a5000]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--warning-text)]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[#f5a623]"
@@ -62,14 +61,24 @@ function ListItemStatusMeta({ status }: { status: AccountSummary['status'] }) {
           待验证
         </span>
       );
+    case 'login_failed':
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--danger-text)]">
+          <span
+            aria-hidden="true"
+            className="size-1.5 rounded-full bg-[var(--danger)]"
+          />
+          无法登录
+        </span>
+      );
     default:
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#8a5000]">
+        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--warning-text)]">
           <span
             aria-hidden="true"
             className="size-1.5 rounded-full bg-[var(--warning)]"
           />
-          风险
+          受限
         </span>
       );
   }
@@ -79,6 +88,8 @@ export function AccountListPane({
   accounts,
   totalCount,
   selectedAccountId,
+  searchQuery = '',
+  onSearchQueryChange,
   filterTab,
   onFilterTabChange,
   favorites,
@@ -93,6 +104,8 @@ export function AccountListPane({
   accounts: AccountSummary[];
   totalCount: number;
   selectedAccountId: string | null;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
   filterTab: AccountListFilterTab;
   onFilterTabChange: (tab: AccountListFilterTab) => void;
   favorites: Record<string, boolean>;
@@ -108,6 +121,22 @@ export function AccountListPane({
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [only2Fa, setOnly2Fa] = useState(false);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!onSearchQueryChange) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        if (document.querySelector('[role="dialog"], [role="alertdialog"]')) {
+          return;
+        }
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onSearchQueryChange]);
 
   const visibleAccounts = useMemo(() => {
     return accounts.filter((account) => {
@@ -137,8 +166,8 @@ export function AccountListPane({
         className,
       )}
     >
-      {/* 头部：Gmail 账号（1,248）+ 新建账号 */}
-      <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-3">
+      {/* 头部：Gmail 账号（N）+ 新建账号 */}
+      <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-2.5">
         <h2 className="truncate text-[15px] font-semibold tracking-tight text-[var(--text-primary)]">
           <span>Gmail 账号</span>
           <span className="ml-0.5 font-medium tabular-nums text-[var(--text-secondary)]">
@@ -148,12 +177,44 @@ export function AccountListPane({
         <button
           type="button"
           onClick={onCreateAccount}
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl bg-[linear-gradient(180deg,#348dff_0%,#1677ff_100%)] px-3 text-xs font-medium text-white shadow-[0_6px_14px_rgba(22,119,255,0.26),inset_0_1px_0_rgba(255,255,255,0.32)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:brightness-105"
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl bg-[var(--accent)] px-3 text-xs font-medium text-[var(--primary-foreground)] shadow-[0_6px_14px_rgba(22,119,255,0.24)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)]"
         >
           <Plus className="size-3.5" aria-hidden="true" />
           <span>新建账号</span>
         </button>
       </div>
+
+      {/* 列表内搜索框（⌘K） */}
+      {onSearchQueryChange && (
+        <div className="px-4 pb-2.5">
+          <div className="relative flex items-center">
+            <Search
+              className="pointer-events-none absolute left-3 size-3.5 text-[var(--text-secondary)]"
+              aria-hidden="true"
+            />
+            <input
+              ref={searchInputRef}
+              type="search"
+              aria-label="全局搜索账号、标签或备注"
+              placeholder="搜索账号或备注（⌘K）"
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
+              maxLength={254}
+              className="h-8.5 w-full rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] pr-8 pl-8.5 text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:bg-[var(--surface-control-hover)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                aria-label="清空搜索"
+                onClick={() => onSearchQueryChange('')}
+                className="absolute right-2 inline-flex size-5 items-center justify-center rounded-full text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 筛选标签与右侧漏斗筛选按钮 */}
       <div className="px-4 pb-3">
@@ -319,8 +380,8 @@ export function AccountListPane({
                 className={cn(
                   'group relative flex items-center gap-2 rounded-2xl border p-2.5 transition-all duration-[180ms] ease-out',
                   isSelected
-                    ? 'border-[#1677ff]/48 bg-[#eaf3ff]/82 shadow-[0_6px_18px_rgba(22,119,255,0.12),inset_0_1px_0_rgba(255,255,255,0.9)] ring-1 ring-[#1677ff]/18'
-                    : 'border-white/75 bg-white/52 hover:border-white/95 hover:bg-white/76',
+                    ? 'border-[var(--accent)]/48 bg-[var(--surface-selected)] shadow-[0_6px_18px_rgba(22,119,255,0.12)] ring-1 ring-[var(--accent)]/18'
+                    : 'border-[var(--surface-control-border)] bg-[var(--surface-control)] hover:bg-[var(--surface-control-hover)]',
                 )}
               >
                 <button
@@ -329,18 +390,11 @@ export function AccountListPane({
                   onClick={() => onSelectAccount(account.id)}
                   className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
                 >
-                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-white/90 bg-white/88 shadow-[0_2px_6px_rgba(45,86,138,0.08)]">
+                  <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control-hover)]">
                     <GmailMark size="sm" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p
-                      className={cn(
-                        'truncate text-[13px] leading-snug font-semibold',
-                        isSelected
-                          ? 'text-[#0e2a55]'
-                          : 'text-[var(--text-primary)]',
-                      )}
-                    >
+                    <p className="truncate text-[13px] leading-snug font-semibold text-[var(--text-primary)]">
                       {account.gmail_email}
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -348,8 +402,8 @@ export function AccountListPane({
                       {displayTags.map((tag) => (
                         <TagPill
                           key={tag.id}
-                          name={compactListTagLabel(tag.name)}
-                          className="rounded-md px-1.5 py-0 text-[10.5px] leading-4"
+                          name={tag.name}
+                          className="max-w-[96px] rounded-md px-1.5 py-0 text-[10.5px] leading-4"
                         />
                       ))}
                     </div>
@@ -368,8 +422,8 @@ export function AccountListPane({
                   className={cn(
                     'inline-flex size-7 shrink-0 items-center justify-center rounded-lg transition-colors',
                     isStarred
-                      ? 'text-[#f5a623] hover:bg-white/70'
-                      : 'text-[#8c9ab0] hover:bg-white/70 hover:text-[#f5a623]',
+                      ? 'text-[#f5a623] hover:bg-[var(--surface-control-hover)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)] hover:text-[#f5a623]',
                   )}
                 >
                   <Star

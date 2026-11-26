@@ -183,6 +183,15 @@ def archive(account_id: UUID, body: VersionInput, service: WriteService):
 
 
 @router.post(
+    "/accounts/{account_id}/unarchive",
+    response_model=AccountDetail,
+    operation_id="accountsUnarchive",
+)
+def unarchive(account_id: UUID, body: VersionInput, service: WriteService):
+    return service.action(account_id, body.row_version, "unarchive")
+
+
+@router.post(
     "/accounts/{account_id}/restore", response_model=AccountDetail, operation_id="accountsRestore"
 )
 def restore(account_id: UUID, body: VersionInput, service: WriteService):

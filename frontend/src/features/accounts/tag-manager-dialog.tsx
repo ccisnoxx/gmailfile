@@ -65,7 +65,11 @@ export function TagManagerDialog({
               标签用于整理账号，删除标签不会删除账号。
             </DialogDescription>
           </DialogHeader>
-          {notice && <p role="status">{notice}</p>}
+          {notice && (
+            <p role="status" className="text-sm text-[var(--text-secondary)]">
+              {notice}
+            </p>
+          )}
           <form
             className="flex gap-2"
             onSubmit={(e) => {
@@ -75,14 +79,22 @@ export function TagManagerDialog({
           >
             <Input
               aria-label="标签名称"
+              placeholder="输入标签名称…"
               required
               maxLength={50}
               value={name}
               onChange={(e) => onNameChange(e.target.value)}
             />
-            <Button disabled={busy}>{target ? '保存标签' : '添加标签'}</Button>
+            <Button disabled={busy || !name.trim()}>
+              {target ? '保存标签' : '添加标签'}
+            </Button>
             {target && (
-              <Button type="button" variant="ghost" onClick={onCancelRename}>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={onCancelRename}
+              >
                 取消
               </Button>
             )}
@@ -91,13 +103,14 @@ export function TagManagerDialog({
             {tags.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center justify-between gap-2 border-b py-2"
+                className="flex items-center justify-between gap-2 border-b border-[var(--table-divider)] py-2"
               >
                 <span className="break-all">{t.name}</span>
                 <div className="flex shrink-0 gap-1">
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={busy}
                     onClick={() => onStartRename(t)}
                   >
                     重命名
@@ -105,6 +118,7 @@ export function TagManagerDialog({
                   <Button
                     size="sm"
                     variant="outline"
+                    disabled={busy}
                     onClick={() => onRequestDelete(t)}
                   >
                     删除标签
@@ -118,10 +132,10 @@ export function TagManagerDialog({
       <AlertDialog
         open={!!deleteTarget}
         onOpenChange={(value) => {
-          if (!value) onRequestDelete(null);
+          if (!value && !busy) onRequestDelete(null);
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="macos-glass-modal rounded-[20px]">
           <AlertDialogHeader>
             <AlertDialogTitle>
               删除标签“{deleteTarget?.name}”？
@@ -130,16 +144,22 @@ export function TagManagerDialog({
               仅解除账号关联，不会删除任何账号。关联账号的记录版本将递增。
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {notice && (
+            <p role="alert" className="text-sm text-[var(--danger-text)]">
+              {notice}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
             <AlertDialogAction
+              variant="destructive"
               disabled={busy}
               onClick={(e) => {
                 e.preventDefault();
                 onConfirmDelete();
               }}
             >
-              确认删除标签
+              {busy ? '删除中…' : '确认删除标签'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

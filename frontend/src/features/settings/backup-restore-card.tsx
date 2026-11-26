@@ -51,12 +51,12 @@ export function BackupRestoreCard({
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] font-medium whitespace-nowrap',
             isRunning
-              ? 'border-[#1677ff]/25 bg-[#1677ff]/10 text-[#0d4bb3]'
+              ? 'border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] text-[var(--badge-blue-text)]'
               : isSuccess
-                ? 'border-[#2fbf71]/28 bg-[#2fbf71]/[0.09] text-[#147240]'
+                ? 'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
                 : isFailed
-                  ? 'border-[#e45d5d]/30 bg-[#e45d5d]/[0.09] text-[#b43636]'
-                  : 'border-[#f5a623]/30 bg-[#f5a623]/[0.1] text-[#9a5c05]',
+                  ? 'border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] text-[var(--badge-red-text)]'
+                  : 'border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]',
           )}
         >
           {isRunning ? (
@@ -81,7 +81,7 @@ export function BackupRestoreCard({
       {isFailed && (
         <div
           role="alert"
-          className="flex items-start gap-2 rounded-2xl border border-[#e45d5d]/28 bg-[#e45d5d]/[0.07] px-3.5 py-2.5 text-[12.5px] leading-5 text-[#a83838]"
+          className="flex items-start gap-2 rounded-2xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3.5 py-2.5 text-[12.5px] leading-5 text-[var(--badge-red-text)]"
         >
           <AlertTriangle
             className="mt-0.5 size-4 shrink-0"
@@ -150,7 +150,7 @@ export function BackupRestoreCard({
           type="button"
           disabled={isRunning || !webActionsSupported}
           onClick={onRunBackup}
-          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-white shadow-[0_6px_16px_rgba(22,119,255,0.25)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-65"
+          className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.25)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-65"
         >
           {isRunning ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />

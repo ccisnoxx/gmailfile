@@ -1,4 +1,5 @@
 import { useId, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import type { ChangePasswordInput, Credentials } from '@/api/generated';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,8 @@ export function CredentialForm({
 }) {
   const id = useId();
   const [recovery, setRecovery] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const { register, handleSubmit, reset, setValue } = useForm<FormValues>();
   const hasFactor = kind === 'login' || kind === 'factor';
   const hasStepUpTotp = kind === 'reverify' && requireStepUpTotp;
@@ -38,6 +41,8 @@ export function CredentialForm({
   return (
     <form
       onSubmit={handleSubmit(async (data) => {
+        setShowPassword(false);
+        setShowNewPassword(false);
         reset();
         await onSubmit(data);
       })}
@@ -47,15 +52,31 @@ export function CredentialForm({
           <FieldLabel htmlFor={`${id}-password`}>
             {kind === 'login' ? '管理员密码' : '当前管理员密码'}
           </FieldLabel>
-          <Input
-            id={`${id}-password`}
-            type="password"
-            autoComplete="current-password"
-            required
-            maxLength={1024}
-            disabled={busy}
-            {...register('password')}
-          />
+          <div className="relative">
+            <Input
+              id={`${id}-password`}
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              required
+              maxLength={1024}
+              disabled={busy}
+              className="pr-10"
+              {...register('password')}
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? '隐藏密码' : '显示密码'}
+              disabled={busy}
+              onClick={() => setShowPassword((prev) => !prev)}
+              className="absolute top-1/2 right-2.5 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {showPassword ? (
+                <EyeOff className="size-4" aria-hidden="true" />
+              ) : (
+                <Eye className="size-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </Field>
         {hasFactor && (
           <Field>
@@ -86,7 +107,7 @@ export function CredentialForm({
                 {...register('totp_code')}
               />
             )}
-            {kind === 'login' && (
+            {kind === 'login' && !recovery && (
               <FieldDescription>
                 首次登录可留空，随后必须绑定验证器。
               </FieldDescription>
@@ -134,16 +155,32 @@ export function CredentialForm({
         {kind === 'password' && (
           <Field>
             <FieldLabel htmlFor={`${id}-new`}>新密码</FieldLabel>
-            <Input
-              id={`${id}-new`}
-              type="password"
-              autoComplete="new-password"
-              minLength={16}
-              maxLength={1024}
-              required
-              disabled={busy}
-              {...register('new_password')}
-            />
+            <div className="relative">
+              <Input
+                id={`${id}-new`}
+                type={showNewPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                minLength={16}
+                maxLength={1024}
+                required
+                disabled={busy}
+                className="pr-10"
+                {...register('new_password')}
+              />
+              <button
+                type="button"
+                aria-label={showNewPassword ? '隐藏新密码' : '显示新密码'}
+                disabled={busy}
+                onClick={() => setShowNewPassword((prev) => !prev)}
+                className="absolute top-1/2 right-2.5 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {showNewPassword ? (
+                  <EyeOff className="size-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="size-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
             <FieldDescription>
               至少 16 个字符，建议使用多词长密码短语，避免常见泄露密码且不要与
               Gmail 密码复用。

@@ -122,7 +122,8 @@ describe('macOS 亚克力视觉系统与共享组件', () => {
     );
 
     expect(screen.getByText('Gmail 账号管理系统')).toBeInTheDocument();
-    expect(screen.getByText('1.2 GB / 10 GB')).toBeInTheDocument();
+    // 虚假的 1.2 GB / 10 GB 存储卡已移除
+    expect(screen.queryByText('1.2 GB / 10 GB')).not.toBeInTheDocument();
     expect(screen.getByText('暂无账号')).toBeInTheDocument();
     expect(screen.getByText('正在加载账号列表…')).toBeInTheDocument();
     expect(screen.getByRole('table', { name: '账号列表' })).toBeInTheDocument();
@@ -150,17 +151,29 @@ describe('macOS 亚克力视觉系统与共享组件', () => {
     expect(readStoredNavAlpha()).toBe(78);
   });
 
-  it('AccountsPreviewPage 拖动毛玻璃滑块实时更新 --nav-alpha 并在重新挂载后恢复', () => {
+  it('AccountsPreviewPage 通过界面与显示浮层拖动毛玻璃滑块实时更新 --nav-alpha 并在重新挂载后恢复', async () => {
+    const user = userEvent.setup();
     const first = renderPreviewRouter();
     const shell = first.container.querySelector(
       '[data-slot="app-window-shell"]',
     ) as HTMLElement;
     expect(shell.style.getPropertyValue('--nav-alpha')).toBe('0.6');
+    // 顶栏不再常驻透明度滑块，也没有无通知时的常亮红点
+    expect(
+      screen.queryByRole('slider', { name: '导航栏毛玻璃透明度' }),
+    ).not.toBeInTheDocument();
+    expect(
+      first.container.querySelector('[data-slot="notification-badge"]'),
+    ).not.toBeInTheDocument();
 
-    const slider = screen.getByRole('slider', { name: '导航栏毛玻璃透明度' });
+    await user.click(screen.getByRole('button', { name: '界面与显示设置' }));
+    const popover = screen.getByRole('dialog', { name: '界面与显示' });
+    const slider = within(popover).getByRole('slider', {
+      name: '导航栏毛玻璃透明度',
+    });
     fireEvent.change(slider, { target: { value: '42' } });
     expect(shell.style.getPropertyValue('--nav-alpha')).toBe('0.42');
-    expect(screen.getByText('42%')).toBeInTheDocument();
+    expect(within(popover).getByText('42%')).toBeInTheDocument();
     expect(window.localStorage.getItem(NAV_ALPHA_STORAGE_KEY)).toBe('42');
 
     first.unmount();
@@ -170,7 +183,23 @@ describe('macOS 亚克力视觉系统与共享组件', () => {
       '[data-slot="app-window-shell"]',
     ) as HTMLElement;
     expect(reloadedShell.style.getPropertyValue('--nav-alpha')).toBe('0.42');
+    await user.click(screen.getByRole('button', { name: '界面与显示设置' }));
     expect(screen.getByText('42%')).toBeInTheDocument();
+  });
+
+  it('悬停在顶栏和视图切换图标上时显示对应提示文字', async () => {
+    const user = userEvent.setup();
+    renderPreviewRouter();
+
+    const notifBtn = screen.getByRole('button', { name: '通知' });
+    await user.hover(notifBtn);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('通知');
+    await user.unhover(notifBtn);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+
+    const chartBtn = screen.getByRole('button', { name: '图表视图' });
+    await user.hover(chartBtn);
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('图表视图');
   });
 });
 
@@ -192,7 +221,7 @@ describe('账号管理高保真页面交互与状态展示', () => {
     }
 
     const searchInput =
-      screen.getByPlaceholderText('搜索邮箱、辅助邮箱、备注…');
+      screen.getByPlaceholderText('搜索邮箱、辅助邮箱或备注');
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
 

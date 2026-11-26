@@ -1,4 +1,4 @@
-import { KeySquare, ShieldCheck, Smartphone } from 'lucide-react';
+import { KeySquare, RefreshCw, ShieldCheck, Smartphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SettingsCardShell } from './settings-card-shell';
 import type { CardStateMode, TotpSecurityInfo } from './types';
@@ -8,6 +8,7 @@ export function TotpSecurityCard({
   state = 'ready',
   canDisable = false,
   onOpenRecoveryCodes,
+  onOpenTotpSetup,
   onDisableTotp,
   onRetry,
 }: {
@@ -15,6 +16,7 @@ export function TotpSecurityCard({
   state?: CardStateMode;
   canDisable?: boolean;
   onOpenRecoveryCodes: () => void;
+  onOpenTotpSetup?: () => void;
   onDisableTotp?: () => void;
   onRetry?: () => void;
 }) {
@@ -32,8 +34,8 @@ export function TotpSecurityCard({
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] font-medium whitespace-nowrap',
             info.enabled
-              ? 'border-[#2fbf71]/28 bg-[#2fbf71]/[0.09] text-[#147240]'
-              : 'border-[#f5a623]/30 bg-[#f5a623]/[0.1] text-[#9a5c05]',
+              ? 'border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] text-[var(--badge-green-text)]'
+              : 'border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] text-[var(--badge-orange-text)]',
           )}
         >
           <span
@@ -55,7 +57,14 @@ export function TotpSecurityCard({
               <dt className="text-[12.5px] text-[var(--text-secondary)]">
                 绑定状态
               </dt>
-              <dd className="inline-flex items-center gap-1 font-medium text-[#147240]">
+              <dd
+                className={cn(
+                  'inline-flex items-center gap-1 font-medium',
+                  info.bound
+                    ? 'text-[var(--success-text)]'
+                    : 'text-[var(--text-secondary)]',
+                )}
+              >
                 <ShieldCheck className="size-3.5" aria-hidden="true" />
                 <span>{info.bound ? '已绑定' : '未绑定'}</span>
               </dd>
@@ -73,33 +82,63 @@ export function TotpSecurityCard({
                 备用恢复码
               </dt>
               <dd className="font-medium tabular-nums text-[var(--text-primary)]">
-                {info.recoveryCodesRemaining !== null
-                  ? `${info.recoveryCodesTotal} 个，剩余 ${info.recoveryCodesRemaining} 个`
-                  : `共 ${info.recoveryCodesTotal} 个（服务端单向摘要保存）`}
+                {!info.enabled
+                  ? '需启用 TOTP 后管理'
+                  : info.recoveryCodesRemaining !== null
+                    ? `${info.recoveryCodesTotal} 个，剩余 ${info.recoveryCodesRemaining} 个`
+                    : `共 ${info.recoveryCodesTotal} 个（服务端单向摘要保存）`}
               </dd>
             </div>
           </dl>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onOpenRecoveryCodes}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/85 bg-white/72 px-3.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/92"
-            >
-              <KeySquare
-                className="size-3.5 text-[var(--accent)]"
-                aria-hidden="true"
-              />
-              <span>查看 / 重新生成…</span>
-            </button>
-            {info.enabled && canDisable && onDisableTotp && (
-              <button
-                type="button"
-                onClick={onDisableTotp}
-                className="inline-flex h-9 items-center rounded-xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] px-3 text-[12.5px] font-medium text-[#c54646] transition-colors hover:bg-[#e45d5d]/[0.15]"
-              >
-                停用 TOTP…
-              </button>
+            {info.enabled ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onOpenRecoveryCodes}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/85 bg-white/72 px-3.5 text-[13px] font-medium text-[var(--text-primary)] shadow-[0_4px_12px_rgba(45,86,138,0.06),inset_0_1px_0_rgba(255,255,255,0.9)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/92"
+                >
+                  <KeySquare
+                    className="size-3.5 text-[var(--accent)]"
+                    aria-hidden="true"
+                  />
+                  <span>查看 / 重新生成…</span>
+                </button>
+                {onOpenTotpSetup && (
+                  <button
+                    type="button"
+                    onClick={onOpenTotpSetup}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/85 bg-white/72 px-3 text-[12.5px] font-medium text-[var(--text-primary)] transition-colors hover:bg-white/92"
+                  >
+                    <RefreshCw
+                      className="size-3.5 text-[var(--accent)]"
+                      aria-hidden="true"
+                    />
+                    <span>重绑验证器…</span>
+                  </button>
+                )}
+                {canDisable && onDisableTotp && (
+                  <button
+                    type="button"
+                    onClick={onDisableTotp}
+                    className="inline-flex h-9 items-center rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 text-[12.5px] font-medium text-[var(--badge-red-text)] transition-colors hover:brightness-95"
+                  >
+                    停用 TOTP…
+                  </button>
+                )}
+              </>
+            ) : (
+              onOpenTotpSetup && (
+                <button
+                  type="button"
+                  onClick={onOpenTotpSetup}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3.5 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_4px_12px_rgba(22,119,255,0.22)] transition-colors hover:bg-[var(--accent-hover)]"
+                >
+                  <Smartphone className="size-3.5" aria-hidden="true" />
+                  <span>绑定验证器…</span>
+                </button>
+              )
             )}
           </div>
         </div>
@@ -109,20 +148,25 @@ export function TotpSecurityCard({
           role="region"
           data-slot="totp-demo-card"
           aria-label="动态验证码演示卡片"
-          className="flex flex-col items-center justify-between rounded-2xl border border-white/80 bg-[linear-gradient(155deg,rgba(234,243,255,0.72),rgba(255,255,255,0.52))] p-3.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]"
+          className="flex flex-col items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface-selected)] p-3.5 text-center"
         >
-          <span className="inline-flex items-center rounded-full border border-[#1677ff]/20 bg-white/72 px-2 py-0.5 text-[11px] font-medium text-[var(--accent)]">
-            演示状态
+          <span className="inline-flex items-center rounded-full border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-2 py-0.5 text-[11px] font-medium text-[var(--badge-blue-text)]">
+            {info.enabled ? '演示状态' : '未绑定'}
           </span>
           <div className="my-2">
             <p className="font-mono text-[24px] leading-none font-semibold tracking-[0.14em] tabular-nums text-[var(--text-primary)]">
-              {info.demoCode}
+              {info.enabled ? info.demoCode : '------'}
             </p>
             <div
               aria-hidden="true"
-              className="mx-auto mt-2.5 h-1 w-20 overflow-hidden rounded-full bg-[#1677ff]/15"
+              className="mx-auto mt-2.5 h-1 w-20 overflow-hidden rounded-full bg-[var(--accent)]/20"
             >
-              <div className="h-full w-2/3 rounded-full bg-[var(--accent)]/80" />
+              <div
+                className={cn(
+                  'h-full rounded-full bg-[var(--accent)]/80',
+                  info.enabled ? 'w-2/3' : 'w-0',
+                )}
+              />
             </div>
           </div>
           <p className="text-[11px] leading-4 text-[var(--text-secondary)]">
