@@ -48,6 +48,14 @@ export function useAccountsList({
       queryClient.removeQueries({ queryKey: ['tags'] });
       queryClient.removeQueries({ queryKey: ['summary'] });
       queryClient.removeQueries({ queryKey: ['recovery-usage'] });
+      queryClient.removeQueries({ queryKey: ['recovery-email-accounts'] });
+      queryClient.removeQueries({ queryKey: ['dashboard-registration-trend'] });
+      queryClient.removeQueries({
+        queryKey: ['dashboard-status-distribution'],
+      });
+      queryClient.removeQueries({
+        queryKey: ['dashboard-recovery-email-usage'],
+      });
       queryClient.removeQueries({ queryKey: ['account-options'] });
     },
     [queryClient],

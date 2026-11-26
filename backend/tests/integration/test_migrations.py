@@ -48,6 +48,8 @@ def test_empty_database_upgrade_and_downgrade(db_engine, migration_config):
         "pre_auth_sessions",
         "auth_throttles",
         "csv_receipts",
+        "admin_webauthn_credentials",
+        "webauthn_challenges",
     }
     assert set(inspect(db_engine).get_table_names()) == expected
     assert schema_is_current(db_engine)

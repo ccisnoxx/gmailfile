@@ -26,6 +26,27 @@ EXPORT_FIELDS = (
     "updated_at",
 )
 
+ENCRYPTED_EXPORT_FIELDS = (
+    "account_no",
+    "gmail_email",
+    "password",
+    "registered_at",
+    "recovery_email",
+    "phone",
+    "status",
+    "two_factor_status",
+    "last_login_at",
+    "last_verified_at",
+    "password_changed_at",
+    "purpose",
+    "tags",
+    "notes",
+    "archived_at",
+    "deleted_at",
+    "created_at",
+    "updated_at",
+)
+
 
 def issue(row: int, field: str, reason: str) -> CsvIssue:
     return CsvIssue(row=row, field=field, reason=reason)

@@ -10,17 +10,24 @@ from app.schemas.accounts import (
     AccountPage,
     AccountPatch,
     AccountQuery,
+    BatchInput,
     BatchResult,
     BatchStatus,
     BatchTags,
+    DashboardRecoveryUsageResponse,
     DashboardSummary,
     Input,
     OptionPage,
     PasswordResponse,
     RecoveryPage,
+    RecoverySort,
+    RegistrationTrendResponse,
+    Sort,
+    StatusDistributionResponse,
     SummaryQuery,
     TagInput,
     TagResponse,
+    TrendQuery,
     VersionInput,
 )
 from app.schemas.auth import ActionResponse
@@ -58,11 +65,60 @@ def summary(service: Service, params: Annotated[SummaryQuery, Query()]):
     return service.summary(params.timezone)
 
 
+@router.get(
+    "/dashboard/registration-trend",
+    response_model=RegistrationTrendResponse,
+    operation_id="dashboardRegistrationTrend",
+)
+def registration_trend(service: Service, params: Annotated[TrendQuery, Query()]):
+    return service.registration_trend(params.timezone, params.months)
+
+
+@router.get(
+    "/dashboard/status-distribution",
+    response_model=StatusDistributionResponse,
+    operation_id="dashboardStatusDistribution",
+)
+def status_distribution(service: Service):
+    return service.status_distribution()
+
+
+@router.get(
+    "/dashboard/recovery-email-usage",
+    response_model=DashboardRecoveryUsageResponse,
+    operation_id="dashboardRecoveryEmailUsage",
+)
+def dashboard_recovery_usage(
+    service: Service,
+    limit: Annotated[int, Query(ge=1, le=20)] = 10,
+):
+    return service.dashboard_recovery_usage(limit)
+
+
 @router.get("/recovery-emails", response_model=RecoveryPage, operation_id="recoveryEmailsList")
 def recovery_usage(
-    service: Service, page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)
+    service: Service,
+    page: Annotated[int, Query(ge=1, le=1000000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 30,
+    search: Annotated[str, Query(max_length=254)] = "",
+    sort: Annotated[RecoverySort, Query()] = "-account_count",
 ):
-    return service.recovery_usage(page, page_size)
+    return service.recovery_usage(page, page_size, search=search, sort=sort)
+
+
+@router.get(
+    "/recovery-emails/{encoded_email}/accounts",
+    response_model=AccountPage,
+    operation_id="recoveryEmailAccounts",
+)
+def recovery_email_accounts(
+    encoded_email: str,
+    service: Service,
+    page: Annotated[int, Query(ge=1, le=1000000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 30,
+    sort: Annotated[Sort, Query()] = "-account_no",
+):
+    return service.recovery_email_accounts(encoded_email, page=page, page_size=page_size, sort=sort)
 
 
 @router.get("/accounts/options", response_model=OptionPage, operation_id="accountsOptions")
@@ -86,6 +142,13 @@ def batch_status(body: BatchStatus, service: WriteService):
 @router.post("/accounts/batch-tags", response_model=BatchResult, operation_id="accountsBatchTags")
 def batch_tags(body: BatchTags, service: WriteService):
     return service.batch(body)
+
+
+@router.post(
+    "/accounts/batch-restore", response_model=BatchResult, operation_id="accountsBatchRestore"
+)
+def batch_restore(body: BatchInput, service: WriteService):
+    return service.batch_restore(body)
 
 
 @router.post(

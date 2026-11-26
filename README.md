@@ -2,7 +2,7 @@
 
 单管理员、同源部署的 Gmail 资料管理工具。需求基线见 [产品与技术规格](gmail-account-manager-spec.md)。
 
-账号管理、CSV、Session、审计、设置和加密备份/恢复已实现，当前迁移版本为 `0004`。
+账号管理、CSV/流式加密导出、Session 设备管理、防篡改审计、加密备份/恢复、深色模式、离线 PWA、密钥轮换与 WebAuthn/Passkey 均已实现，当前迁移版本为 `0005`。
 本仓库只发布应用代码、部署示例和通用运维说明；**示例配置不是任何实际实例的配置或上线证明**。
 真实域名、主机、网络、生产验证证据、发布/镜像清单和恢复拓扑由运营者在私有配置库维护。
 公开与私有资料的边界见 [公开仓库发布规范](docs/public-repository.md)，部署步骤见 [部署手册](docs/production-deployment.md)。
@@ -65,7 +65,7 @@ uv run --locked uvicorn app.main:create_app --factory \
 
 ## 初始化与使用认证
 
-先运行 `alembic upgrade head`（当前 head 为 `0004`），再通过交互终端初始化唯一管理员：
+先运行 `alembic upgrade head`（当前 head 为 `0005`），再通过交互终端初始化唯一管理员：
 
 ```bash
 # 原生开发：在 backend/，使用上节的应用角色与 Secret 文件配置。
@@ -86,11 +86,11 @@ docker compose --env-file .env -f infra/docker-compose.yml exec api python -m ap
 认证流程：
 
 1. 页面获取 10 分钟的登录前预会话和 CSRF Token。所有修改操作都携带 CSRF；Token 只在前端内存。
-2. 首次输入正确密码后进入受限会话，扫描二维码或输入手工 Secret，再确认 TOTP。完成前没有账号访问权限。
-3. 绑定成功后展示 10 个恢复码，仅此一次，可当场下载。离线保存后清除展示；刷新、隐藏页面、退出或超时也会清除。
-4. 后续使用密码 + TOTP 登录。TOTP 允许前后各一个 30 秒时间步，已使用时间步不能重放。
-5. 验证器丢失时使用密码 + 一个恢复码登录：立即撤销其他会话，进入受限态，重新绑定后才能恢复完整权限。
-6. 安全设置中的改密、重绑、恢复码重生成先要求最近 5 分钟内重新验证。重绑/重生成还要求当前密码和现有 TOTP 或恢复码。
+2. 首次输入正确密码后进入受限会话，可选择绑定 TOTP 验证器或直接绑定 WebAuthn/FIDO2 通行密钥（Passkey）。完成前没有账号访问权限。
+3. 首次绑定 TOTP 或 Passkey 成功后都会展示 10 个离线恢复码，仅此一次，可当场下载。离线保存后清除展示；刷新、隐藏页面、退出或超时也会清除。
+4. 后续可使用「密码 + TOTP」或直接通过「Passkey 无密码一步登录（Discoverable + UV）」。TOTP 允许前后各一个 30 秒时间步，已使用时间步不能重放；WebAuthn 挑战单次原子消费防重放，并启用签名计数反克隆检测。
+5. 已绑定至少 1 个通行密钥时，可在系统设置按需停用 TOTP（系统始终强制保留至少一种有效二步因子）；高风险敏感操作（查看/复制密码、加密导出、改密、会话/密钥管理）均支持 Passkey UV Step-Up 或「密码 + TOTP」验证。
+6. 认证器丢失时使用「密码 + 一次性恢复码」登录：立即撤销其他会话并进入受限态，重新绑定 TOTP 或 Passkey 后恢复完整权限；停用 TOTP 时，离线 `backup_tool.py switch` 同样使用「密码 + 一次性恢复码」兜底。
 
 改密撤销所有会话并返回登录；重绑确认或恢复码重生成撤销其他会话，旧恢复码整批失效。
 重绑未确认前保留原有效 TOTP，候选 Secret 加密保存在当前会话中，10 分钟后不能确认；
@@ -152,8 +152,20 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 从“安全设置 → 迁移与运维”进入：
 
 - **CSV 导入**：UTF-8/BOM、10 MiB、手工映射、规范化重复 skip/update/error、绑定内容与版本的两阶段确认；全批事务，错误不回显敏感原文。
-- **CSV 导出**：全部未删除（含归档），或当前筛选的全部结果，不受页码影响。固定非敏感字段、UTC 文件名、CSV 转义/公式防注入、审计；不提供密码下载。
-- **Session**：分页查看当前/其他及过期/撤销状态，重新验证后单条/批量撤销；自身撤销清空工作区。
+- **CSV 导出**：全部未删除（含归档），或当前筛选的全部结果，不受页码影响。固定非敏感字段、UTC 文件名、CSV 转义/公式防注入、审计。
+- **带密码流式加密导出（`.gmenc`）**：`POST /api/v1/exports/encrypted` 导出完整敏感字段（密码/手机号/备注），强制 MFA Step-Up 验证、复用并发导出槽位并禁止明文落盘。离线解密命令：
+  ```bash
+  cd backend && uv run --locked python -m app.cli decrypt-export --input accounts.gmenc --output accounts.csv
+  ```
+- **数据密钥离线轮换与校验**：新增新版本 `data_key_vN` 后使用 CLI 演练、轮换与校验（保留旧密钥文件供历史备份与回滚使用）：
+  ```bash
+  cd backend
+  uv run --locked python -m app.cli rotate-keys --target-version 2 --dry-run
+  uv run --locked python -m app.cli rotate-keys --target-version 2
+  uv run --locked python -m app.cli verify-keys
+  ```
+- **回收站批量恢复与辅助邮箱统计**：回收站支持多选并原子批量恢复（`POST /api/v1/accounts/batch-restore`）；独立 `/recovery-emails` 路由支持搜索、排序与关联账号预览。
+- **Session 设备管理、深色模式、统计图表与 PWA**：活动会话展示脱敏白名单设备/系统/浏览器标签与活跃过滤；支持浅色/深色/跟随系统主题切换（WCAG 2.2 AA）；内置安全聚合趋势/状态/2FA 图表；支持同源离线 PWA 安装（Service Worker 严格不缓存 `/api/*` 与凭据响应）。
 - **审计**：按事件、账号/Session ID、日期过滤并分页，只返回白名单事件和脱敏操作代码。
 - **状态与锁定**：当前应用/迁移版本、真实备份状态；可改闲置期限，改密/TOTP/恢复码原功能保留。
 
@@ -190,18 +202,19 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 
 - `GET /api/v1/auth/session`：预会话/认证状态与 CSRF 轮换。
 - `POST /api/v1/auth/login`、`logout`、`reverify`、`password`：认证、注销、重新验证与改密。
-- `POST /api/v1/auth/totp/setup`、`confirm`、`regenerate-recovery-codes`：绑定及恢复码。
+- `POST /api/v1/auth/totp/setup`、`confirm`、`regenerate-recovery-codes`、`disable`：TOTP 绑定、恢复码与（存在 Passkey 时）停用。
+- `GET /api/v1/auth/webauthn/credentials`、`POST /api/v1/auth/webauthn/(register|login|step-up)/(options|verify)`、`PATCH/DELETE /api/v1/auth/webauthn/credentials/{id}`：WebAuthn/Passkey 全链路管理与认证。
 - `GET/POST /api/v1/accounts`、`GET/PATCH/DELETE /api/v1/accounts/{id}`：服务端查询/分页/新增/详情/编辑/软删除。
 - `POST /api/v1/accounts/{id}/archive|restore|mark-verified|mark-logged-in`：携带 `row_version` 的账号操作。
 - `POST /api/v1/accounts/{id}/reveal-password|copy-password-event`：独立敏感访问与复制审计。
-- `GET /api/v1/dashboard/summary?timezone=Asia%2FShanghai`：六项全局统计与 UTC 月份边界。
-- `POST /api/v1/accounts/batch-status|batch-tags`：整批事务，输入所选账号 ID/版本与目标状态/标签。
+- `GET /api/v1/dashboard/summary|registration-trend|status-distribution|recovery-email-usage`：全局 KPI 与图表安全聚合统计。
+- `POST /api/v1/accounts/batch-status|batch-tags|batch-restore`：整批事务，输入所选账号 ID/版本与目标状态/标签或回收站批量恢复。
 - `GET /api/v1/accounts/options`：非删除辅助账号搜索/分页，只返回 ID、编号和邮箱。
-- `GET /api/v1/recovery-emails`：分页的基础使用统计；关联列表复用 `/accounts?recovery_email=...` 精确分组条件。
+- `GET /api/v1/recovery-emails`、`GET /api/v1/recovery-emails/{encoded_email}/accounts`：分页使用量统计与按邮箱关联账号预览。
 - `POST /api/v1/auth/activity`：仅用户交互触发、CSRF 保护、不轮换 Token 的会话活动确认。
 - `GET/POST /api/v1/tags`、`PATCH/DELETE /api/v1/tags/{id}`：标签管理。
 - `POST /api/v1/imports/csv/preview|commit`：原始 text/csv 请求；预览 options 为 JSON 查询参数，提交只带 receipt_id，Schema/客户端由 OpenAPI 生成。
-- `POST /api/v1/exports/csv`：明确 all/filtered 范围的非敏感 CSV。
+- `POST /api/v1/exports/csv`、`POST /api/v1/exports/encrypted`：非敏感 CSV 导出与 MFA Step-Up 保护的 `.gmenc` 流式加密导出。
 - `GET /api/v1/auth/sessions`、`DELETE /api/v1/auth/sessions/{id}|others`：不续期的 Session 管理。
 - `GET /api/v1/audit-events`、`GET /api/v1/system/version|backup-status`：完整认证的审计与状态。
 - `GET /api/v1/settings`、`PATCH /api/v1/settings/idle`：锁定设置；修改需 CSRF 和最近重新验证。

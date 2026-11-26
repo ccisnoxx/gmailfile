@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy import func, select, update
 
 from app.core.release_meta import APP_VERSION
+from app.core.user_agent import parse_stored_device
 from app.models import AuditEvent, UserSession
 from app.schemas.operations import (
     AuditIntegrityResponse,
@@ -26,8 +27,16 @@ class OperationsService:
         # Viewing/revoking devices must not renew the caller's idle lease.
         self.session = auth.require_session(csrf=auth.request.method != "GET", touch=False)
 
-    def sessions(self, page, page_size):
+    def sessions(self, page, page_size, *, active_only: bool = False):
+        idle_minutes = self.auth.idle_minutes()
+        reauth_window = timedelta(minutes=self.auth.settings.reauth_window_minutes)
         query = select(UserSession).where(UserSession.admin_user_id == self.session.admin_user_id)
+        if active_only:
+            query = query.where(
+                UserSession.revoked_at.is_(None),
+                UserSession.expires_at > self.auth.now,
+                UserSession.last_seen_at > self.auth.now - timedelta(minutes=idle_minutes),
+            )
         total = self.db.scalar(select(func.count()).select_from(query.subquery()))
         rows = self.db.scalars(
             query.order_by(UserSession.created_at.desc(), UserSession.id)
@@ -36,9 +45,7 @@ class OperationsService:
         )
         items = []
         for row in rows:
-            idle = min(
-                row.expires_at, row.last_seen_at + timedelta(minutes=self.auth.idle_minutes())
-            )
+            idle = min(row.expires_at, row.last_seen_at + timedelta(minutes=idle_minutes))
             state = (
                 "revoked"
                 if row.revoked_at
@@ -47,6 +54,11 @@ class OperationsService:
                 else "idle_expired"
                 if idle <= self.auth.now
                 else "valid"
+            )
+            device = parse_stored_device(row.user_agent)
+            mfa_active = bool(
+                row.mfa_reauthenticated_at
+                and row.mfa_reauthenticated_at + reauth_window > self.auth.now
             )
             items.append(
                 SessionItem(
@@ -60,6 +72,11 @@ class OperationsService:
                     idle_expires_at=idle,
                     revoked_at=row.revoked_at,
                     ip_address=str(row.ip_address) if row.ip_address else None,
+                    device_label=device.label,
+                    browser=device.browser,
+                    os=device.os,
+                    device_type=device.device_type,
+                    mfa_reauthenticated=mfa_active,
                 )
             )
         return SessionPage(items=items, total=total, page=page, page_size=page_size)

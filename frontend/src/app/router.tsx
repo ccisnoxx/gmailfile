@@ -6,6 +6,9 @@ const AccountsRoute = lazy(() => import('@/app/routes/accounts-route'));
 const AccountDetailRoute = lazy(
   () => import('@/app/routes/account-detail-route'),
 );
+const RecoveryEmailsRoute = lazy(
+  () => import('@/app/routes/recovery-emails-route'),
+);
 const SecurityRoute = lazy(() => import('@/app/routes/security-route'));
 const OperationsRoute = lazy(() => import('@/app/routes/operations-route'));
 const SettingsRoute = lazy(() => import('@/app/routes/settings-route'));
@@ -69,6 +72,7 @@ const baseRoutes: RouteObject[] = [
       { index: true, element: <AccountsRoute /> },
       { path: 'accounts', element: <AccountsRoute /> },
       { path: 'accounts/:accountId', element: <AccountDetailRoute /> },
+      { path: 'recovery-emails', element: <RecoveryEmailsRoute /> },
       { path: 'transfers/csv', element: <CsvImportRoute /> },
       { path: 'imports/csv', element: <CsvImportRoute /> },
       { path: 'security', element: <SecurityRoute /> },

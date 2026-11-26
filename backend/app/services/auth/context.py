@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.encryption import EncryptionService
 from app.core.security import token_hash, verify_password
-from app.models import AdminUser, AuditEvent, AuthThrottle, UserSession
+from app.core.user_agent import extract_device_summary, serialize_device_summary
+from app.models import (
+    AdminUser,
+    AdminWebAuthnCredential,
+    AuditEvent,
+    AuthThrottle,
+    UserSession,
+)
 from app.services.auth.constants import AUDIT_EVENTS, AUDIT_OPERATIONS, SecurityError
 
 
@@ -36,9 +43,32 @@ class AuthContext:
         self.cookie_name = (
             "__Host-gm_session" if settings.session_cookie_secure else "gm_dev_session"
         )
+        # 仅保存白名单枚举解析结果，绝不持久化原始 User-Agent。
+        self.device_tag = serialize_device_summary(extract_device_summary(request.headers))
 
     def admin(self) -> AdminUser | None:
         return self.db.scalar(select(AdminUser))
+
+    def active_webauthn_credentials(self, admin_user_id: UUID) -> list[AdminWebAuthnCredential]:
+        return list(
+            self.db.scalars(
+                select(AdminWebAuthnCredential)
+                .where(
+                    AdminWebAuthnCredential.admin_user_id == admin_user_id,
+                    AdminWebAuthnCredential.revoked_at.is_(None),
+                )
+                .order_by(
+                    AdminWebAuthnCredential.created_at.asc(), AdminWebAuthnCredential.id.asc()
+                )
+            )
+        )
+
+    def has_any_mfa(self, admin: AdminUser | None) -> bool:
+        if admin is None:
+            return False
+        if admin.totp_enabled:
+            return True
+        return len(self.active_webauthn_credentials(admin.id)) > 0
 
     def idle_minutes(self) -> int:
         admin = self.admin()

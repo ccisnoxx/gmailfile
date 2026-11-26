@@ -342,7 +342,7 @@ export function AccountTable({
         }
         description={
           deleted
-            ? '软删除的 Gmail 账号会保留在这里，可随时逐条恢复。'
+            ? '软删除的 Gmail 账号会保留在这里，支持单条或批量恢复。'
             : '还没有创建任何 Gmail 账号，点击下方按钮开始添加。'
         }
         onCreate={!deleted ? onCreate : undefined}
@@ -389,7 +389,6 @@ export function AccountTable({
                   type="checkbox"
                   aria-label="选择当前页全部账号"
                   checked={allChecked}
-                  disabled={deleted}
                   onChange={(e) => onToggleAll(e.target.checked)}
                   className="size-4 rounded border-[#b8cce4] accent-[var(--accent)]"
                 />
@@ -469,7 +468,6 @@ export function AccountTable({
                       type="checkbox"
                       aria-label={`选择 ${account.account_no}`}
                       checked={isSelected}
-                      disabled={deleted}
                       onChange={(e) =>
                         onToggleOne(account.id, e.target.checked)
                       }

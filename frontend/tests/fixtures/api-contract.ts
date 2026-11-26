@@ -57,6 +57,10 @@ export function buildSessionResponse(
     reauthenticated_until: null,
     mfa_reauthenticated_until: null,
     step_up_totp_required: true,
+    totp_enabled: true,
+    webauthn_enabled: false,
+    webauthn_count: 0,
+    can_passwordless_login: false,
     ...overrides,
   };
 }
@@ -123,6 +127,7 @@ export function buildDashboardSummary(
   overrides: Partial<DashboardSummary> = {},
 ): DashboardSummary {
   const active = accounts.filter((a) => !a.deleted_at);
+  const deleted = accounts.filter((a) => Boolean(a.deleted_at));
   return {
     total: active.length,
     normal: active.filter((a) => a.status === 'normal').length,
@@ -134,6 +139,7 @@ export function buildDashboardSummary(
     ).length,
     added_this_month: active.length,
     unverified_over_30_days: 0,
+    deleted_count: deleted.length,
     timezone: 'UTC',
     month_from: '2026-11-01',
     month_to: '2026-12-01',
@@ -173,7 +179,7 @@ export function buildVersionState(
 ): VersionState {
   return {
     version: '1.3.0',
-    schema_version: '0004',
+    schema_version: '0005',
     ...overrides,
   };
 }
@@ -243,6 +249,11 @@ export function createStatefulApiServer(
       idle_expires_at: session.idle_expires_at,
       revoked_at: null,
       ip_address: '127.0.0.1',
+      device_label: 'macOS · Safari',
+      browser: 'Safari',
+      os: 'macOS',
+      device_type: 'desktop',
+      mfa_reauthenticated: false,
     },
     {
       id: 'sess-other-02',
@@ -255,6 +266,11 @@ export function createStatefulApiServer(
       idle_expires_at: session.idle_expires_at,
       revoked_at: null,
       ip_address: '10.0.0.18',
+      device_label: 'Windows · Chrome',
+      browser: 'Chrome',
+      os: 'Windows',
+      device_type: 'desktop',
+      mfa_reauthenticated: false,
     },
   ];
 
@@ -509,6 +525,10 @@ export function createStatefulApiServer(
         page_size: 20,
       };
       return respond(page, 200);
+    }
+
+    if (method === 'GET' && pathname === '/api/v1/auth/webauthn/credentials') {
+      return respond([], 200);
     }
 
     if (method === 'DELETE' && pathname === '/api/v1/auth/sessions/others') {

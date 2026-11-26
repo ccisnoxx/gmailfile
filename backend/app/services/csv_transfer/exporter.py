@@ -12,12 +12,18 @@ from uuid import UUID
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session, load_only
 
+from app.core.encryption import EncryptedValue, EncryptionService
+from app.core.export_crypto import encrypt_stream
 from app.models import GmailAccount, Tag, gmail_account_tags
 from app.repositories.accounts import AccountRepository
 from app.schemas.accounts import AccountQuery
 from app.schemas.operations import ExportInput
 from app.services.accounts import AccountService
-from app.services.csv_transfer.parser import EXPORT_FIELDS, spreadsheet_safe
+from app.services.csv_transfer.parser import (
+    ENCRYPTED_EXPORT_FIELDS,
+    EXPORT_FIELDS,
+    spreadsheet_safe,
+)
 
 EXPORT_BATCH_SIZE = 500
 # 数据库连接池默认 pool_size=5, max_overflow=0；将并发流式导出限制为 2，
@@ -176,3 +182,137 @@ def export_csv(auth, body: ExportInput, *, batch_size: int = EXPORT_BATCH_SIZE) 
     data = b"".join(iter_export_csv_chunks(service.db, params, batch_size=batch_size))
     service.audit("csv_exported", operation="csv")
     return data
+
+
+def _decrypt_optional_field(
+    encryption: EncryptionService,
+    row: GmailAccount,
+    field: str,
+) -> str:
+    ciphertext = getattr(row, f"{field}_ciphertext")
+    if ciphertext is None:
+        return ""
+    return encryption.decrypt(
+        EncryptedValue(
+            ciphertext,
+            getattr(row, f"{field}_nonce"),
+            getattr(row, f"{field}_key_version"),
+        ),
+        "gmail_account",
+        row.id,
+        field,
+    )
+
+
+def _format_encrypted_row(
+    row: GmailAccount,
+    recovery_email: str | None,
+    tag_names: list[str],
+    encryption: EncryptionService,
+) -> list[str]:
+    password = encryption.decrypt(
+        EncryptedValue(row.password_ciphertext, row.password_nonce, row.password_key_version),
+        "gmail_account",
+        row.id,
+        "password",
+    )
+    phone = _decrypt_optional_field(encryption, row, "phone")
+    notes = _decrypt_optional_field(encryption, row, "notes")
+    values = {
+        "account_no": f"GM-{row.account_no:06d}",
+        "gmail_email": row.gmail_email,
+        "password": password,
+        "registered_at": _format_timestamp(row.registered_at),
+        "recovery_email": row.recovery_email_external or recovery_email,
+        "phone": phone,
+        "status": row.status,
+        "two_factor_status": row.two_factor_status,
+        "last_login_at": _format_timestamp(row.last_login_at),
+        "last_verified_at": _format_timestamp(row.last_verified_at),
+        "password_changed_at": _format_timestamp(row.password_changed_at),
+        "purpose": row.purpose,
+        "tags": "|".join(tag_names),
+        "notes": notes,
+        "archived_at": _format_timestamp(row.archived_at),
+        "deleted_at": _format_timestamp(row.deleted_at),
+        "created_at": _format_timestamp(row.created_at),
+        "updated_at": _format_timestamp(row.updated_at),
+    }
+    # 加密导出面向离线凭据还原/重导入，保留密码/手机号/备注原始字节，不做公式单引号篡改。
+    return [
+        str(values[name]) if values[name] is not None else "" for name in ENCRYPTED_EXPORT_FIELDS
+    ]
+
+
+def iter_encrypted_export_csv_chunks(
+    db: Session,
+    encryption: EncryptionService,
+    params: AccountQuery,
+    *,
+    batch_size: int = EXPORT_BATCH_SIZE,
+) -> Iterator[bytes]:
+    """按游标分批解密并生成完整 CSV 明文块（仅存内存，供外层流式加密器实时消费）。"""
+    if batch_size < 1:
+        raise ValueError("导出批次大小必须大于 0")
+    repo = AccountRepository(db)
+    column = getattr(GmailAccount, params.sort.lstrip("-"))
+    order = column.desc() if params.sort.startswith("-") else column.asc()
+    statement = (
+        repo.filtered(params)
+        .order_by(order.nulls_last(), GmailAccount.id)
+        .execution_options(stream_results=True, yield_per=batch_size)
+    )
+
+    header_buffer = io.StringIO(newline="")
+    csv.writer(header_buffer).writerow(ENCRYPTED_EXPORT_FIELDS)
+    yield ("\ufeff" + header_buffer.getvalue()).encode("utf-8")
+
+    result = db.execute(statement)
+    try:
+        for batch in result.partitions(batch_size):
+            if not batch:
+                continue
+            account_ids = [row.id for row, _ in batch]
+            tags_by_account: dict[UUID, list[str]] = {}
+            tag_rows = db.execute(
+                select(gmail_account_tags.c.account_id, Tag.name)
+                .join(Tag, Tag.id == gmail_account_tags.c.tag_id)
+                .where(gmail_account_tags.c.account_id.in_(account_ids))
+                .order_by(Tag.name)
+            ).all()
+            for owner_id, tag_name in tag_rows:
+                tags_by_account.setdefault(owner_id, []).append(tag_name)
+            chunk_buffer = io.StringIO(newline="")
+            writer = csv.writer(chunk_buffer)
+            for row, recovery in batch:
+                writer.writerow(
+                    _format_encrypted_row(
+                        row, recovery, tags_by_account.get(row.id, []), encryption
+                    )
+                )
+                db.expunge(row)
+            yield chunk_buffer.getvalue().encode("utf-8")
+    finally:
+        result.close()
+
+
+def stream_export_encrypted_csv(
+    engine: Engine,
+    encryption: EncryptionService,
+    params: AccountQuery,
+    passphrase: str,
+    *,
+    batch_size: int = EXPORT_BATCH_SIZE,
+    on_close: Callable[[], None] | None = None,
+) -> Iterator[bytes]:
+    """在独立 REPEATABLE READ 只读快照事务中分批解密并流式输出 GME1 加密包（零明文落盘）。"""
+    try:
+        with Session(engine) as db, db.begin():
+            db.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"))
+            plaintext_stream = iter_encrypted_export_csv_chunks(
+                db, encryption, params, batch_size=batch_size
+            )
+            yield from encrypt_stream(plaintext_stream, passphrase)
+    finally:
+        if on_close is not None:
+            on_close()

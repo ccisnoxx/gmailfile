@@ -11,13 +11,17 @@ from app.schemas.accounts import (
     AccountPatch,
     AccountQuery,
     AccountSummary,
+    BatchInput,
     BatchResult,
     BatchStatus,
     BatchTags,
+    DashboardRecoveryUsageResponse,
     DashboardSummary,
     OptionPage,
     PasswordResponse,
     RecoveryPage,
+    RegistrationTrendResponse,
+    StatusDistributionResponse,
     TagResponse,
 )
 from app.services.accounts.detail import AccountDetailService
@@ -77,11 +81,37 @@ class AccountService:
     def summary(self, timezone: str) -> DashboardSummary:
         return self.listing.summary(timezone)
 
-    def recovery_usage(self, page: int, page_size: int) -> RecoveryPage:
-        return self.listing.recovery_usage(page, page_size)
+    def registration_trend(self, timezone: str, months: int) -> RegistrationTrendResponse:
+        return self.listing.registration_trend(timezone, months)
+
+    def status_distribution(self) -> StatusDistributionResponse:
+        return self.listing.status_distribution()
+
+    def dashboard_recovery_usage(self, limit: int = 10) -> DashboardRecoveryUsageResponse:
+        return self.listing.dashboard_recovery_usage(limit)
+
+    def recovery_usage(
+        self,
+        page: int,
+        page_size: int,
+        *,
+        search: str = "",
+        sort: str = "-account_count",
+    ) -> RecoveryPage:
+        return self.listing.recovery_usage(page, page_size, search=search, sort=sort)
+
+    def recovery_email_accounts(
+        self, email: str, *, page: int = 1, page_size: int = 30, sort: str = "-account_no"
+    ) -> AccountPage:
+        return self.listing.recovery_email_accounts(
+            email, page=page, page_size=page_size, sort=sort
+        )
 
     def batch(self, body: BatchStatus | BatchTags) -> BatchResult:
         return self.details.batch(body)
+
+    def batch_restore(self, body: BatchInput) -> BatchResult:
+        return self.details.batch_restore(body)
 
     def status_values(self, row: GmailAccount, status: str) -> dict:
         return self.details.status_values(row, status)

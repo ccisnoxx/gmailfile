@@ -36,7 +36,14 @@ export function SessionsPanel(props: OperationsPanelProps) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Session 管理</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={state.activeOnly ? 'default' : 'outline'}
+            aria-pressed={state.activeOnly}
+            onClick={() => state.setActiveOnly(!state.activeOnly)}
+          >
+            {state.activeOnly ? '显示全部会话' : '仅看有效会话'}
+          </Button>
           <Button variant="outline" onClick={() => void state.query.refetch()}>
             刷新
           </Button>
@@ -73,12 +80,16 @@ export function SessionsPanel(props: OperationsPanelProps) {
                   <TableCell>
                     <p className="font-medium">
                       {s.current ? '当前 Session' : '其他 Session'}
+                      {s.device_label && s.device_label !== '未知设备'
+                        ? ` · ${s.device_label}`
+                        : ''}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {s.id.slice(0, 8)} · {s.ip_address || '未知来源'}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {s.auth_level === 'authenticated' ? '完整认证' : '待 MFA'}
+                      {s.mfa_reauthenticated ? ' · Step-Up 有效' : ''}
                     </p>
                   </TableCell>
                   <TableCell>{sessionLabels[s.state]}</TableCell>

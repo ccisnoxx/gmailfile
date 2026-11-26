@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
@@ -58,6 +59,10 @@ class SessionResponse(BaseModel):
     reauthenticated_until: datetime | None = None
     mfa_reauthenticated_until: datetime | None = None
     step_up_totp_required: bool = False
+    totp_enabled: bool = False
+    webauthn_enabled: bool = False
+    webauthn_count: int = 0
+    can_passwordless_login: bool = False
 
 
 class SetupResponse(BaseModel):
@@ -74,3 +79,49 @@ class RecoveryResponse(BaseModel):
 
 class ActionResponse(BaseModel):
     status: Literal["ok"] = "ok"
+
+
+class WebAuthnCredentialItem(BaseModel):
+    id: UUID
+    label: str
+    transports: list[str]
+    discoverable: bool
+    backup_eligible: bool
+    backup_state: bool
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class WebAuthnRegisterOptionsInput(AuthInput):
+    label: str = Field(default="通行密钥", min_length=1, max_length=64)
+
+
+class WebAuthnChallengeResponse(BaseModel):
+    challenge_id: UUID
+    options: dict[str, Any]
+    expires_at: datetime
+
+
+class WebAuthnRegisterVerifyInput(AuthInput):
+    challenge_id: UUID
+    label: str = Field(min_length=1, max_length=64, pattern=r"\S")
+    credential: dict[str, Any]
+
+
+class WebAuthnRegisterVerifyResponse(BaseModel):
+    credential: WebAuthnCredentialItem
+    session: SessionResponse
+    recovery_codes: list[str] | None = None
+
+
+class WebAuthnRenameInput(AuthInput):
+    label: str = Field(min_length=1, max_length=64, pattern=r"\S")
+
+
+class WebAuthnAuthVerifyInput(AuthInput):
+    challenge_id: UUID
+    credential: dict[str, Any]
+
+
+class DisableTotpResponse(BaseModel):
+    session: SessionResponse

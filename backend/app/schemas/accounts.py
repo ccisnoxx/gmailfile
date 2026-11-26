@@ -249,9 +249,49 @@ class DashboardSummary(BaseModel):
     abnormal: int
     added_this_month: int
     unverified_over_30_days: int
+    deleted_count: int = 0
     timezone: str
     month_from: Timestamp
     month_to: Timestamp
+
+
+class TrendQuery(SummaryQuery):
+    months: int = Field(default=12, ge=3, le=24)
+
+
+class RegistrationTrendPoint(BaseModel):
+    month: str
+    count: int
+    cumulative: int
+
+
+class RegistrationTrendResponse(BaseModel):
+    timezone: str
+    months: int
+    items: list[RegistrationTrendPoint]
+
+
+class StatusCountItem(BaseModel):
+    status: Status
+    count: int
+
+
+class TwoFactorCountItem(BaseModel):
+    two_factor_status: TwoFactor
+    count: int
+
+
+class TopTagItem(BaseModel):
+    id: UUID
+    name: str
+    count: int
+
+
+class StatusDistributionResponse(BaseModel):
+    total: int
+    statuses: list[StatusCountItem]
+    two_factor: list[TwoFactorCountItem]
+    top_tags: list[TopTagItem]
 
 
 class BatchItem(VersionInput):
@@ -280,6 +320,20 @@ class BatchResult(BaseModel):
     updated_ids: list[UUID]
 
 
+RecoverySort = Literal[
+    "email",
+    "-email",
+    "account_count",
+    "-account_count",
+    "normal_count",
+    "-normal_count",
+    "abnormal_count",
+    "-abnormal_count",
+    "latest_registered_at",
+    "-latest_registered_at",
+]
+
+
 class RecoveryUsage(BaseModel):
     email: str
     account_count: int
@@ -291,5 +345,14 @@ class RecoveryUsage(BaseModel):
 class RecoveryPage(BaseModel):
     items: list[RecoveryUsage]
     total: int
+    total_accounts: int = 0
+    abnormal_recovery_emails: int = 0
     page: int
     page_size: int
+
+
+class DashboardRecoveryUsageResponse(BaseModel):
+    total_accounts: int
+    total_recovery_emails: int
+    items: list[RecoveryUsage]
+    others_count: int

@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
@@ -8,11 +9,18 @@ from app.schemas.auth import (
     ChangePasswordInput,
     ConfirmInput,
     Credentials,
+    DisableTotpResponse,
     RecoveryResponse,
     ReverifyInput,
     SessionResponse,
     SetupInput,
     SetupResponse,
+    WebAuthnAuthVerifyInput,
+    WebAuthnChallengeResponse,
+    WebAuthnCredentialItem,
+    WebAuthnRegisterVerifyInput,
+    WebAuthnRegisterVerifyResponse,
+    WebAuthnRenameInput,
 )
 from app.schemas.system import ErrorResponse
 from app.services.auth import AuthService
@@ -92,3 +100,101 @@ def regenerate(body: Credentials, service: Service):
 def password(body: ChangePasswordInput, service: Service):
     service.change_password(body.password.get_secret_value(), body.new_password.get_secret_value())
     return ActionResponse()
+
+
+@router.post(
+    "/totp/disable",
+    response_model=DisableTotpResponse,
+    responses={409: {"model": ErrorResponse}},
+    operation_id="authTotpDisable",
+)
+def totp_disable(service: Service):
+    return service.disable_totp()
+
+
+@router.get(
+    "/webauthn/credentials",
+    response_model=list[WebAuthnCredentialItem],
+    operation_id="authWebauthnCredentialsList",
+)
+def webauthn_credentials(service: ActivityService):
+    return service.webauthn_list()
+
+
+@router.post(
+    "/webauthn/register/options",
+    response_model=WebAuthnChallengeResponse,
+    responses={409: {"model": ErrorResponse}},
+    operation_id="authWebauthnRegisterOptions",
+)
+def webauthn_register_options(service: Service):
+    return service.webauthn_register_options()
+
+
+@router.post(
+    "/webauthn/register/verify",
+    response_model=WebAuthnRegisterVerifyResponse,
+    responses={409: {"model": ErrorResponse}},
+    operation_id="authWebauthnRegisterVerify",
+)
+def webauthn_register_verify(body: WebAuthnRegisterVerifyInput, service: Service):
+    return service.webauthn_register_verify(body.challenge_id, body.label, body.credential)
+
+
+@router.patch(
+    "/webauthn/credentials/{credential_id}",
+    response_model=WebAuthnCredentialItem,
+    responses={404: {"model": ErrorResponse}},
+    operation_id="authWebauthnCredentialRename",
+)
+def webauthn_credential_rename(credential_id: UUID, body: WebAuthnRenameInput, service: Service):
+    return service.webauthn_rename(credential_id, body.label)
+
+
+@router.delete(
+    "/webauthn/credentials/{credential_id}",
+    response_model=ActionResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    operation_id="authWebauthnCredentialDelete",
+)
+def webauthn_credential_delete(credential_id: UUID, service: Service):
+    service.webauthn_delete(credential_id)
+    return ActionResponse()
+
+
+@router.post(
+    "/webauthn/login/options",
+    response_model=WebAuthnChallengeResponse,
+    responses={404: {"model": ErrorResponse}},
+    operation_id="authWebauthnLoginOptions",
+)
+def webauthn_login_options(service: Service):
+    return service.webauthn_login_options()
+
+
+@router.post(
+    "/webauthn/login/verify",
+    response_model=SessionResponse,
+    operation_id="authWebauthnLoginVerify",
+)
+def webauthn_login_verify(body: WebAuthnAuthVerifyInput, service: Service):
+    return service.webauthn_login_verify(body.challenge_id, body.credential)
+
+
+@router.post(
+    "/webauthn/step-up/options",
+    response_model=WebAuthnChallengeResponse,
+    responses={404: {"model": ErrorResponse}},
+    operation_id="authWebauthnStepUpOptions",
+)
+def webauthn_step_up_options(service: Service):
+    return service.webauthn_step_up_options()
+
+
+@router.post(
+    "/webauthn/step-up/verify",
+    response_model=SessionResponse,
+    operation_id="authWebauthnStepUpVerify",
+)
+def webauthn_step_up_verify(body: WebAuthnAuthVerifyInput, service: Service):
+    return service.webauthn_step_up_verify(body.challenge_id, body.credential)

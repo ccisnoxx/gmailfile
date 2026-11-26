@@ -2,8 +2,13 @@ from datetime import datetime
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
+from app.core.security import (
+    MAX_ADMIN_PASSWORD_LENGTH,
+    MIN_ADMIN_PASSWORD_LENGTH,
+    validate_new_admin_password,
+)
 from app.schemas.accounts import AccountQuery, Input, Timestamp
 
 CsvField = Literal[
@@ -83,6 +88,18 @@ class ExportInput(Input):
         return self
 
 
+class EncryptedExportInput(ExportInput):
+    passphrase: SecretStr = Field(
+        min_length=MIN_ADMIN_PASSWORD_LENGTH, max_length=MAX_ADMIN_PASSWORD_LENGTH
+    )
+
+    @field_validator("passphrase")
+    @classmethod
+    def check_passphrase_strength(cls, value: SecretStr) -> SecretStr:
+        validate_new_admin_password(value.get_secret_value())
+        return value
+
+
 class SessionItem(BaseModel):
     id: UUID
     current: bool
@@ -94,6 +111,11 @@ class SessionItem(BaseModel):
     idle_expires_at: Timestamp
     revoked_at: Timestamp | None
     ip_address: str | None
+    device_label: str = "未知设备"
+    browser: str = "Unknown"
+    os: str = "Unknown"
+    device_type: Literal["desktop", "mobile", "tablet", "unknown"] = "unknown"
+    mfa_reauthenticated: bool = False
 
 
 class SessionPage(BaseModel):

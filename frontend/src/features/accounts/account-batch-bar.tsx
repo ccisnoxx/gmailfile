@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react';
-import { accountsBatchStatus, accountsBatchTags } from '@/api/generated';
+import { RotateCcw } from 'lucide-react';
+import {
+  accountsBatchRestore,
+  accountsBatchStatus,
+  accountsBatchTags,
+} from '@/api/generated';
 import type {
   AccountSummary,
   ErrorResponse,
@@ -24,26 +29,30 @@ export function BatchBar({
   selected,
   tags,
   session,
+  deleted = false,
   complete,
   onFailure,
 }: {
   selected: AccountSummary[];
   tags: TagResponse[];
   session: SessionResponse;
-  complete: () => Promise<void>;
+  deleted?: boolean;
+  complete: (kind?: 'status' | 'tags' | 'restore') => Promise<void>;
   onFailure: (e: unknown) => void;
 }) {
   const returnFocus = useRef<HTMLElement | null>(null);
   const [status, setStatus] = useState<AccountSummary['status']>('normal');
   const [tag, setTag] = useState('');
-  const [confirmation, setConfirmation] = useState<'status' | 'tags' | null>(
-    null,
-  );
+  const [confirmation, setConfirmation] = useState<
+    'status' | 'tags' | 'restore' | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
 
   async function submit() {
+    if (!confirmation) return;
+    const actionKind = confirmation;
     setBusy(true);
     setMessage('');
     const base = {
@@ -54,15 +63,18 @@ export function BatchBar({
       throwOnError: true as const,
     };
     try {
-      if (confirmation === 'status')
+      if (actionKind === 'restore') {
+        await accountsBatchRestore({ ...options, body: base });
+      } else if (actionKind === 'status') {
         await accountsBatchStatus({ ...options, body: { ...base, status } });
-      else
+      } else {
         await accountsBatchTags({
           ...options,
           body: { ...base, tag_ids: [tag] },
         });
+      }
       setConfirmation(null);
-      await complete();
+      await complete(actionKind);
     } catch (e) {
       const error = e as ErrorResponse;
       const target = error.error?.details?.account_id;
@@ -74,6 +86,7 @@ export function BatchBar({
       const rejected = [
         'ROW_VERSION_CONFLICT',
         'ACCOUNT_DELETED',
+        'ACCOUNT_NOT_DELETED',
         'ACCOUNT_NOT_FOUND',
         'TAG_INVALID',
         'VALIDATION_ERROR',
@@ -95,53 +108,69 @@ export function BatchBar({
 
   return (
     <section
-      aria-label="批量操作"
+      aria-label={deleted ? '回收站批量恢复' : '批量操作'}
       className="macos-glass-panel flex min-w-0 flex-1 flex-wrap items-center gap-3 px-4 py-2.5"
     >
       <p className="text-sm">已选当前页 {selected.length} 条（不跨页）</p>
-      <NativeSelect
-        aria-label="批量目标状态"
-        value={status}
-        onChange={(e) => setStatus(e.target.value as typeof status)}
-      >
-        {Object.entries(statusLabels).map(([v, label]) => (
-          <option value={v} key={v}>
-            {label}
-          </option>
-        ))}
-      </NativeSelect>
-      <Button
-        variant="outline"
-        disabled={!selected.length || busy || failed}
-        onClick={() => {
-          returnFocus.current = document.activeElement as HTMLElement;
-          setConfirmation('status');
-        }}
-      >
-        批量修改状态
-      </Button>
-      <NativeSelect
-        aria-label="批量添加标签"
-        value={tag}
-        onChange={(e) => setTag(e.target.value)}
-      >
-        <option value="">请选择标签</option>
-        {tags.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.name}
-          </option>
-        ))}
-      </NativeSelect>
-      <Button
-        variant="outline"
-        disabled={!selected.length || !tag || busy || failed}
-        onClick={() => {
-          returnFocus.current = document.activeElement as HTMLElement;
-          setConfirmation('tags');
-        }}
-      >
-        添加到所选账号
-      </Button>
+      {deleted ? (
+        <Button
+          variant="default"
+          disabled={!selected.length || busy || failed}
+          onClick={() => {
+            returnFocus.current = document.activeElement as HTMLElement;
+            setConfirmation('restore');
+          }}
+        >
+          <RotateCcw className="size-4" aria-hidden="true" />
+          批量恢复所选账号
+        </Button>
+      ) : (
+        <>
+          <NativeSelect
+            aria-label="批量目标状态"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as typeof status)}
+          >
+            {Object.entries(statusLabels).map(([v, label]) => (
+              <option value={v} key={v}>
+                {label}
+              </option>
+            ))}
+          </NativeSelect>
+          <Button
+            variant="outline"
+            disabled={!selected.length || busy || failed}
+            onClick={() => {
+              returnFocus.current = document.activeElement as HTMLElement;
+              setConfirmation('status');
+            }}
+          >
+            批量修改状态
+          </Button>
+          <NativeSelect
+            aria-label="批量添加标签"
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+          >
+            <option value="">请选择标签</option>
+            {tags.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </NativeSelect>
+          <Button
+            variant="outline"
+            disabled={!selected.length || !tag || busy || failed}
+            onClick={() => {
+              returnFocus.current = document.activeElement as HTMLElement;
+              setConfirmation('tags');
+            }}
+          >
+            添加到所选账号
+          </Button>
+        </>
+      )}
       <AlertDialog
         open={confirmation !== null}
         onOpenChange={(open) => {
@@ -156,12 +185,16 @@ export function BatchBar({
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>确认批量操作</AlertDialogTitle>
+            <AlertDialogTitle>
+              {confirmation === 'restore' ? '确认批量恢复账号' : '确认批量操作'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               对当前页选中的 {selected.length} 条
-              {confirmation === 'status'
-                ? `修改为“${statusLabels[status]}”`
-                : '追加标签（保留原标签）'}
+              {confirmation === 'restore'
+                ? '已删除账号执行原子恢复（保留原状态、归档标记与标签）'
+                : confirmation === 'status'
+                  ? `修改为“${statusLabels[status]}”`
+                  : '追加标签（保留原标签）'}
               。整批成功或整批回滚，不包含其他页面的账号。
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -179,7 +212,7 @@ export function BatchBar({
                 void submit();
               }}
             >
-              确认整批提交
+              {confirmation === 'restore' ? '确认整批恢复' : '确认整批提交'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

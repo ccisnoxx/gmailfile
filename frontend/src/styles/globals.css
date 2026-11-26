@@ -104,6 +104,142 @@
   --muted-foreground: var(--text-secondary);
   --destructive: var(--danger);
   --border: rgba(173, 200, 232, 0.48);
+  --surface-control: rgba(255, 255, 255, 0.65);
+  --surface-control-hover: rgba(255, 255, 255, 0.9);
+  --surface-control-border: rgba(255, 255, 255, 0.8);
+  --surface-table-head: rgba(247, 251, 255, 0.9);
+  --surface-sticky-cell: rgba(255, 255, 255, 0.84);
+}
+
+/* 深色模式：macOS 深海亚克力毛玻璃与 WCAG 2.2 AA 高对比语义色板 */
+:root[data-theme='dark'],
+.dark {
+  color-scheme: dark;
+
+  --desktop-start: #09111f;
+  --desktop-mid: #0e1a2e;
+  --desktop-end: #152540;
+  --accent: #5aa2ff;
+  --accent-hover: #7bb6ff;
+  --accent-soft: rgba(90, 162, 255, 0.2);
+  --text-primary: #f1f5fb;
+  --text-secondary: #b8c7dc;
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.18);
+  --success-text: #86efac;
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.18);
+  --warning-text: #fde68a;
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.2);
+  --purple: #a78bfa;
+  --purple-soft: rgba(167, 139, 250, 0.2);
+  --purple-text: #ddd6fe;
+
+  --nav-bg: rgba(16, 26, 44, var(--nav-alpha));
+  --nav-border: rgba(148, 178, 214, 0.24);
+  --nav-divider: rgba(148, 178, 214, 0.2);
+  --nav-text-secondary: #c7d5e8;
+
+  --window-bg: rgba(14, 23, 39, 0.78);
+  --window-border: rgba(148, 178, 214, 0.24);
+  --window-shadow:
+    0 24px 80px rgba(2, 6, 18, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+  --panel-bg: rgba(21, 33, 54, 0.72);
+  --panel-bg-strong: rgba(24, 38, 62, 0.86);
+  --panel-bg-hover: rgba(31, 47, 76, 0.9);
+  --panel-border: rgba(148, 178, 214, 0.22);
+  --panel-shadow:
+    0 8px 28px rgba(2, 6, 18, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --panel-shadow-hover:
+    0 12px 32px rgba(2, 6, 18, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+
+  --modal-bg: rgba(17, 27, 45, 0.94);
+  --modal-border: rgba(148, 178, 214, 0.28);
+  --modal-shadow:
+    0 28px 80px rgba(2, 6, 18, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+
+  --table-divider: rgba(148, 178, 214, 0.18);
+  --table-row-hover: rgba(148, 178, 214, 0.09);
+  --table-row-selected: rgba(90, 162, 255, 0.2);
+
+  --background: #0d1626;
+  --foreground: var(--text-primary);
+  --card: rgba(21, 33, 54, 0.88);
+  --primary: var(--accent);
+  --primary-foreground: #071224;
+  --secondary: rgba(90, 162, 255, 0.18);
+  --secondary-foreground: #dbeafe;
+  --muted: rgba(34, 50, 78, 0.72);
+  --muted-foreground: var(--text-secondary);
+  --destructive: var(--danger);
+  --border: rgba(148, 178, 214, 0.26);
+  --surface-control: rgba(28, 43, 70, 0.78);
+  --surface-control-hover: rgba(39, 58, 92, 0.92);
+  --surface-control-border: rgba(148, 178, 214, 0.28);
+  --surface-table-head: rgba(18, 29, 49, 0.94);
+  --surface-sticky-cell: rgba(20, 32, 53, 0.92);
+}
+
+:root[data-theme='dark'] .macos-desktop-bg {
+  background:
+    radial-gradient(
+      62% 55% at 14% 10%,
+      rgba(59, 130, 246, 0.22) 0%,
+      rgba(59, 130, 246, 0) 68%
+    ),
+    radial-gradient(
+      52% 50% at 88% 18%,
+      rgba(37, 99, 235, 0.2) 0%,
+      rgba(37, 99, 235, 0) 72%
+    ),
+    radial-gradient(
+      55% 48% at 72% 92%,
+      rgba(99, 102, 241, 0.18) 0%,
+      rgba(99, 102, 241, 0) 70%
+    ),
+    linear-gradient(
+      135deg,
+      var(--desktop-start) 0%,
+      var(--desktop-mid) 50%,
+      var(--desktop-end) 100%
+    );
+}
+
+/* 深色模式下兼容历史组件里的浅色亚克力表面与次级灰字，确保全页面满足 WCAG 2.2 AA 对比度 */
+:root[data-theme='dark'] [class*='bg-white/'],
+:root[data-theme='dark'] [class*='bg-[#f7fbff]'],
+:root[data-theme='dark'] [class*='bg-[rgba(253,254,255'] {
+  background-color: var(--surface-control) !important;
+}
+
+:root[data-theme='dark'] [class*='border-white/'] {
+  border-color: var(--surface-control-border) !important;
+}
+
+:root[data-theme='dark'] [class*='text-[#475467]'],
+:root[data-theme='dark'] [class*='text-[#3b475c]'] {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme='dark'] [class*='text-[#0d4bb3]'],
+:root[data-theme='dark'] [class*='text-[#1158c7]'],
+:root[data-theme='dark'] [class*='text-[#1565d8]'] {
+  color: #93c5fd !important;
+}
+
+:root[data-theme='dark'] [class*='text-[#b84040]'],
+:root[data-theme='dark'] [class*='text-[#a83838]'] {
+  color: #fca5a5 !important;
+}
+
+:root[data-theme='dark'] [class*='text-[#116b3b]'] {
+  color: var(--success-text) !important;
+}
+
+:root[data-theme='dark'] [data-slot='flowing-background'] {
+  opacity: 0.24;
 }
 
 @layer base {

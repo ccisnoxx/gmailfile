@@ -372,7 +372,7 @@ def test_audit_paging_filter_and_status_redaction(env, signed, tmp_path):
     assert (
         client.get("/api/v1/audit-events", params={"event_type": "not-allowed"}).status_code == 422
     )
-    assert client.get("/api/v1/system/version").json()["schema_version"] == "0004"
+    assert client.get("/api/v1/system/version").json()["schema_version"] == "0005"
     assert client.get("/api/v1/system/backup-status").json()["state"] == "unconfigured"
     status = tmp_path / "status.json"
     env["settings"].backup_status_file = status

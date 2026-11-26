@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 
 export type OperationsPanelProps = {
   session: SessionResponse;
+  onSession?: (value: SessionResponse) => void;
   onFailure: (error: unknown) => void;
   onBack: () => void;
   onSecurity: () => void;

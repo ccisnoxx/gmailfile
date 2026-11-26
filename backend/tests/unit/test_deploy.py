@@ -139,7 +139,9 @@ def test_success_reexecutes_migration_and_only_then_publishes(release, monkeypat
     )
 
 
-@pytest.mark.parametrize("schema,compatible", [("0005", True), (SCHEMA_VERSION, False)])
+@pytest.mark.parametrize(
+    "schema,compatible", [(f"{int(SCHEMA_VERSION) + 1:04d}", True), (SCHEMA_VERSION, False)]
+)
 def test_rollback_never_downgrades_or_starts_incompatible_api(
     release, monkeypatch, schema, compatible
 ):

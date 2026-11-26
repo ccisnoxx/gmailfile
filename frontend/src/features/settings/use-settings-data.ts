@@ -7,6 +7,12 @@ import {
   authChangePassword,
   authRegenerateRecoveryCodes,
   authReverify,
+  authTotpDisable,
+  authWebauthnCredentialDelete,
+  authWebauthnCredentialRename,
+  authWebauthnCredentialsList,
+  authWebauthnRegisterOptions,
+  authWebauthnRegisterVerify,
   backupStatus,
   sessionsList,
   sessionsRevoke,
@@ -17,16 +23,23 @@ import {
 } from '@/api/generated';
 import type { ErrorResponse, SessionResponse } from '@/api/generated';
 import {
+  createPasskeyCredential,
+  formatWebAuthnError,
+  performPasskeyStepUp,
+} from '@/lib/webauthn';
+import {
   createMockActiveSessions,
   createMockAuditLogs,
   createMockBackupRestore,
   createMockRetentionPolicy,
   createMockSystemRuntime,
+  createMockWebAuthnCredentials,
   formatSettingsDateTime,
   generateDemoRecoveryCodes,
   mapApiAuditToEntry,
   mapApiBackupStatus,
   mapApiSessionToRow,
+  mapApiWebAuthnCredential,
   MOCK_ADMIN_SECURITY,
   MOCK_AUDIT_INTEGRITY,
   MOCK_TOTP_SECURITY,
@@ -48,6 +61,7 @@ import type {
   SettingsMutationHandlers,
   SystemRuntimeInfo,
   TotpSecurityInfo,
+  WebAuthnCredentialRow,
 } from './types';
 
 function extractErrorInfo(error: unknown): {
@@ -100,6 +114,9 @@ export type UseSettingsDataOptions = {
 export type SettingsDataBundle = {
   adminSecurity: AdminSecurityInfo;
   totpSecurity: TotpSecurityInfo;
+  webauthnCredentials: WebAuthnCredentialRow[];
+  webauthnState: CardStateMode;
+  webauthnError: string | null;
   sessions: ActiveSessionRow[];
   sessionsState: CardStateMode;
   sessionsError: string | null;
@@ -153,6 +170,9 @@ export function useSettingsData({
   );
   const [mockRuntime, setMockRuntime] = useState<SystemRuntimeInfo>(() =>
     createMockSystemRuntime(),
+  );
+  const [mockWebAuthn, setMockWebAuthn] = useState<WebAuthnCredentialRow[]>(
+    () => createMockWebAuthnCredentials(),
   );
   const [backupRunning, setBackupRunning] = useState(false);
 
@@ -242,6 +262,19 @@ export function useSettingsData({
           throwOnError: true,
         })
       ).data.total,
+  });
+
+  const webauthnQuery = useQuery({
+    queryKey: ['settings-webauthn-credentials'],
+    enabled: isLive,
+    retry: false,
+    queryFn: async ({ signal }) =>
+      (
+        await authWebauthnCredentialsList({
+          signal,
+          throwOnError: true,
+        })
+      ).data,
   });
 
   const prependMockAudit = useCallback(
@@ -374,6 +407,328 @@ export function useSettingsData({
       return reverify(verify.password, verify.totpCode);
     },
     [isLive, mockAdmin.reverifiedUntil, reverify, session],
+  );
+
+  const passkeyReverify = useCallback(async (): Promise<
+    SettingsActionResult & { csrfToken?: string }
+  > => {
+    if (simulateActionFailure) {
+      return { ok: false, error: '通行密钥验证失败，请重试。' };
+    }
+    const token = latestCsrfRef.current ?? session?.csrf_token;
+    if (isLive && session && token) {
+      try {
+        const updated = await performPasskeyStepUp(token);
+        latestCsrfRef.current = updated.csrf_token;
+        onSession?.(updated);
+        return {
+          ok: true,
+          message: '通行密钥二次验证成功，5 分钟内有效。',
+          csrfToken: updated.csrf_token,
+        };
+      } catch (error) {
+        const info = extractErrorInfo(error);
+        if (
+          ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+            info.code ?? '',
+          )
+        ) {
+          onFailure?.(error);
+        }
+        return { ok: false, error: formatWebAuthnError(error) };
+      }
+    }
+    const until = new Date(Date.now() + 5 * 60_000).toISOString();
+    setMockAdmin((prev) => ({
+      ...prev,
+      reverifiedUntil: until,
+      mfaReverifiedUntil: until,
+    }));
+    return { ok: true, message: '通行密钥二次验证成功，5 分钟内有效。' };
+  }, [isLive, onFailure, onSession, session, simulateActionFailure]);
+
+  const registerWebAuthnCredential = useCallback(
+    async (
+      label: string,
+      verify?: SensitiveVerifyPayload,
+    ): Promise<SettingsActionResult> => {
+      if (busyRef.current) {
+        return { ok: false, error: '正在处理其他安全操作，请稍候。' };
+      }
+      if (simulateActionFailure) {
+        return { ok: false, error: '绑定通行密钥失败，请重试。' };
+      }
+      busyRef.current = true;
+      try {
+        const reauth = await ensureReverifiedIfNeeded(verify);
+        if (!reauth.ok) return reauth;
+        const nextHeaders = headersWithCsrf(reauth.csrfToken);
+        const cleanLabel = label.trim() || '本机通行密钥';
+
+        if (isLive && nextHeaders) {
+          const opt = await authWebauthnRegisterOptions({
+            headers: nextHeaders,
+            throwOnError: true,
+          });
+          const credential = await createPasskeyCredential(opt.data.options);
+          const verified = await authWebauthnRegisterVerify({
+            body: {
+              challenge_id: opt.data.challenge_id,
+              label: cleanLabel,
+              credential,
+            },
+            headers: nextHeaders,
+            throwOnError: true,
+          });
+          latestCsrfRef.current = verified.data.session.csrf_token;
+          onSession?.(verified.data.session);
+          await queryClient.invalidateQueries({
+            queryKey: ['settings-webauthn-credentials'],
+          });
+          return {
+            ok: true,
+            message: `已成功绑定通行密钥「${verified.data.credential.label}」。`,
+          };
+        }
+
+        const nowLabel = formatSettingsDateTime(new Date().toISOString());
+        setMockWebAuthn((prev) => [
+          ...prev,
+          {
+            id: `cred-mock-${Date.now()}`,
+            label: cleanLabel,
+            transports: ['internal'],
+            discoverable: true,
+            backupEligible: true,
+            backupState: true,
+            createdAt: nowLabel,
+            lastUsedAt: null,
+          },
+        ]);
+        prependMockAudit(
+          'webauthn_registered',
+          '绑定通行密钥',
+          'settings',
+          cleanLabel,
+        );
+        return { ok: true, message: `已绑定通行密钥「${cleanLabel}」。` };
+      } catch (error) {
+        const info = extractErrorInfo(error);
+        if (
+          ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+            info.code ?? '',
+          )
+        ) {
+          onFailure?.(error);
+        }
+        return {
+          ok: false,
+          error:
+            info.code === 'REAUTH_REQUIRED'
+              ? info.message
+              : formatWebAuthnError(error),
+          requireReauth: info.code === 'REAUTH_REQUIRED',
+        };
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [
+      ensureReverifiedIfNeeded,
+      headersWithCsrf,
+      isLive,
+      onFailure,
+      onSession,
+      prependMockAudit,
+      queryClient,
+      simulateActionFailure,
+    ],
+  );
+
+  const renameWebAuthnCredential = useCallback(
+    async (
+      credentialId: string,
+      label: string,
+    ): Promise<SettingsActionResult> => {
+      const cleanLabel = label.trim();
+      if (!cleanLabel) return { ok: false, error: '请输入有效的设备名称。' };
+      const activeHeaders = headersWithCsrf();
+      if (isLive && activeHeaders) {
+        try {
+          await authWebauthnCredentialRename({
+            path: { credential_id: credentialId },
+            body: { label: cleanLabel },
+            headers: activeHeaders,
+            throwOnError: true,
+          });
+          await queryClient.invalidateQueries({
+            queryKey: ['settings-webauthn-credentials'],
+          });
+          return { ok: true, message: '通行密钥名称已更新。' };
+        } catch (error) {
+          const info = extractErrorInfo(error);
+          if (
+            ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+              info.code ?? '',
+            )
+          ) {
+            onFailure?.(error);
+          }
+          return { ok: false, error: info.message };
+        }
+      }
+      setMockWebAuthn((prev) =>
+        prev.map((item) =>
+          item.id === credentialId ? { ...item, label: cleanLabel } : item,
+        ),
+      );
+      prependMockAudit(
+        'webauthn_renamed',
+        '重命名通行密钥',
+        'settings',
+        cleanLabel,
+      );
+      return { ok: true, message: '通行密钥名称已更新。' };
+    },
+    [headersWithCsrf, isLive, onFailure, prependMockAudit, queryClient],
+  );
+
+  const deleteWebAuthnCredential = useCallback(
+    async (
+      credentialId: string,
+      verify?: SensitiveVerifyPayload,
+    ): Promise<SettingsActionResult> => {
+      if (busyRef.current) {
+        return { ok: false, error: '正在处理其他安全操作，请稍候。' };
+      }
+      busyRef.current = true;
+      try {
+        const reauth = await ensureReverifiedIfNeeded(verify);
+        if (!reauth.ok) return reauth;
+        const nextHeaders = headersWithCsrf(reauth.csrfToken);
+        if (isLive && nextHeaders) {
+          await authWebauthnCredentialDelete({
+            path: { credential_id: credentialId },
+            headers: nextHeaders,
+            throwOnError: true,
+          });
+          await queryClient.invalidateQueries({
+            queryKey: ['settings-webauthn-credentials'],
+          });
+          onRefreshSession?.();
+          return { ok: true, message: '通行密钥已移除。' };
+        }
+        if (!mockTotp.enabled && mockWebAuthn.length <= 1) {
+          return {
+            ok: false,
+            error: '至少需保留一种二步验证方式，禁止删除最后一个通行密钥。',
+          };
+        }
+        setMockWebAuthn((prev) =>
+          prev.filter((item) => item.id !== credentialId),
+        );
+        prependMockAudit(
+          'webauthn_revoked',
+          '移除通行密钥',
+          'settings',
+          credentialId,
+        );
+        return { ok: true, message: '通行密钥已移除。' };
+      } catch (error) {
+        const info = extractErrorInfo(error);
+        if (
+          ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+            info.code ?? '',
+          )
+        ) {
+          onFailure?.(error);
+        }
+        return {
+          ok: false,
+          error: info.message,
+          requireReauth: info.code === 'REAUTH_REQUIRED',
+        };
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [
+      ensureReverifiedIfNeeded,
+      headersWithCsrf,
+      isLive,
+      mockTotp.enabled,
+      mockWebAuthn.length,
+      onFailure,
+      onRefreshSession,
+      prependMockAudit,
+      queryClient,
+    ],
+  );
+
+  const disableTotp = useCallback(
+    async (verify?: SensitiveVerifyPayload): Promise<SettingsActionResult> => {
+      if (busyRef.current) {
+        return { ok: false, error: '正在处理其他安全操作，请稍候。' };
+      }
+      busyRef.current = true;
+      try {
+        const reauth = await ensureReverifiedIfNeeded(verify);
+        if (!reauth.ok) return reauth;
+        const nextHeaders = headersWithCsrf(reauth.csrfToken);
+        if (isLive && nextHeaders) {
+          const result = await authTotpDisable({
+            headers: nextHeaders,
+            throwOnError: true,
+          });
+          latestCsrfRef.current = result.data.session.csrf_token;
+          onSession?.(result.data.session);
+          return {
+            ok: true,
+            message:
+              'TOTP 已停用，后续请使用通行密钥（Passkey）或离线恢复码验证。',
+          };
+        }
+        if (mockWebAuthn.length < 1) {
+          return {
+            ok: false,
+            error: '停用 TOTP 前必须至少绑定一个通行密钥。',
+          };
+        }
+        setMockTotp((prev) => ({ ...prev, enabled: false, bound: false }));
+        prependMockAudit(
+          'totp_disabled',
+          '停用 TOTP 验证器',
+          'settings',
+          '切换为纯通行密钥模式',
+        );
+        return { ok: true, message: 'TOTP 已停用。' };
+      } catch (error) {
+        const info = extractErrorInfo(error);
+        if (
+          ['AUTH_REQUIRED', 'MFA_REQUIRED', 'CSRF_INVALID'].includes(
+            info.code ?? '',
+          )
+        ) {
+          onFailure?.(error);
+        }
+        return {
+          ok: false,
+          error: info.message,
+          requireReauth: info.code === 'REAUTH_REQUIRED',
+        };
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [
+      ensureReverifiedIfNeeded,
+      headersWithCsrf,
+      isLive,
+      mockWebAuthn.length,
+      onFailure,
+      onSession,
+      prependMockAudit,
+    ],
   );
 
   const changePassword = useCallback(
@@ -1014,6 +1369,7 @@ export function useSettingsData({
       backupQuery.refetch(),
       systemQuery.refetch(),
       trashQuery.refetch(),
+      webauthnQuery.refetch(),
     ]);
   }, [
     auditsQuery,
@@ -1023,6 +1379,7 @@ export function useSettingsData({
     sessionsQuery,
     systemQuery,
     trashQuery,
+    webauthnQuery,
   ]);
 
   // 聚合各区域展示模型与加载/错误/空状态
@@ -1043,15 +1400,32 @@ export function useSettingsData({
 
   const totpSecurity: TotpSecurityInfo = useMemo(() => {
     if (!isLive) return mockTotp;
+    const enabled = session?.totp_enabled ?? true;
     return {
-      enabled: true,
-      bound: true,
+      enabled,
+      bound: enabled,
       authenticatorApps: 'Google Authenticator / Microsoft Authenticator 等',
       recoveryCodesTotal: 10,
       recoveryCodesRemaining: liveTotpRemaining,
       demoCode: '••••••',
     };
-  }, [isLive, liveTotpRemaining, mockTotp]);
+  }, [isLive, liveTotpRemaining, mockTotp, session?.totp_enabled]);
+
+  const webauthnCredentials: WebAuthnCredentialRow[] = useMemo(() => {
+    if (uiStateOverride === 'empty') return [];
+    if (!isLive) return mockWebAuthn;
+    return Array.isArray(webauthnQuery.data)
+      ? webauthnQuery.data.map(mapApiWebAuthnCredential)
+      : [];
+  }, [isLive, mockWebAuthn, uiStateOverride, webauthnQuery.data]);
+
+  const webauthnState: CardStateMode = useMemo(() => {
+    if (uiStateOverride) return uiStateOverride;
+    if (!isLive) return 'ready';
+    if (webauthnQuery.isPending) return 'loading';
+    if (webauthnQuery.isError) return 'error';
+    return 'ready';
+  }, [isLive, uiStateOverride, webauthnQuery.isError, webauthnQuery.isPending]);
 
   const sessions: ActiveSessionRow[] = useMemo(() => {
     if (uiStateOverride === 'empty') return [];
@@ -1250,6 +1624,14 @@ export function useSettingsData({
   return {
     adminSecurity,
     totpSecurity,
+    webauthnCredentials,
+    webauthnState,
+    webauthnError:
+      uiStateOverride === 'error'
+        ? '无法加载通行密钥列表，请检查认证服务连接。'
+        : webauthnQuery.error
+          ? extractErrorInfo(webauthnQuery.error).message
+          : null,
     sessions,
     sessionsState,
     sessionsError:
@@ -1288,6 +1670,11 @@ export function useSettingsData({
     isRecentlyVerified,
     handlers: {
       reverify,
+      passkeyReverify,
+      registerWebAuthnCredential,
+      renameWebAuthnCredential,
+      deleteWebAuthnCredential,
+      disableTotp,
       changePassword,
       regenerateRecoveryCodes,
       terminateSession,

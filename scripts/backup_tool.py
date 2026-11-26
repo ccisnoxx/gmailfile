@@ -696,6 +696,25 @@ def verify_admin_step_up(connection, keys: Path, *, read_password=getpass.getpas
             "UPDATE public.admin_users SET totp_last_accepted_step=%s WHERE id=%s",
             (step, admin_id),
         )
+    else:
+        # 当管理员已绑定 WebAuthn 且停用 TOTP 时，CLI 切换使用一次性恢复码作为离线二步验证兜底。
+        has_webauthn = connection.execute(
+            "SELECT count(*) FROM public.admin_webauthn_credentials "
+            "WHERE admin_user_id=%s AND revoked_at IS NULL",
+            (admin_id,),
+        ).fetchone()[0]
+        if has_webauthn > 0:
+            from app.core.security import token_hash
+
+            recovery_code = read_code(
+                "高风险切换二次验证 — 当前 TOTP 已停用，请输入一次性恢复码："
+            ).strip()
+            used = connection.execute(
+                "UPDATE public.admin_recovery_codes SET used_at=%s "
+                "WHERE admin_user_id=%s AND code_hash=%s AND used_at IS NULL RETURNING id",
+                (now(), admin_id, token_hash(recovery_code).hex()),
+            ).fetchone()
+            require(used is not None, "管理员一次性恢复码验证失败，切换已取消")
     return True
 
 
@@ -779,6 +798,7 @@ def switch(args):
                     "pending_totp_ciphertext=NULL, pending_totp_nonce=NULL, "
                     "pending_totp_key_version=NULL, pending_totp_expires_at=NULL"
                 )
+                target.execute("DELETE FROM public.webauthn_challenges")
                 target.execute("DELETE FROM public.pre_auth_sessions")
                 target.execute("DELETE FROM public.csv_receipts")
                 target.execute(

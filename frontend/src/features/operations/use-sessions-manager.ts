@@ -25,6 +25,7 @@ export function useSessionsManager({
   onSignedOut: (revocation: Promise<unknown>) => void;
 }) {
   const [page, setPage] = useState(1);
+  const [activeOnly, setActiveOnly] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -38,11 +39,11 @@ export function useSessionsManager({
   }, []);
 
   const query = useQuery({
-    queryKey: ['sessions', page],
+    queryKey: ['sessions', page, activeOnly],
     queryFn: async ({ signal }) =>
       (
         await sessionsList({
-          query: { page, page_size: 10 },
+          query: { page, page_size: 10, active_only: activeOnly || undefined },
           signal,
           throwOnError: true,
         })
@@ -96,6 +97,11 @@ export function useSessionsManager({
   return {
     page,
     setPage,
+    activeOnly,
+    setActiveOnly: (next: boolean) => {
+      setPage(1);
+      setActiveOnly(next);
+    },
     target,
     setTarget,
     busy,

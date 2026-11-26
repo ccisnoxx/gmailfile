@@ -1,7 +1,11 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
+import { KeyRound } from 'lucide-react';
 import { Outlet, useInRouterContext, useNavigate } from 'react-router-dom';
 import type { ChangePasswordInput, Credentials } from '@/api/generated';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { isWebAuthnSupported } from '@/lib/webauthn';
 import { AuthShell } from './auth-shell';
 import { CredentialForm } from './credential-form';
 import { RecoveryCodesCard } from './recovery-codes-card';
@@ -50,7 +54,9 @@ function AuthWorkspace({
   onNavigateView: (next: WorkspaceView, tab?: OperationsTabKey) => void;
 }) {
   const [panel, setPanel] = useState<SecurityPanel>('reverify');
+  const [passkeyLabel, setPasskeyLabel] = useState('本机通行密钥');
   const totpState = useTotpState();
+  const webauthnSupported = isWebAuthnSupported();
 
   const auth = useAuthMachine({
     onClearSecrets: totpState.clear,
@@ -166,6 +172,11 @@ function AuthWorkspace({
           epoch={auth.epoch}
           busy={auth.busy}
           stepUpTotpRequired={Boolean(auth.session.step_up_totp_required)}
+          onPasskeyReverify={
+            auth.session.webauthn_enabled && webauthnSupported
+              ? auth.reverifyWithPasskey
+              : undefined
+          }
           onSelectPanel={selectPanel}
           onOpenAccounts={() => switchView('accounts')}
           onOpenOperations={() => switchView('operations')}
@@ -213,9 +224,10 @@ function AuthWorkspace({
           onCancel={auth.clearSecrets}
         />
       ) : pending ? (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-5">
           <p className="leading-7 text-muted-foreground">
-            密码已验证。请绑定验证器，完成前不能访问账号资料。使用恢复码登录后也必须重新绑定。
+            密码已验证。请绑定二步验证（TOTP 验证器或 WebAuthn
+            通行密钥），完成前不能访问账号资料。使用恢复码登录后也必须重新绑定。
           </p>
           <Button
             disabled={auth.busy}
@@ -223,14 +235,70 @@ function AuthWorkspace({
           >
             开始绑定验证器
           </Button>
+          {webauthnSupported && (
+            <>
+              <Separator />
+              <div className="flex flex-col gap-3">
+                <label className="flex flex-col gap-1.5 text-sm">
+                  <span className="font-medium">
+                    或直接绑定通行密钥（Passkey / FIDO2）
+                  </span>
+                  <Input
+                    aria-label="通行密钥设备名称"
+                    maxLength={80}
+                    disabled={auth.busy}
+                    value={passkeyLabel}
+                    onChange={(e) => setPasskeyLabel(e.target.value)}
+                    placeholder="例如：MacBook Touch ID / YubiKey"
+                  />
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={auth.busy}
+                  onClick={() =>
+                    void auth.registerPasskey(passkeyLabel, (res) => {
+                      if (res.recovery_codes && res.recovery_codes.length > 0) {
+                        totpState.setSaved(false);
+                        totpState.setCodes(res.recovery_codes);
+                      }
+                    })
+                  }
+                >
+                  <KeyRound className="size-4" aria-hidden="true" />
+                  绑定通行密钥（Passkey）
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       ) : (
-        <CredentialForm
-          key={auth.epoch}
-          kind="login"
-          busy={auth.busy}
-          onSubmit={auth.login}
-        />
+        <div className="flex flex-col gap-5">
+          {auth.session.can_passwordless_login && webauthnSupported && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={auth.busy}
+                onClick={() => void auth.loginWithPasskey()}
+              >
+                <KeyRound className="size-4" aria-hidden="true" />
+                使用通行密钥（Passkey）登录
+              </Button>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <Separator className="flex-1" />
+                <span>或使用管理员密码登录</span>
+                <Separator className="flex-1" />
+              </div>
+            </>
+          )}
+          <CredentialForm
+            key={auth.epoch}
+            kind="login"
+            busy={auth.busy}
+            onSubmit={auth.login}
+          />
+        </div>
       )}
     </AuthShell>
   );

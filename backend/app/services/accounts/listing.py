@@ -6,17 +6,24 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 
-from app.models import GmailAccount
+from app.models import GmailAccount, Tag, gmail_account_tags
 from app.repositories.accounts import AccountRepository
 from app.schemas.accounts import (
     AccountOption,
     AccountPage,
     AccountQuery,
     AccountSummary,
+    DashboardRecoveryUsageResponse,
     DashboardSummary,
     OptionPage,
     RecoveryPage,
     RecoveryUsage,
+    RegistrationTrendPoint,
+    RegistrationTrendResponse,
+    StatusCountItem,
+    StatusDistributionResponse,
+    TopTagItem,
+    TwoFactorCountItem,
 )
 from app.services.accounts.errors import AccountError
 from app.services.accounts.tags import TagService
@@ -113,23 +120,29 @@ class AccountQueryService:
             else datetime(local.year, local.month + 1, 1, tzinfo=tz, fold=0)
         )
         start, end = start.astimezone(UTC), end.astimezone(UTC)
+        active = GmailAccount.deleted_at.is_(None)
         row = self.db.execute(
             select(
-                func.count(),
-                func.count().filter(GmailAccount.status == "normal"),
-                func.count().filter(GmailAccount.status == "pending_verification"),
+                func.count().filter(active),
+                func.count().filter(active, GmailAccount.status == "normal"),
+                func.count().filter(active, GmailAccount.status == "pending_verification"),
                 func.count().filter(
-                    GmailAccount.status.in_(["restricted", "login_failed", "disabled"])
+                    active,
+                    GmailAccount.status.in_(["restricted", "login_failed", "disabled"]),
                 ),
                 func.count().filter(
-                    GmailAccount.registered_at >= start, GmailAccount.registered_at < end
+                    active,
+                    GmailAccount.registered_at >= start,
+                    GmailAccount.registered_at < end,
                 ),
                 func.count().filter(
+                    active,
                     GmailAccount.status != "archived",
                     func.coalesce(GmailAccount.last_verified_at, GmailAccount.registered_at)
                     < self.auth.now - timedelta(days=30),
                 ),
-            ).where(GmailAccount.deleted_at.is_(None))
+                func.count().filter(GmailAccount.deleted_at.is_not(None)),
+            )
         ).one()
         return DashboardSummary(
             **dict(
@@ -141,6 +154,7 @@ class AccountQueryService:
                         "abnormal",
                         "added_this_month",
                         "unverified_over_30_days",
+                        "deleted_count",
                     ],
                     row,
                     strict=True,
@@ -151,12 +165,137 @@ class AccountQueryService:
             month_to=end,
         )
 
-    def recovery_usage(self, page: int, page_size: int) -> RecoveryPage:
+    def recovery_usage(
+        self,
+        page: int,
+        page_size: int,
+        *,
+        search: str = "",
+        sort: str = "-account_count",
+    ) -> RecoveryPage:
         page_size = self.page_size(page_size)
-        rows, total = self.repo.recovery_usage(page, page_size)
+        rows, total, total_accounts, abnormal_groups = self.repo.recovery_usage(
+            page, page_size, search=search, sort=sort
+        )
         return RecoveryPage(
             items=[RecoveryUsage(**row) for row in rows],
             total=total,
+            total_accounts=total_accounts,
+            abnormal_recovery_emails=abnormal_groups,
             page=page,
             page_size=page_size,
+        )
+
+    def recovery_email_accounts(
+        self, email: str, *, page: int = 1, page_size: int = 30, sort: str = "-account_no"
+    ) -> AccountPage:
+        cleaned = email.strip()
+        if not cleaned or len(cleaned) > 254:
+            raise AccountError(422, "RECOVERY_EMAIL_INVALID", "辅助邮箱参数无效")
+        params = AccountQuery(
+            recovery_email=cleaned,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+        )
+        return self.page(params)
+
+    def registration_trend(self, timezone: str, months: int) -> RegistrationTrendResponse:
+        tz = ZoneInfo(timezone)
+        local = self.auth.now.astimezone(tz)
+        # 计算含当前月在内最近 months 个自然月（本地零点 fold=0 -> UTC，与 summary 口径一致）。
+        start_total_months = local.year * 12 + (local.month - 1) - (months - 1)
+        boundaries: list[tuple[str, datetime, datetime]] = []
+        for offset in range(months):
+            m_index = start_total_months + offset
+            year, month0 = divmod(m_index, 12)
+            month = month0 + 1
+            next_year, next_month0 = divmod(m_index + 1, 12)
+            next_month = next_month0 + 1
+            b_start = datetime(year, month, 1, tzinfo=tz, fold=0).astimezone(UTC)
+            b_end = datetime(next_year, next_month, 1, tzinfo=tz, fold=0).astimezone(UTC)
+            boundaries.append((f"{year:04d}-{month:02d}", b_start, b_end))
+
+        active = GmailAccount.deleted_at.is_(None)
+        window_start = boundaries[0][1]
+        select_cols = [
+            func.count().filter(active, GmailAccount.registered_at < window_start),
+            *[
+                func.count().filter(
+                    active,
+                    GmailAccount.registered_at >= b_start,
+                    GmailAccount.registered_at < b_end,
+                )
+                for _, b_start, b_end in boundaries
+            ],
+        ]
+        counts = self.db.execute(select(*select_cols)).one()
+        cumulative = int(counts[0])
+        points: list[RegistrationTrendPoint] = []
+        for idx, (label, _, _) in enumerate(boundaries):
+            month_count = int(counts[idx + 1])
+            cumulative += month_count
+            points.append(
+                RegistrationTrendPoint(month=label, count=month_count, cumulative=cumulative)
+            )
+        return RegistrationTrendResponse(timezone=timezone, months=months, items=points)
+
+    def status_distribution(self) -> StatusDistributionResponse:
+        active = GmailAccount.deleted_at.is_(None)
+        status_order = (
+            "normal",
+            "pending_verification",
+            "restricted",
+            "login_failed",
+            "disabled",
+            "archived",
+        )
+        factor_order = ("enabled", "disabled", "unknown")
+        row = self.db.execute(
+            select(
+                func.count().filter(active),
+                *[func.count().filter(active, GmailAccount.status == s) for s in status_order],
+                *[
+                    func.count().filter(active, GmailAccount.two_factor_status == f)
+                    for f in factor_order
+                ],
+            )
+        ).one()
+        total = int(row[0])
+        statuses = [
+            StatusCountItem(status=status, count=int(row[1 + i]))
+            for i, status in enumerate(status_order)
+        ]
+        two_factor = [
+            TwoFactorCountItem(two_factor_status=factor, count=int(row[1 + len(status_order) + i]))
+            for i, factor in enumerate(factor_order)
+        ]
+        tag_rows = self.db.execute(
+            select(Tag.id, Tag.name, func.count(gmail_account_tags.c.account_id).label("cnt"))
+            .join(gmail_account_tags, gmail_account_tags.c.tag_id == Tag.id)
+            .join(GmailAccount, GmailAccount.id == gmail_account_tags.c.account_id)
+            .where(GmailAccount.deleted_at.is_(None))
+            .group_by(Tag.id, Tag.name)
+            .order_by(func.count(gmail_account_tags.c.account_id).desc(), Tag.name.asc())
+            .limit(10)
+        ).all()
+        top_tags = [TopTagItem(id=r.id, name=r.name, count=int(r.cnt)) for r in tag_rows]
+        return StatusDistributionResponse(
+            total=total,
+            statuses=statuses,
+            two_factor=two_factor,
+            top_tags=top_tags,
+        )
+
+    def dashboard_recovery_usage(self, limit: int = 10) -> DashboardRecoveryUsageResponse:
+        rows, total_recovery, total_accounts, _ = self.repo.recovery_usage(
+            1, limit, search="", sort="-account_count"
+        )
+        items = [RecoveryUsage(**row) for row in rows]
+        shown = sum(item.account_count for item in items)
+        return DashboardRecoveryUsageResponse(
+            total_accounts=total_accounts,
+            total_recovery_emails=total_recovery,
+            items=items,
+            others_count=max(0, total_accounts - shown),
         )

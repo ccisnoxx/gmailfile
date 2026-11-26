@@ -102,7 +102,14 @@ class AccountRepository:
         ).all()
         return records, total
 
-    def recovery_usage(self, page: int, page_size: int):
+    def recovery_usage(
+        self,
+        page: int,
+        page_size: int,
+        *,
+        search: str = "",
+        sort: str = "-account_count",
+    ):
         recovery = aliased(GmailAccount)
         email = func.lower(
             func.trim(func.coalesce(GmailAccount.recovery_email_external, recovery.gmail_email))
@@ -119,9 +126,29 @@ class AccountRepository:
             )
             .outerjoin(recovery, recovery.id == GmailAccount.recovery_account_id)
             .where(GmailAccount.deleted_at.is_(None))
-            .group_by(email)
         )
-        total = self.db.scalar(select(func.count()).select_from(query.subquery()))
-        return self.db.execute(
-            query.order_by(email).offset((page - 1) * page_size).limit(page_size)
-        ).mappings().all(), total
+        if search.strip():
+            query = query.where(email.contains(search.strip().lower(), autoescape=True))
+        grouped = query.group_by(email).subquery()
+        agg = self.db.execute(
+            select(
+                func.count(),
+                func.coalesce(func.sum(grouped.c.account_count), 0),
+                func.count().filter(grouped.c.abnormal_count > 0),
+            )
+        ).one()
+        total, total_accounts, abnormal_groups = int(agg[0]), int(agg[1]), int(agg[2])
+        sort_field = sort.lstrip("-")
+        sort_col = grouped.c[sort_field]
+        order = sort_col.desc() if sort.startswith("-") else sort_col.asc()
+        rows = (
+            self.db.execute(
+                select(grouped)
+                .order_by(order, grouped.c.email.asc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
+            .mappings()
+            .all()
+        )
+        return rows, total, total_accounts, abnormal_groups

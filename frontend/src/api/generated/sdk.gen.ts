@@ -12,6 +12,9 @@ import type {
   AccountsArchiveData,
   AccountsArchiveErrors,
   AccountsArchiveResponses,
+  AccountsBatchRestoreData,
+  AccountsBatchRestoreErrors,
+  AccountsBatchRestoreResponses,
   AccountsBatchStatusData,
   AccountsBatchStatusErrors,
   AccountsBatchStatusResponses,
@@ -81,9 +84,39 @@ import type {
   AuthTotpConfirmData,
   AuthTotpConfirmErrors,
   AuthTotpConfirmResponses,
+  AuthTotpDisableData,
+  AuthTotpDisableErrors,
+  AuthTotpDisableResponses,
   AuthTotpSetupData,
   AuthTotpSetupErrors,
   AuthTotpSetupResponses,
+  AuthWebauthnCredentialDeleteData,
+  AuthWebauthnCredentialDeleteErrors,
+  AuthWebauthnCredentialDeleteResponses,
+  AuthWebauthnCredentialRenameData,
+  AuthWebauthnCredentialRenameErrors,
+  AuthWebauthnCredentialRenameResponses,
+  AuthWebauthnCredentialsListData,
+  AuthWebauthnCredentialsListErrors,
+  AuthWebauthnCredentialsListResponses,
+  AuthWebauthnLoginOptionsData,
+  AuthWebauthnLoginOptionsErrors,
+  AuthWebauthnLoginOptionsResponses,
+  AuthWebauthnLoginVerifyData,
+  AuthWebauthnLoginVerifyErrors,
+  AuthWebauthnLoginVerifyResponses,
+  AuthWebauthnRegisterOptionsData,
+  AuthWebauthnRegisterOptionsErrors,
+  AuthWebauthnRegisterOptionsResponses,
+  AuthWebauthnRegisterVerifyData,
+  AuthWebauthnRegisterVerifyErrors,
+  AuthWebauthnRegisterVerifyResponses,
+  AuthWebauthnStepUpOptionsData,
+  AuthWebauthnStepUpOptionsErrors,
+  AuthWebauthnStepUpOptionsResponses,
+  AuthWebauthnStepUpVerifyData,
+  AuthWebauthnStepUpVerifyErrors,
+  AuthWebauthnStepUpVerifyResponses,
   BackupStatusData,
   BackupStatusErrors,
   BackupStatusResponses,
@@ -96,15 +129,30 @@ import type {
   CsvPreviewData,
   CsvPreviewErrors,
   CsvPreviewResponses,
+  DashboardRecoveryEmailUsageData,
+  DashboardRecoveryEmailUsageErrors,
+  DashboardRecoveryEmailUsageResponses,
+  DashboardRegistrationTrendData,
+  DashboardRegistrationTrendErrors,
+  DashboardRegistrationTrendResponses,
+  DashboardStatusDistributionData,
+  DashboardStatusDistributionErrors,
+  DashboardStatusDistributionResponses,
   DashboardSummaryData,
   DashboardSummaryErrors,
   DashboardSummaryResponses,
+  EncryptedExportData,
+  EncryptedExportErrors,
+  EncryptedExportResponses,
   HealthLiveData,
   HealthLiveErrors,
   HealthLiveResponses,
   HealthReadyData,
   HealthReadyErrors,
   HealthReadyResponses,
+  RecoveryEmailAccountsData,
+  RecoveryEmailAccountsErrors,
+  RecoveryEmailAccountsResponses,
   RecoveryEmailsListData,
   RecoveryEmailsListErrors,
   RecoveryEmailsListResponses,
@@ -341,6 +389,29 @@ export const csvExport = <ThrowOnError extends boolean = false>(
   });
 
 /**
+ * Export Encrypted
+ */
+export const encryptedExport = <ThrowOnError extends boolean = false>(
+  options: Options<EncryptedExportData, ThrowOnError>,
+): RequestResult<
+  EncryptedExportResponses,
+  EncryptedExportErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    EncryptedExportResponses,
+    EncryptedExportErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/exports/encrypted',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
  * Live
  */
 export const healthLive = <ThrowOnError extends boolean = false>(
@@ -529,6 +600,204 @@ export const authChangePassword = <ThrowOnError extends boolean = false>(
   });
 
 /**
+ * Totp Disable
+ */
+export const authTotpDisable = <ThrowOnError extends boolean = false>(
+  options?: Options<AuthTotpDisableData, ThrowOnError>,
+): RequestResult<
+  AuthTotpDisableResponses,
+  AuthTotpDisableErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).post<
+    AuthTotpDisableResponses,
+    AuthTotpDisableErrors,
+    ThrowOnError
+  >({ url: '/api/v1/auth/totp/disable', ...options });
+
+/**
+ * Webauthn Credentials
+ */
+export const authWebauthnCredentialsList = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<AuthWebauthnCredentialsListData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnCredentialsListResponses,
+  AuthWebauthnCredentialsListErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).get<
+    AuthWebauthnCredentialsListResponses,
+    AuthWebauthnCredentialsListErrors,
+    ThrowOnError
+  >({ url: '/api/v1/auth/webauthn/credentials', ...options });
+
+/**
+ * Webauthn Register Options
+ */
+export const authWebauthnRegisterOptions = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<AuthWebauthnRegisterOptionsData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnRegisterOptionsResponses,
+  AuthWebauthnRegisterOptionsErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).post<
+    AuthWebauthnRegisterOptionsResponses,
+    AuthWebauthnRegisterOptionsErrors,
+    ThrowOnError
+  >({ url: '/api/v1/auth/webauthn/register/options', ...options });
+
+/**
+ * Webauthn Register Verify
+ */
+export const authWebauthnRegisterVerify = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<AuthWebauthnRegisterVerifyData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnRegisterVerifyResponses,
+  AuthWebauthnRegisterVerifyErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AuthWebauthnRegisterVerifyResponses,
+    AuthWebauthnRegisterVerifyErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/auth/webauthn/register/verify',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Webauthn Credential Delete
+ */
+export const authWebauthnCredentialDelete = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<AuthWebauthnCredentialDeleteData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnCredentialDeleteResponses,
+  AuthWebauthnCredentialDeleteErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).delete<
+    AuthWebauthnCredentialDeleteResponses,
+    AuthWebauthnCredentialDeleteErrors,
+    ThrowOnError
+  >({ url: '/api/v1/auth/webauthn/credentials/{credential_id}', ...options });
+
+/**
+ * Webauthn Credential Rename
+ */
+export const authWebauthnCredentialRename = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<AuthWebauthnCredentialRenameData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnCredentialRenameResponses,
+  AuthWebauthnCredentialRenameErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).patch<
+    AuthWebauthnCredentialRenameResponses,
+    AuthWebauthnCredentialRenameErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/auth/webauthn/credentials/{credential_id}',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Webauthn Login Options
+ */
+export const authWebauthnLoginOptions = <ThrowOnError extends boolean = false>(
+  options?: Options<AuthWebauthnLoginOptionsData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnLoginOptionsResponses,
+  AuthWebauthnLoginOptionsErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).post<
+    AuthWebauthnLoginOptionsResponses,
+    AuthWebauthnLoginOptionsErrors,
+    ThrowOnError
+  >({ url: '/api/v1/auth/webauthn/login/options', ...options });
+
+/**
+ * Webauthn Login Verify
+ */
+export const authWebauthnLoginVerify = <ThrowOnError extends boolean = false>(
+  options: Options<AuthWebauthnLoginVerifyData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnLoginVerifyResponses,
+  AuthWebauthnLoginVerifyErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AuthWebauthnLoginVerifyResponses,
+    AuthWebauthnLoginVerifyErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/auth/webauthn/login/verify',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Webauthn Step Up Options
+ */
+export const authWebauthnStepUpOptions = <ThrowOnError extends boolean = false>(
+  options?: Options<AuthWebauthnStepUpOptionsData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnStepUpOptionsResponses,
+  AuthWebauthnStepUpOptionsErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).post<
+    AuthWebauthnStepUpOptionsResponses,
+    AuthWebauthnStepUpOptionsErrors,
+    ThrowOnError
+  >({ url: '/api/v1/auth/webauthn/step-up/options', ...options });
+
+/**
+ * Webauthn Step Up Verify
+ */
+export const authWebauthnStepUpVerify = <ThrowOnError extends boolean = false>(
+  options: Options<AuthWebauthnStepUpVerifyData, ThrowOnError>,
+): RequestResult<
+  AuthWebauthnStepUpVerifyResponses,
+  AuthWebauthnStepUpVerifyErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AuthWebauthnStepUpVerifyResponses,
+    AuthWebauthnStepUpVerifyErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/auth/webauthn/step-up/verify',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
  * Accounts
  */
 export const accountsList = <ThrowOnError extends boolean = false>(
@@ -576,6 +845,60 @@ export const dashboardSummary = <ThrowOnError extends boolean = false>(
   >({ url: '/api/v1/dashboard/summary', ...options });
 
 /**
+ * Registration Trend
+ */
+export const dashboardRegistrationTrend = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<DashboardRegistrationTrendData, ThrowOnError>,
+): RequestResult<
+  DashboardRegistrationTrendResponses,
+  DashboardRegistrationTrendErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).get<
+    DashboardRegistrationTrendResponses,
+    DashboardRegistrationTrendErrors,
+    ThrowOnError
+  >({ url: '/api/v1/dashboard/registration-trend', ...options });
+
+/**
+ * Status Distribution
+ */
+export const dashboardStatusDistribution = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<DashboardStatusDistributionData, ThrowOnError>,
+): RequestResult<
+  DashboardStatusDistributionResponses,
+  DashboardStatusDistributionErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).get<
+    DashboardStatusDistributionResponses,
+    DashboardStatusDistributionErrors,
+    ThrowOnError
+  >({ url: '/api/v1/dashboard/status-distribution', ...options });
+
+/**
+ * Dashboard Recovery Usage
+ */
+export const dashboardRecoveryEmailUsage = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<DashboardRecoveryEmailUsageData, ThrowOnError>,
+): RequestResult<
+  DashboardRecoveryEmailUsageResponses,
+  DashboardRecoveryEmailUsageErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).get<
+    DashboardRecoveryEmailUsageResponses,
+    DashboardRecoveryEmailUsageErrors,
+    ThrowOnError
+  >({ url: '/api/v1/dashboard/recovery-email-usage', ...options });
+
+/**
  * Recovery Usage
  */
 export const recoveryEmailsList = <ThrowOnError extends boolean = false>(
@@ -590,6 +913,22 @@ export const recoveryEmailsList = <ThrowOnError extends boolean = false>(
     RecoveryEmailsListErrors,
     ThrowOnError
   >({ url: '/api/v1/recovery-emails', ...options });
+
+/**
+ * Recovery Email Accounts
+ */
+export const recoveryEmailAccounts = <ThrowOnError extends boolean = false>(
+  options: Options<RecoveryEmailAccountsData, ThrowOnError>,
+): RequestResult<
+  RecoveryEmailAccountsResponses,
+  RecoveryEmailAccountsErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).get<
+    RecoveryEmailAccountsResponses,
+    RecoveryEmailAccountsErrors,
+    ThrowOnError
+  >({ url: '/api/v1/recovery-emails/{encoded_email}/accounts', ...options });
 
 /**
  * Options
@@ -646,6 +985,29 @@ export const accountsBatchTags = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/accounts/batch-tags',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Batch Restore
+ */
+export const accountsBatchRestore = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsBatchRestoreData, ThrowOnError>,
+): RequestResult<
+  AccountsBatchRestoreResponses,
+  AccountsBatchRestoreErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsBatchRestoreResponses,
+    AccountsBatchRestoreErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/batch-restore',
     ...options,
     headers: {
       'Content-Type': 'application/json',

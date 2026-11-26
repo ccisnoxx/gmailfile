@@ -7,13 +7,22 @@ import {
   Home,
   LogOut,
   Mail,
+  Monitor,
+  Moon,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Sun,
   Tag,
   User,
 } from 'lucide-react';
+import type { ThemeMode } from '@/lib/theme';
 import { cn } from '@/lib/utils';
+import {
+  persistDisplaySettings,
+  readDisplaySettings,
+  subscribeDisplaySettings,
+} from './display-settings-popover';
 import { GmailMark } from './gmail-mark';
 import { MacTrafficLights } from './mac-traffic-lights';
 import { NavigationOpacitySlider } from './navigation-opacity-slider';
@@ -61,10 +70,33 @@ export function GlassToolbar({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(
+    () => readDisplaySettings().themeMode,
+  );
   const menuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   const notifBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(
+    () => subscribeDisplaySettings((next) => setThemeMode(next.themeMode)),
+    [],
+  );
+
+  const cycleTheme = () => {
+    const order: ThemeMode[] = ['light', 'dark', 'system'];
+    const nextMode = order[(order.indexOf(themeMode) + 1) % order.length];
+    const current = readDisplaySettings();
+    persistDisplaySettings({ ...current, themeMode: nextMode });
+    setThemeMode(nextMode);
+  };
+
+  const themeMeta =
+    themeMode === 'dark'
+      ? { label: '切换主题（当前：深色）', Icon: Moon }
+      : themeMode === 'light'
+        ? { label: '切换主题（当前：浅色）', Icon: Sun }
+        : { label: '切换主题（当前：跟随系统）', Icon: Monitor };
 
   useEffect(() => {
     if (!menuOpen && !notifOpen) return;
@@ -150,9 +182,19 @@ export function GlassToolbar({
         })}
       </nav>
 
-      {/* 右侧：导航栏毛玻璃透明度滑块 + 通知 + 管理员菜单 */}
+      {/* 右侧：导航栏毛玻璃透明度滑块 + 主题切换 + 通知 + 管理员菜单 */}
       <div className="flex shrink-0 items-center gap-2 2xl:gap-2.5">
         <NavigationOpacitySlider value={navAlpha} onChange={onNavAlphaChange} />
+
+        <button
+          type="button"
+          aria-label={themeMeta.label}
+          title={themeMeta.label}
+          onClick={cycleTheme}
+          className="inline-flex size-9 items-center justify-center rounded-full border border-white/75 bg-white/55 text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-white/80"
+        >
+          <themeMeta.Icon className="size-4" aria-hidden="true" />
+        </button>
 
         <div ref={notifRef} className="relative">
           <button

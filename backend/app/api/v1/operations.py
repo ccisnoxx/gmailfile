@@ -29,10 +29,11 @@ StateService = Annotated[AuthService, Depends(auth_state_service, scope="functio
 @router.get("/auth/sessions", response_model=SessionPage, operation_id="sessionsList")
 def sessions(
     service: Service,
-    page: int = Query(1, ge=1, le=1000000),
-    page_size: int = Query(30, ge=1, le=100),
+    page: Annotated[int, Query(ge=1, le=1000000)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 30,
+    active_only: Annotated[bool, Query()] = False,
 ):
-    return OperationsService(service).sessions(page, page_size)
+    return OperationsService(service).sessions(page, page_size, active_only=active_only)
 
 
 @router.delete(

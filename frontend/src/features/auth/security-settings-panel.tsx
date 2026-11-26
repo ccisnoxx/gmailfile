@@ -1,4 +1,4 @@
-import { ShieldCheck } from 'lucide-react';
+import { KeyRound, ShieldCheck } from 'lucide-react';
 import type { ChangePasswordInput, Credentials } from '@/api/generated';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +21,7 @@ export function SecuritySettingsPanel({
   epoch,
   busy,
   stepUpTotpRequired = false,
+  onPasskeyReverify,
   onSelectPanel,
   onOpenAccounts,
   onOpenOperations,
@@ -30,6 +31,7 @@ export function SecuritySettingsPanel({
   epoch: number;
   busy: boolean;
   stepUpTotpRequired?: boolean;
+  onPasskeyReverify?: () => Promise<void>;
   onSelectPanel: (panel: SecurityPanel) => void;
   onOpenAccounts: () => void;
   onOpenOperations: () => void;
@@ -94,6 +96,17 @@ export function SecuritySettingsPanel({
             ? '改密后所有会话立即退出。新密码至少 16 位并建议使用长密码短语，请先完成重新验证。'
             : '请先重新验证，再输入当前密码和现有 TOTP 或恢复码。此操作会撤销其他会话；验证码不能重复使用。'}
       </p>
+      {panel === 'reverify' && onPasskeyReverify && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void onPasskeyReverify()}
+        >
+          <KeyRound className="size-4" aria-hidden="true" />
+          使用通行密钥（Passkey）重新验证
+        </Button>
+      )}
       <CredentialForm
         key={`${panel}-${epoch}`}
         kind={

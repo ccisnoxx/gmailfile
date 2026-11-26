@@ -1,4 +1,9 @@
-import type { AuditItem, BackupStatus, SessionItem } from '@/api/generated';
+import type {
+  AuditItem,
+  BackupStatus,
+  SessionItem,
+  WebAuthnCredentialItem,
+} from '@/api/generated';
 import type {
   ActiveSessionRow,
   AdminSecurityInfo,
@@ -11,6 +16,7 @@ import type {
   RetentionPolicyInfo,
   SystemRuntimeInfo,
   TotpSecurityInfo,
+  WebAuthnCredentialRow,
 } from './types';
 
 export function formatSettingsDateTime(
@@ -216,10 +222,42 @@ export function createMockSystemRuntime(): SystemRuntimeInfo {
     healthy: true,
     statusText: '系统正常运行',
     appVersion: 'v1.2.0',
-    schemaVersion: '0004',
+    schemaVersion: '0005',
     idleMinutes: 15,
     maxIdleMinutes: 720,
     trashCount: 3,
+  };
+}
+
+export function createMockWebAuthnCredentials(): WebAuthnCredentialRow[] {
+  return [
+    {
+      id: 'cred-mock-macbook-01',
+      label: 'MacBook Pro Touch ID',
+      transports: ['internal', 'hybrid'],
+      discoverable: true,
+      backupEligible: true,
+      backupState: true,
+      createdAt: '2026-11-20 10:15',
+      lastUsedAt: '2026-11-25 09:12',
+    },
+  ];
+}
+
+export function mapApiWebAuthnCredential(
+  item: WebAuthnCredentialItem,
+): WebAuthnCredentialRow {
+  return {
+    id: item.id,
+    label: item.label,
+    transports: item.transports ?? [],
+    discoverable: item.discoverable,
+    backupEligible: item.backup_eligible,
+    backupState: item.backup_state,
+    createdAt: formatSettingsDateTime(item.created_at),
+    lastUsedAt: item.last_used_at
+      ? formatSettingsDateTime(item.last_used_at)
+      : null,
   };
 }
 
@@ -285,33 +323,63 @@ const API_EVENT_LABELS: Record<
   password_revealed: { label: '查看凭据', objectType: 'account' },
   backup_completed: { label: '自动备份', objectType: 'backup' },
   csv_exported: { label: '导出 CSV', objectType: 'export' },
+  sensitive_exported: { label: '导出加密凭据包', objectType: 'export' },
   csv_imported: { label: '导入 CSV', objectType: 'export' },
+  data_keys_rotated: { label: '轮换数据密钥', objectType: 'settings' },
   settings_updated: { label: '修改系统配置', objectType: 'settings' },
+  settings_changed: { label: '修改系统配置', objectType: 'settings' },
   password_changed: { label: '修改管理员密码', objectType: 'settings' },
   totp_recovery_regenerated: {
     label: '重新生成恢复码',
     objectType: 'settings',
   },
+  totp_disabled: {
+    label: '停用 TOTP 验证器',
+    objectType: 'settings',
+  },
+  webauthn_registered: {
+    label: '绑定通行密钥',
+    objectType: 'settings',
+  },
+  webauthn_renamed: {
+    label: '重命名通行密钥',
+    objectType: 'settings',
+  },
+  webauthn_revoked: {
+    label: '移除通行密钥',
+    objectType: 'settings',
+  },
+  webauthn_clone_suspected: {
+    label: '检测到可疑克隆密钥',
+    objectType: 'session',
+  },
 };
 
 export function mapApiSessionToRow(
   item: SessionItem,
-  index: number,
+  _index = 0,
 ): ActiveSessionRow {
-  const deviceLabel = item.current
-    ? '当前浏览器会话'
-    : index % 2 === 1
-      ? '已授权设备会话'
-      : '远程桌面会话';
+  const deviceLabel =
+    item.device_label && item.device_label !== '未知设备'
+      ? item.device_label
+      : item.current
+        ? '当前浏览器会话'
+        : '未知设备';
   return {
     id: item.id,
     deviceBrowser: deviceLabel,
+    deviceType: item.device_type ?? 'unknown',
+    browser: item.browser ?? 'Unknown',
+    os: item.os ?? 'Unknown',
     current: item.current,
     ipAddress: item.ip_address || '未知来源',
     loginAt: formatSettingsDateTime(item.created_at),
     lastActiveAt: item.current
       ? '刚刚'
       : formatSettingsDateTime(item.last_seen_at),
+    idleExpiresAt: formatSettingsDateTime(item.idle_expires_at),
+    expiresAt: formatSettingsDateTime(item.expires_at),
+    mfaReauthenticated: Boolean(item.mfa_reauthenticated),
     state: item.state,
   };
 }

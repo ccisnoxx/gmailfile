@@ -40,7 +40,13 @@ class EncryptionService:
         return f"{entity}:{record_id}:{field}:v{version}".encode()
 
     def encrypt(self, value: str, entity: str, record_id: UUID, field: str) -> EncryptedValue:
-        version = self.active_version
+        return self.encrypt_with_version(value, entity, record_id, field, self.active_version)
+
+    def encrypt_with_version(
+        self, value: str, entity: str, record_id: UUID, field: str, version: int
+    ) -> EncryptedValue:
+        if version not in self.keys:
+            raise ValueError(f"目标数据密钥版本 v{version} 未配置")
         nonce = os.urandom(12)
         ciphertext = self.keys[version].encrypt(
             nonce, value.encode(), self.aad(entity, record_id, field, version)

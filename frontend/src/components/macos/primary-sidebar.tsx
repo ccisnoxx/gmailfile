@@ -79,6 +79,8 @@ type AccountsSidebarProps = {
   onSelectSection: (key: SidebarSectionKey) => void;
   onSelectTag: (tagId: string) => void;
   onAddTag: () => void;
+  onOpenRecoveryUsage?: () => void;
+  recoveryActive?: boolean;
   onOpenAudit: () => void;
   onOpenBackup: () => void;
   className?: string;
@@ -332,6 +334,8 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
     onSelectSection,
     onSelectTag,
     onAddTag,
+    onOpenRecoveryUsage,
+    recoveryActive = false,
     onOpenAudit,
     onOpenBackup,
     className,
@@ -555,6 +559,30 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
           className="border-t border-[var(--nav-divider)] pt-4"
         >
           <div className="flex flex-col gap-1">
+            {onOpenRecoveryUsage && (
+              <button
+                type="button"
+                aria-current={recoveryActive ? 'page' : undefined}
+                onClick={onOpenRecoveryUsage}
+                className={cn(
+                  'flex h-[38px] w-full items-center gap-2.5 rounded-xl px-2.5 text-[13px] transition-all duration-[180ms] ease-out',
+                  recoveryActive
+                    ? 'border border-[#1677ff]/20 bg-[#1677ff]/14 font-semibold text-[#1158c7] shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]'
+                    : 'font-medium text-[var(--text-primary)]/90 hover:bg-white/55',
+                )}
+              >
+                <Mail
+                  className={cn(
+                    'size-4 shrink-0',
+                    recoveryActive
+                      ? 'text-[var(--accent)]'
+                      : 'text-[var(--text-secondary)]',
+                  )}
+                  aria-hidden="true"
+                />
+                <span>辅助邮箱统计</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onOpenAudit}

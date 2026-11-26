@@ -138,13 +138,24 @@ class TotpManager:
             self.ctx.fail("recovery_regenerate")
         if admin.totp_enabled and not self.verify_factor(admin, code, recovery):
             self.ctx.fail("recovery_regenerate", mfa=True)
+        if not admin.totp_enabled and self.ctx.has_any_mfa(admin):
+            # 仅启用 WebAuthn 时，重生成恢复码要求最近完成 Passkey Step-Up（或提供有效恢复码）。
+            if recovery:
+                if not self.verify_factor(admin, "", recovery):
+                    self.ctx.fail("recovery_regenerate", mfa=True)
+            else:
+                self.sessions.require_recent(row, require_mfa=True)
         codes = self.generate_recovery_codes(admin)
         self.sessions.revoke_others(row)
         self.ctx.clear_failures()
         self.ctx.audit("recovery_codes_regenerated", row)
         return RecoveryResponse(
             session=self.sessions.rotate(
-                row, reauthenticated=True, mfa_reauthenticated=bool(code and admin.totp_enabled)
+                row,
+                reauthenticated=True,
+                mfa_reauthenticated=bool(
+                    (code and admin.totp_enabled) or (not admin.totp_enabled and not recovery)
+                ),
             ),
             recovery_codes=codes,
         )

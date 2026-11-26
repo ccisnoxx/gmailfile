@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.core.encryption import EncryptionService
 from app.models import AdminUser, AuthThrottle, UserSession
-from app.schemas.auth import RecoveryResponse, SessionResponse, SetupResponse
+from app.schemas.auth import (
+    DisableTotpResponse,
+    RecoveryResponse,
+    SessionResponse,
+    SetupResponse,
+    WebAuthnChallengeResponse,
+    WebAuthnCredentialItem,
+    WebAuthnRegisterVerifyResponse,
+)
 from app.services.auth.constants import (
     AUDIT_EVENTS,
     AUDIT_OPERATIONS,
@@ -20,6 +28,7 @@ from app.services.auth.context import AuthContext
 from app.services.auth.session_manager import SessionManager
 from app.services.auth.state_machine import AuthStateMachine
 from app.services.auth.totp_manager import TotpManager
+from app.services.auth.webauthn_manager import WebAuthnManager
 
 __all__ = [
     "AUDIT_EVENTS",
@@ -31,6 +40,7 @@ __all__ = [
     "SecurityError",
     "SessionManager",
     "TotpManager",
+    "WebAuthnManager",
 ]
 
 
@@ -49,6 +59,7 @@ class AuthService:
         self.sessions = SessionManager(self.ctx)
         self.totp = TotpManager(self.ctx, self.sessions)
         self.machine = AuthStateMachine(self.ctx, self.sessions, self.totp)
+        self.webauthn = WebAuthnManager(self.ctx, self.sessions, self.totp)
         self.db, self.settings, self.encryption = db, settings, encryption
         self.request, self.response = request, response
         self.now, self.ip, self.cookie_name = self.ctx.now, self.ctx.ip, self.ctx.cookie_name
@@ -157,3 +168,35 @@ class AuthService:
 
     def change_password(self, password: str, new_password: str) -> None:
         self.machine.change_password(password, new_password)
+
+    def webauthn_list(self) -> list[WebAuthnCredentialItem]:
+        return self.webauthn.list_credentials()
+
+    def webauthn_register_options(self) -> WebAuthnChallengeResponse:
+        return self.webauthn.register_options()
+
+    def webauthn_register_verify(
+        self, challenge_id: UUID, label: str, credential: dict
+    ) -> WebAuthnRegisterVerifyResponse:
+        return self.webauthn.register_verify(challenge_id, label, credential)
+
+    def webauthn_rename(self, credential_id: UUID, label: str) -> WebAuthnCredentialItem:
+        return self.webauthn.rename_credential(credential_id, label)
+
+    def webauthn_delete(self, credential_id: UUID) -> None:
+        self.webauthn.delete_credential(credential_id)
+
+    def webauthn_login_options(self) -> WebAuthnChallengeResponse:
+        return self.webauthn.login_options()
+
+    def webauthn_login_verify(self, challenge_id: UUID, credential: dict) -> SessionResponse:
+        return self.webauthn.login_verify(challenge_id, credential)
+
+    def webauthn_step_up_options(self) -> WebAuthnChallengeResponse:
+        return self.webauthn.step_up_options()
+
+    def webauthn_step_up_verify(self, challenge_id: UUID, credential: dict) -> SessionResponse:
+        return self.webauthn.step_up_verify(challenge_id, credential)
+
+    def disable_totp(self) -> DisableTotpResponse:
+        return self.webauthn.disable_totp()

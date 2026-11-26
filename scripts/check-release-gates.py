@@ -56,7 +56,14 @@ SENSITIVE_AUTH_PATHS = (
     "/api/v1/auth/password",
     "/api/v1/auth/totp/setup",
     "/api/v1/auth/totp/confirm",
+    "/api/v1/auth/totp/disable",
     "/api/v1/auth/totp/regenerate-recovery-codes",
+    "/api/v1/auth/webauthn/login/options",
+    "/api/v1/auth/webauthn/login/verify",
+    "/api/v1/auth/webauthn/step-up/options",
+    "/api/v1/auth/webauthn/step-up/verify",
+    "/api/v1/auth/webauthn/register/options",
+    "/api/v1/auth/webauthn/register/verify",
 )
 
 URL_RE = re.compile(r"https?://[^\s'\"`<>()]+", re.IGNORECASE)

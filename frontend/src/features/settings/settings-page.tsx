@@ -49,22 +49,29 @@ import {
 } from './settings-modals';
 import { SettingsSegmentedTabs } from './settings-segmented-tabs';
 import { TotpSecurityCard } from './totp-security-card';
+import { WebAuthnSecurityCard } from './webauthn-security-card';
+import { isWebAuthnSupported } from '@/lib/webauthn';
 import {
   isSettingsSectionKey,
   type ActiveSessionRow,
   type CardStateMode,
   type SettingsSectionKey,
+  type WebAuthnCredentialRow,
 } from './types';
 import { useSettingsData } from './use-settings-data';
 
 type PendingSensitiveAction =
   | { kind: 'terminate-session'; session: ActiveSessionRow }
   | { kind: 'logout-others' }
-  | { kind: 'reverify' };
+  | { kind: 'reverify' }
+  | { kind: 'register-webauthn'; label: string }
+  | { kind: 'delete-webauthn'; credential: WebAuthnCredentialRow }
+  | { kind: 'disable-totp' };
 
 type SearchableCardId =
   | 'admin'
   | 'totp'
+  | 'webauthn'
   | 'sessions'
   | 'backup'
   | 'audit'
@@ -74,7 +81,9 @@ type SearchableCardId =
 
 const CARD_SEARCH_INDEX: Record<SearchableCardId, string> = {
   admin: '管理员安全 admin 密码强度 16位 泄露密码 密码短语 修改密码 重新验证',
-  totp: '双因素认证 totp 2fa google authenticator microsoft 备用恢复码 验证码 演示状态',
+  totp: '双因素认证 totp 2fa google authenticator microsoft 备用恢复码 验证码 演示状态 停用',
+  webauthn:
+    '通行密钥 webauthn fido2 passkey touch id yubikey 硬件安全密钥 生物识别 无密码登录',
   sessions:
     '活动会话 设备 浏览器 macos safari windows chrome ip 登录时间 终止 退出其他会话',
   backup:
@@ -82,7 +91,7 @@ const CARD_SEARCH_INDEX: Record<SearchableCardId, string> = {
   audit: '审计日志 登录成功 修改账号 自动备份 导出 csv 哈希链 合规',
   retention: '日志保留与数据生命周期 730 90 存储占用 调整策略 清理',
   appearance:
-    '界面与体验 导航栏毛玻璃透明度 滑块 预览 紧凑模式 流动背景 动画 localstorage',
+    '界面与体验 导航栏毛玻璃透明度 滑块 预览 紧凑模式 流动背景 动画 localstorage 深色模式 浅色 跟随系统 主题 pwa 安装 桌面应用',
   runtime: '系统与维护 版本 schema 自动锁定 空闲超时 运行状态 快捷键',
 };
 
@@ -424,7 +433,47 @@ function SettingsPageBody({
             key="totp"
             info={data.totpSecurity}
             state={resolvedUiState ?? 'ready'}
+            canDisable={data.webauthnCredentials.length > 0}
             onOpenRecoveryCodes={() => setRecoveryModalOpen(true)}
+            onDisableTotp={() => setSensitiveAction({ kind: 'disable-totp' })}
+            onRetry={data.handlers.retryAll}
+          />
+        );
+      case 'webauthn':
+        return (
+          <WebAuthnSecurityCard
+            key="webauthn"
+            credentials={data.webauthnCredentials}
+            totpEnabled={data.totpSecurity.enabled}
+            state={data.webauthnState}
+            errorText={data.webauthnError}
+            onRegister={async (label) => {
+              if (!data.isRecentlyVerified) {
+                setSensitiveAction({ kind: 'register-webauthn', label });
+                return { ok: true };
+              }
+              const res = await data.handlers.registerWebAuthnCredential(label);
+              if (res.ok) {
+                showToast(res.message ?? '通行密钥已绑定。', 'success');
+              } else if (res.requireReauth) {
+                setSensitiveAction({ kind: 'register-webauthn', label });
+                return { ok: true };
+              }
+              return res;
+            }}
+            onRename={async (id, label) => {
+              const res = await data.handlers.renameWebAuthnCredential(
+                id,
+                label,
+              );
+              if (res.ok) {
+                showToast(res.message ?? '通行密钥已重命名。', 'success');
+              }
+              return res;
+            }}
+            onDeleteRequest={(credential) =>
+              setSensitiveAction({ kind: 'delete-webauthn', credential })
+            }
             onRetry={data.handlers.retryAll}
           />
         );
@@ -616,6 +665,7 @@ function SettingsPageBody({
             </div>
             <div className="flex min-w-0 flex-col gap-4">
               {renderCard('totp')}
+              {renderCard('webauthn')}
               {renderCard('backup')}
               {renderCard('retention')}
               {renderCard('appearance')}
@@ -897,6 +947,67 @@ function SettingsPageBody({
           data.handlers.logoutOtherSessions(verify),
       };
     }
+    if (sensitiveAction.kind === 'register-webauthn') {
+      return {
+        title: '验证后绑定新通行密钥',
+        description: `设备名称：${sensitiveAction.label}`,
+        riskSummary:
+          '绑定新的 WebAuthn/Passkey 属于高敏操作，需先完成最近 5 分钟内的身份二次验证。',
+        riskPoints: [
+          '新绑定的通行密钥可直接用于无密码登录与高风险 Step-Up 验证',
+          '操作将记录至防篡改审计日志链',
+        ],
+        confirmLabel: '验证并开始绑定',
+        tone: 'primary' as const,
+        requireTotp:
+          data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled,
+        alwaysRequireCredentials: false,
+        onConfirm: (verify?: { password?: string; totpCode?: string }) =>
+          data.handlers.registerWebAuthnCredential(
+            sensitiveAction.label,
+            verify,
+          ),
+      };
+    }
+    if (sensitiveAction.kind === 'delete-webauthn') {
+      const target = sensitiveAction.credential;
+      return {
+        title: '移除通行密钥？',
+        description: target.label,
+        riskSummary: `移除后，通行密钥「${target.label}」将立即失效，无法再用于登录或 Step-Up 验证。`,
+        riskPoints: [
+          '当 TOTP 未启用时，系统会保护最后一个通行密钥不被删除',
+          '操作将记录至防篡改审计日志链',
+        ],
+        confirmLabel: '确认移除通行密钥',
+        tone: 'danger' as const,
+        requireTotp:
+          data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled,
+        alwaysRequireCredentials: false,
+        onConfirm: (verify?: { password?: string; totpCode?: string }) =>
+          data.handlers.deleteWebAuthnCredential(target.id, verify),
+      };
+    }
+    if (sensitiveAction.kind === 'disable-totp') {
+      return {
+        title: '停用 TOTP 验证器？',
+        description:
+          '仅保留已绑定的通行密钥（Passkey）与离线恢复码作为二步验证',
+        riskSummary:
+          '停用 TOTP 后将清除服务端 TOTP 密钥并退出全部其他设备会话，日常登录请使用通行密钥。',
+        riskPoints: [
+          '停用前必须确保至少保留 1 个可用的通行密钥（Passkey）',
+          '离线恢复/数据库切换脚本将自动改用一次性恢复码作为二步兜底',
+        ],
+        confirmLabel: '确认停用 TOTP',
+        tone: 'danger' as const,
+        requireTotp:
+          data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled,
+        alwaysRequireCredentials: false,
+        onConfirm: (verify?: { password?: string; totpCode?: string }) =>
+          data.handlers.disableTotp(verify),
+      };
+    }
     return {
       title: '管理员身份重新验证',
       description: '完成验证后 5 分钟内可执行高风险安全配置操作',
@@ -904,12 +1015,18 @@ function SettingsPageBody({
       riskPoints: ['凭据仅用于当次服务端校验，绝不写入缓存或本地存储'],
       confirmLabel: '完成重新验证',
       tone: 'primary' as const,
-      requireTotp: data.adminSecurity.stepUpTotpRequired,
+      requireTotp:
+        data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled,
       alwaysRequireCredentials: true,
       onConfirm: (verify?: { password?: string; totpCode?: string }) =>
         data.handlers.reverify(verify?.password ?? '', verify?.totpCode),
     };
-  }, [data.adminSecurity.stepUpTotpRequired, data.handlers, sensitiveAction]);
+  }, [
+    data.adminSecurity.stepUpTotpRequired,
+    data.handlers,
+    data.totpSecurity.enabled,
+    sensitiveAction,
+  ]);
 
   return (
     <>
@@ -1040,6 +1157,10 @@ function SettingsPageBody({
           alwaysRequireCredentials={
             sensitiveDialogConfig.alwaysRequireCredentials
           }
+          canUsePasskey={
+            data.webauthnCredentials.length > 0 && isWebAuthnSupported()
+          }
+          onPasskeyVerify={data.handlers.passkeyReverify}
           onConfirm={sensitiveDialogConfig.onConfirm}
           onSuccess={(msg) => showToast(msg ?? '操作已完成。', 'success')}
         />

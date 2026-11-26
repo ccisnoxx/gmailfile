@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  KeyRound,
   Loader2,
   ShieldAlert,
 } from 'lucide-react';
@@ -28,6 +29,8 @@ export type SensitiveActionDialogProps = {
   isRecentlyVerified: boolean;
   requireTotp?: boolean;
   alwaysRequireCredentials?: boolean;
+  canUsePasskey?: boolean;
+  onPasskeyVerify?: () => Promise<SettingsActionResult>;
   onConfirm: (verify?: SensitiveVerifyPayload) => Promise<SettingsActionResult>;
   onSuccess?: (message?: string) => void;
 };
@@ -44,6 +47,8 @@ export function SensitiveActionDialog({
   isRecentlyVerified,
   requireTotp = false,
   alwaysRequireCredentials = false,
+  canUsePasskey = false,
+  onPasskeyVerify,
   onConfirm,
   onSuccess,
 }: SensitiveActionDialogProps) {
@@ -52,11 +57,13 @@ export function SensitiveActionDialog({
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
   const [forceCredentials, setForceCredentials] = useState(false);
+  const [passkeyVerified, setPasskeyVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const needsCredentials =
-    alwaysRequireCredentials || !isRecentlyVerified || forceCredentials;
+    !passkeyVerified &&
+    (alwaysRequireCredentials || !isRecentlyVerified || forceCredentials);
 
   // 关闭弹窗或切到后台标签页时立即清空所有敏感输入
   useEffect(() => {
@@ -65,6 +72,7 @@ export function SensitiveActionDialog({
       setTotpCode('');
       setErrorMessage('');
       setForceCredentials(false);
+      setPasskeyVerified(false);
       setBusy(false);
       return;
     }
@@ -194,6 +202,36 @@ export function SensitiveActionDialog({
                   ? '此操作每次均需校验当前管理员凭据（不写入缓存或本地存储）'
                   : '高风险操作要求 5 分钟内重新验证，请先验证管理员身份：'}
               </p>
+              {canUsePasskey && onPasskeyVerify && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setErrorMessage('');
+                    setBusy(true);
+                    try {
+                      const res = await onPasskeyVerify();
+                      if (!res.ok) {
+                        setErrorMessage(res.error);
+                        return;
+                      }
+                      if (alwaysRequireCredentials) {
+                        onOpenChange(false);
+                        onSuccess?.(res.message);
+                      } else {
+                        setPasskeyVerified(true);
+                        setForceCredentials(false);
+                      }
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl border border-[#1677ff]/30 bg-[var(--accent-soft)] px-3 text-[12.5px] font-medium text-[var(--accent)] transition-colors hover:bg-[#1677ff]/18 disabled:opacity-50"
+                >
+                  <KeyRound className="size-3.5" aria-hidden="true" />
+                  <span>使用通行密钥（Passkey）完成二次验证</span>
+                </button>
+              )}
               <div className="space-y-1.5">
                 <label
                   htmlFor={passwordId}

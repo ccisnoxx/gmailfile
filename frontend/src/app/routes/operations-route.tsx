@@ -7,6 +7,7 @@ export default function OperationsRoute() {
     <OperationsPage
       key={workspace.epoch}
       session={workspace.session}
+      onSession={workspace.onSession}
       onBack={() => workspace.onNavigate('accounts')}
       onSecurity={() => workspace.onNavigate('security')}
       onFailure={workspace.onOperationsFailure}

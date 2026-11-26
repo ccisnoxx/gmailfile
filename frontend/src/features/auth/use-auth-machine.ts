@@ -6,12 +6,25 @@ import {
   authLogout,
   authReverify,
   authSession,
+  authWebauthnLoginOptions,
+  authWebauthnLoginVerify,
+  authWebauthnRegisterOptions,
+  authWebauthnRegisterVerify,
+  authWebauthnStepUpOptions,
+  authWebauthnStepUpVerify,
 } from '@/api/generated/sdk.gen';
 import type {
   Credentials,
   ErrorResponse,
   SessionResponse,
+  WebAuthnRegisterVerifyResponse,
 } from '@/api/generated';
+import { clearServiceWorkerCaches } from '@/lib/pwa';
+import {
+  createPasskeyCredential,
+  formatWebAuthnError,
+  getPasskeyAssertion,
+} from '@/lib/webauthn';
 import { useIdleSession } from './use-idle-session';
 
 export type AuthNotice = {
@@ -52,6 +65,7 @@ export function useAuthMachine({
     running.current = false;
     setBusy(false);
     queryClient.clear();
+    clearServiceWorkerCaches();
     callbacks.current.onClearSecrets();
     setEpoch((n) => n + 1);
   }, [queryClient]);
@@ -92,8 +106,12 @@ export function useAuthMachine({
           clearSecrets();
           callbacks.current.onReauthRequired();
           setMessage('请先重新验证管理员密码，再继续安全操作。');
+        } else if (failure?.error?.message) {
+          setMessage(failure.error.message);
+        } else if (error instanceof DOMException) {
+          setMessage(formatWebAuthnError(error));
         } else {
-          setMessage(failure?.error?.message ?? '无法连接服务，请稍后重试。');
+          setMessage('无法连接服务，请稍后重试。');
         }
       } finally {
         if (ticket === generation.current) {
@@ -176,6 +194,82 @@ export function useAuthMachine({
         setSession(result.data);
       }),
     [headers, isCurrentTicket, run],
+  );
+
+  const loginWithPasskey = useCallback(
+    () =>
+      run(async (ticket) => {
+        const optionsRes = await authWebauthnLoginOptions({
+          headers,
+          throwOnError: true,
+        });
+        const credential = await getPasskeyAssertion(optionsRes.data.options);
+        const verified = await authWebauthnLoginVerify({
+          body: {
+            challenge_id: optionsRes.data.challenge_id,
+            credential,
+          },
+          headers,
+          throwOnError: true,
+        });
+        if (!isCurrentTicket(ticket)) return;
+        setSession(verified.data);
+      }),
+    [headers, isCurrentTicket, run],
+  );
+
+  const registerPasskey = useCallback(
+    (
+      label: string,
+      onRegistered?: (data: WebAuthnRegisterVerifyResponse) => void,
+    ) =>
+      run(async (ticket) => {
+        const cleanLabel = label.trim() || '本机通行密钥';
+        const optionsRes = await authWebauthnRegisterOptions({
+          headers,
+          throwOnError: true,
+        });
+        const credential = await createPasskeyCredential(
+          optionsRes.data.options,
+        );
+        const verified = await authWebauthnRegisterVerify({
+          body: {
+            challenge_id: optionsRes.data.challenge_id,
+            label: cleanLabel,
+            credential,
+          },
+          headers,
+          throwOnError: true,
+        });
+        if (!isCurrentTicket(ticket)) return;
+        setSession(verified.data.session);
+        onRegistered?.(verified.data);
+        setMessage('通行密钥绑定成功。', 'success');
+      }),
+    [headers, isCurrentTicket, run, setMessage],
+  );
+
+  const reverifyWithPasskey = useCallback(
+    () =>
+      run(async (ticket) => {
+        const optionsRes = await authWebauthnStepUpOptions({
+          headers,
+          throwOnError: true,
+        });
+        const credential = await getPasskeyAssertion(optionsRes.data.options);
+        const verified = await authWebauthnStepUpVerify({
+          body: {
+            challenge_id: optionsRes.data.challenge_id,
+            credential,
+          },
+          headers,
+          throwOnError: true,
+        });
+        if (!isCurrentTicket(ticket)) return;
+        setSession(verified.data);
+        setMessage('通行密钥二次验证成功，5 分钟内可进行敏感操作。', 'success');
+      }),
+    [headers, isCurrentTicket, run, setMessage],
   );
 
   const logout = useCallback(
@@ -294,8 +388,11 @@ export function useAuthMachine({
     run,
     isCurrentTicket,
     login,
+    loginWithPasskey,
+    registerPasskey,
     logout,
     reverify,
+    reverifyWithPasskey,
     changePassword,
     handleOperationsFailure,
     handleAccountFailure,

@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -13,7 +14,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET
+from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -115,3 +116,52 @@ class AuthThrottle(Base):
     failures: Mapped[int]
     window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     blocked_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AdminWebAuthnCredential(IdentityMixin, CreatedMixin, Base):
+    __tablename__ = "admin_webauthn_credentials"
+    __table_args__ = (
+        CheckConstraint("sign_count >= 0", name="sign_count_nonnegative"),
+        CheckConstraint(
+            "octet_length(credential_id) BETWEEN 16 AND 1024", name="credential_id_length"
+        ),
+        CheckConstraint("octet_length(public_key) >= 16", name="public_key_length"),
+    )
+
+    admin_user_id: Mapped[UUID] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    label: Mapped[str] = mapped_column(String(64))
+    transports: Mapped[list[str]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+    aaguid: Mapped[str | None] = mapped_column(String(36))
+    discoverable: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    backup_eligible: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    backup_state: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WebAuthnChallenge(IdentityMixin, CreatedMixin, Base):
+    __tablename__ = "webauthn_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('register', 'login', 'mfa_login', 'step_up')", name="purpose_valid"
+        ),
+        CheckConstraint("octet_length(challenge) = 32", name="challenge_length"),
+        CheckConstraint(
+            "(pre_auth_session_id IS NOT NULL) <> (user_session_id IS NOT NULL)",
+            name="session_binding_xor",
+        ),
+    )
+
+    purpose: Mapped[str] = mapped_column(String(24))
+    challenge: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    pre_auth_session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("pre_auth_sessions.id", ondelete="CASCADE"), index=True
+    )
+    user_session_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("user_sessions.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

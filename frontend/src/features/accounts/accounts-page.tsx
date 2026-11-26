@@ -65,6 +65,7 @@ const TagManagerDialog = lazy(() =>
 
 interface AccountsPageProps {
   session: SessionResponse;
+  initialRecoveryView?: boolean;
   onSession: (value: SessionResponse) => void;
   onFailure: (error: unknown) => void;
   onSecurity: () => void;
@@ -76,6 +77,8 @@ interface RouterSyncProps {
   accountIdParam?: string;
   navigateToAccount?: (id: string) => void;
   navigateBackToList?: () => void;
+  navigateToRecovery?: () => void;
+  navigateToAccountsWithQuery?: (queryString: string) => void;
 }
 
 export function AccountsPage(props: AccountsPageProps) {
@@ -104,18 +107,33 @@ function RoutedAccountsPage(props: AccountsPageProps) {
       search: window.location.search,
     });
   }, [navigate]);
+  const navigateToRecovery = useCallback(() => {
+    void navigate('/recovery-emails');
+  }, [navigate]);
+  const navigateToAccountsWithQuery = useCallback(
+    (queryString: string) => {
+      void navigate({
+        pathname: '/accounts',
+        search: queryString ? `?${queryString}` : '',
+      });
+    },
+    [navigate],
+  );
   return (
     <AccountsPageBody
       {...props}
       accountIdParam={params.accountId}
       navigateToAccount={navigateToAccount}
       navigateBackToList={navigateBackToList}
+      navigateToRecovery={navigateToRecovery}
+      navigateToAccountsWithQuery={navigateToAccountsWithQuery}
     />
   );
 }
 
 function AccountsPageBody({
   session,
+  initialRecoveryView = false,
   onSession,
   onFailure,
   onSecurity,
@@ -124,8 +142,11 @@ function AccountsPageBody({
   accountIdParam,
   navigateToAccount,
   navigateBackToList,
+  navigateToRecovery,
+  navigateToAccountsWithQuery,
 }: AccountsPageProps & RouterSyncProps) {
   const queryState = useAccountQueryState();
+  const isRecoveryView = initialRecoveryView || queryState.recoveryView;
 
   const [navAlpha, setNavAlpha] = useState<number>(() => readStoredNavAlpha());
   const [viewMode, setViewMode] = useState<'list' | 'chart'>('list');
@@ -153,7 +174,7 @@ function AccountsPageBody({
   const listState = useAccountsList({
     query: queryState.query,
     search: queryState.search,
-    recoveryView: queryState.recoveryView,
+    recoveryView: isRecoveryView,
     onFailure: detailState.fail,
   });
   refreshRef.current = listState.refresh;
@@ -252,9 +273,42 @@ function AccountsPageBody({
     return 'all';
   }, [queryState.deleted, queryState.params]);
 
+  const handleOpenRecoveryUsage = useCallback(() => {
+    handleCloseDetail();
+    if (navigateToRecovery) {
+      navigateToRecovery();
+    } else {
+      queryState.openRecoveryView();
+    }
+  }, [handleCloseDetail, navigateToRecovery, queryState]);
+
+  const handleOpenRecoveryAccounts = useCallback(
+    (email: string) => {
+      if (initialRecoveryView && navigateToAccountsWithQuery) {
+        const next = new URLSearchParams({ recovery_email: email });
+        navigateToAccountsWithQuery(next.toString());
+      } else {
+        queryState.change({ recovery_email: email }, true);
+      }
+    },
+    [initialRecoveryView, navigateToAccountsWithQuery, queryState],
+  );
+
   const handleSelectSection = useCallback(
     (section: SidebarSectionKey) => {
       handleCloseDetail();
+      if (initialRecoveryView && navigateToAccountsWithQuery) {
+        const map: Record<SidebarSectionKey, string> = {
+          all: '',
+          normal: 'status=normal',
+          risk: 'status=restricted',
+          disabled: 'status=disabled',
+          archived: 'archived=true',
+          trash: 'deleted=true',
+        };
+        navigateToAccountsWithQuery(map[section]);
+        return;
+      }
       if (section === 'all') {
         queryState.change({}, true);
       } else if (section === 'normal') {
@@ -269,12 +323,23 @@ function AccountsPageBody({
         queryState.change({ deleted: 'true' }, true);
       }
     },
-    [handleCloseDetail, queryState],
+    [
+      handleCloseDetail,
+      initialRecoveryView,
+      navigateToAccountsWithQuery,
+      queryState,
+    ],
   );
 
   const handleSelectTag = useCallback(
     (tagId: string) => {
       handleCloseDetail();
+      if (initialRecoveryView && navigateToAccountsWithQuery) {
+        navigateToAccountsWithQuery(
+          new URLSearchParams({ tag: tagId }).toString(),
+        );
+        return;
+      }
       const current = queryState.params.get('tag');
       queryState.change({
         tag: current === tagId ? '' : tagId,
@@ -282,7 +347,12 @@ function AccountsPageBody({
         view: '',
       });
     },
-    [handleCloseDetail, queryState],
+    [
+      handleCloseDetail,
+      initialRecoveryView,
+      navigateToAccountsWithQuery,
+      queryState,
+    ],
   );
 
   const handleTopNav = useCallback(
@@ -290,10 +360,18 @@ function AccountsPageBody({
       handleCloseDetail();
       if (key === 'dashboard') {
         setViewMode('chart');
-        queryState.change({}, true);
+        if (initialRecoveryView && navigateToAccountsWithQuery) {
+          navigateToAccountsWithQuery('');
+        } else {
+          queryState.change({}, true);
+        }
       } else if (key === 'accounts') {
         setViewMode('list');
-        queryState.change({ view: '' });
+        if (initialRecoveryView && navigateToAccountsWithQuery) {
+          navigateToAccountsWithQuery('');
+        } else {
+          queryState.change({ view: '' });
+        }
       } else if (key === 'tags') {
         tagState.openDialog();
       } else if (key === 'transfer') {
@@ -306,7 +384,15 @@ function AccountsPageBody({
         onSecurity();
       }
     },
-    [handleCloseDetail, onOperations, onSecurity, queryState, tagState],
+    [
+      handleCloseDetail,
+      initialRecoveryView,
+      navigateToAccountsWithQuery,
+      onOperations,
+      onSecurity,
+      queryState,
+      tagState,
+    ],
   );
 
   const visibleCounts = useMemo(() => {
@@ -333,7 +419,9 @@ function AccountsPageBody({
       risk,
       disabled,
       archived: inferredArchived,
-      trash: queryState.deleted ? (listState.list.data?.total ?? 0) : 0,
+      trash:
+        summary?.deleted_count ??
+        (queryState.deleted ? (listState.list.data?.total ?? 0) : 0),
     };
   }, [
     listState.items,
@@ -401,7 +489,7 @@ function AccountsPageBody({
             handleCloseDetail();
             onSecurity();
           }}
-          onOpenRecoveryUsage={queryState.openRecoveryView}
+          onOpenRecoveryUsage={handleOpenRecoveryUsage}
           onToggleShowcase={
             allowDebugUiState
               ? () => setShowcaseToggle((prev) => !prev)
@@ -421,13 +509,15 @@ function AccountsPageBody({
       }
       sidebar={
         <PrimarySidebar
-          activeSection={activeSection}
+          activeSection={isRecoveryView ? null : activeSection}
           activeTagId={queryState.params.get('tag')}
           counts={visibleCounts}
           tags={sidebarTags}
           onSelectSection={handleSelectSection}
           onSelectTag={handleSelectTag}
           onAddTag={tagState.openDialog}
+          onOpenRecoveryUsage={handleOpenRecoveryUsage}
+          recoveryActive={isRecoveryView}
           onOpenAudit={() => {
             handleCloseDetail();
             if (onOperations) onOperations('audit');
@@ -445,12 +535,18 @@ function AccountsPageBody({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-[var(--text-primary)]">
-            {queryState.deleted ? '回收站' : '账号管理'}
+            {isRecoveryView
+              ? '辅助邮箱统计'
+              : queryState.deleted
+                ? '回收站'
+                : '账号管理'}
           </h1>
           <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
-            {queryState.deleted
-              ? '邮箱唯一性和关联仍然保留，可逐条恢复。'
-              : '集中管理 Gmail 账号资料、凭据、辅助邮箱与使用状态'}
+            {isRecoveryView
+              ? '统计每个辅助邮箱关联的账号规模与异常分布，快速排查集中风险'
+              : queryState.deleted
+                ? '邮箱唯一性和关联仍然保留，支持单条或批量恢复。'
+                : '集中管理 Gmail 账号资料、凭据、辅助邮箱与使用状态'}
           </p>
         </div>
 
@@ -577,13 +673,13 @@ function AccountsPageBody({
       )}
 
       {/* 可折叠的筛选面板 + 列显示 */}
-      {filtersOpen && !queryState.recoveryView && (
+      {filtersOpen && !isRecoveryView && (
         <div className="space-y-3">
           <Filters
             params={queryState.params}
             change={queryState.change}
             tags={listState.tags.data ?? []}
-            onOpenRecoveryUsage={queryState.openRecoveryView}
+            onOpenRecoveryUsage={handleOpenRecoveryUsage}
           />
           <ColumnToggle
             columns={listState.columns}
@@ -592,29 +688,34 @@ function AccountsPageBody({
         </div>
       )}
 
-      {/* 选中行时显示批量操作条 */}
-      {!queryState.deleted && !queryState.recoveryView && selectedCount > 0 && (
+      {/* 选中行时显示批量操作条（普通列表支持批量状态/标签，回收站支持批量恢复） */}
+      {!isRecoveryView && selectedCount > 0 && (
         <BatchBar
           key={queryState.search + ':' + listState.list.dataUpdatedAt}
           selected={listState.selectedItems}
           tags={listState.tags.data ?? []}
           session={session}
-          complete={async () => {
+          deleted={queryState.deleted}
+          complete={async (kind) => {
             await listState.refresh();
-            detailState.setNotice('整批操作已提交。');
+            detailState.setNotice(
+              kind === 'restore' ? '整批账号已恢复。' : '整批操作已提交。',
+            );
           }}
           onFailure={handleBatchFailure}
         />
       )}
 
       {/* 主视图区域：辅助邮箱统计 / 图表视图 / 账号表格 */}
-      {queryState.recoveryView ? (
+      {isRecoveryView ? (
         <div className="macos-glass-panel macos-glass-panel-strong p-5">
           <Suspense fallback={<LoadingState title="正在加载辅助邮箱统计…" />}>
             <RecoveryPage
               params={queryState.params}
               change={queryState.change}
               onFailure={detailState.fail}
+              onCopy={(value) => void detailState.copy(value)}
+              onOpenAccountsFilter={handleOpenRecoveryAccounts}
             />
           </Suspense>
         </div>
@@ -622,7 +723,9 @@ function AccountsPageBody({
         <AccountsChartView
           stats={stats}
           items={listState.items}
-          onOpenRecoveryUsage={queryState.openRecoveryView}
+          liveAnalytics
+          timezone={timezone}
+          onOpenRecoveryUsage={handleOpenRecoveryUsage}
         />
       ) : (
         <AccountTable

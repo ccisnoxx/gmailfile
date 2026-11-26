@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { KeyRound } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import type { SessionResponse } from '@/api/generated';
 import {
@@ -9,6 +10,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CredentialForm } from '@/features/auth/credential-form';
+import {
+  formatWebAuthnError,
+  isWebAuthnSupported,
+  performPasskeyStepUp,
+} from '@/lib/webauthn';
 
 async function clipboardFingerprint(value: string) {
   const bytes = await crypto.subtle.digest(
@@ -208,10 +214,47 @@ export function PasswordControl({
           <Alert>
             <AlertDescription>
               {session.step_up_totp_required
-                ? '需要最近 5 分钟内的管理员密码与 TOTP 二次验证。'
+                ? '需要最近 5 分钟内的管理员二次验证（通行密钥或密码 + TOTP）。'
                 : '需要最近 5 分钟内的管理员重新验证。'}
             </AlertDescription>
           </Alert>
+          {session.webauthn_enabled && isWebAuthnSupported() && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={verifying}
+              onClick={async () => {
+                const ticket = generation.current;
+                setVerifying(true);
+                try {
+                  const data = await performPasskeyStepUp(session.csrf_token);
+                  if (
+                    !mounted.current ||
+                    ticket !== generation.current ||
+                    document.hidden
+                  )
+                    return;
+                  onSession(data);
+                  setReauth(false);
+                  setMessage('通行密钥重新验证成功，请再次选择显示或复制。');
+                } catch (error) {
+                  if (
+                    mounted.current &&
+                    ticket === generation.current &&
+                    !document.hidden
+                  ) {
+                    setMessage(formatWebAuthnError(error));
+                    onFailure(error);
+                  }
+                } finally {
+                  setVerifying(false);
+                }
+              }}
+            >
+              <KeyRound className="size-4" aria-hidden="true" />
+              使用通行密钥（Passkey）验证
+            </Button>
+          )}
           <CredentialForm
             kind="reverify"
             busy={verifying}

@@ -6,12 +6,16 @@ import type { CardStateMode, TotpSecurityInfo } from './types';
 export function TotpSecurityCard({
   info,
   state = 'ready',
+  canDisable = false,
   onOpenRecoveryCodes,
+  onDisableTotp,
   onRetry,
 }: {
   info: TotpSecurityInfo;
   state?: CardStateMode;
+  canDisable?: boolean;
   onOpenRecoveryCodes: () => void;
+  onDisableTotp?: () => void;
   onRetry?: () => void;
 }) {
   return (
@@ -76,7 +80,7 @@ export function TotpSecurityCard({
             </div>
           </dl>
 
-          <div className="pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
               type="button"
               onClick={onOpenRecoveryCodes}
@@ -88,6 +92,15 @@ export function TotpSecurityCard({
               />
               <span>查看 / 重新生成…</span>
             </button>
+            {info.enabled && canDisable && onDisableTotp && (
+              <button
+                type="button"
+                onClick={onDisableTotp}
+                className="inline-flex h-9 items-center rounded-xl border border-[#e45d5d]/30 bg-[#e45d5d]/[0.08] px-3 text-[12.5px] font-medium text-[#c54646] transition-colors hover:bg-[#e45d5d]/[0.15]"
+              >
+                停用 TOTP…
+              </button>
+            )}
           </div>
         </div>
 

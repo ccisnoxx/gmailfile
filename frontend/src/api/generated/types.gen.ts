@@ -582,6 +582,16 @@ export type BackupStatus = {
 };
 
 /**
+ * BatchInput
+ */
+export type BatchInput = {
+  /**
+   * Accounts
+   */
+  accounts: Array<BatchItem>;
+};
+
+/**
  * BatchItem
  */
 export type BatchItem = {
@@ -840,6 +850,28 @@ export type CsvRow = {
 };
 
 /**
+ * DashboardRecoveryUsageResponse
+ */
+export type DashboardRecoveryUsageResponse = {
+  /**
+   * Total Accounts
+   */
+  total_accounts: number;
+  /**
+   * Total Recovery Emails
+   */
+  total_recovery_emails: number;
+  /**
+   * Items
+   */
+  items: Array<RecoveryUsage>;
+  /**
+   * Others Count
+   */
+  others_count: number;
+};
+
+/**
  * DashboardSummary
  */
 export type DashboardSummary = {
@@ -868,6 +900,10 @@ export type DashboardSummary = {
    */
   unverified_over_30_days: number;
   /**
+   * Deleted Count
+   */
+  deleted_count?: number;
+  /**
    * Timezone
    */
   timezone: string;
@@ -879,6 +915,24 @@ export type DashboardSummary = {
    * Month To
    */
   month_to: string;
+};
+
+/**
+ * DisableTotpResponse
+ */
+export type DisableTotpResponse = {
+  session: SessionResponse;
+};
+
+/**
+ * EncryptedExportInput
+ */
+export type EncryptedExportInput = {
+  /**
+   * Scope
+   */
+  scope: 'all' | 'filtered';
+  filters?: AccountQuery | null;
 };
 
 /**
@@ -995,6 +1049,14 @@ export type RecoveryPage = {
    */
   total: number;
   /**
+   * Total Accounts
+   */
+  total_accounts?: number;
+  /**
+   * Abnormal Recovery Emails
+   */
+  abnormal_recovery_emails?: number;
+  /**
    * Page
    */
   page: number;
@@ -1039,6 +1101,42 @@ export type RecoveryUsage = {
    * Latest Registered At
    */
   latest_registered_at: string;
+};
+
+/**
+ * RegistrationTrendPoint
+ */
+export type RegistrationTrendPoint = {
+  /**
+   * Month
+   */
+  month: string;
+  /**
+   * Count
+   */
+  count: number;
+  /**
+   * Cumulative
+   */
+  cumulative: number;
+};
+
+/**
+ * RegistrationTrendResponse
+ */
+export type RegistrationTrendResponse = {
+  /**
+   * Timezone
+   */
+  timezone: string;
+  /**
+   * Months
+   */
+  months: number;
+  /**
+   * Items
+   */
+  items: Array<RegistrationTrendPoint>;
 };
 
 /**
@@ -1099,6 +1197,26 @@ export type SessionItem = {
    * Ip Address
    */
   ip_address: string | null;
+  /**
+   * Device Label
+   */
+  device_label?: string;
+  /**
+   * Browser
+   */
+  browser?: string;
+  /**
+   * Os
+   */
+  os?: string;
+  /**
+   * Device Type
+   */
+  device_type?: 'desktop' | 'mobile' | 'tablet' | 'unknown';
+  /**
+   * Mfa Reauthenticated
+   */
+  mfa_reauthenticated?: boolean;
 };
 
 /**
@@ -1163,6 +1281,22 @@ export type SessionResponse = {
    * Step Up Totp Required
    */
   step_up_totp_required?: boolean;
+  /**
+   * Totp Enabled
+   */
+  totp_enabled?: boolean;
+  /**
+   * Webauthn Enabled
+   */
+  webauthn_enabled?: boolean;
+  /**
+   * Webauthn Count
+   */
+  webauthn_count?: number;
+  /**
+   * Can Passwordless Login
+   */
+  can_passwordless_login?: boolean;
 };
 
 /**
@@ -1217,6 +1351,48 @@ export type SetupResponse = {
 };
 
 /**
+ * StatusCountItem
+ */
+export type StatusCountItem = {
+  /**
+   * Status
+   */
+  status:
+    | 'normal'
+    | 'pending_verification'
+    | 'restricted'
+    | 'login_failed'
+    | 'disabled'
+    | 'archived';
+  /**
+   * Count
+   */
+  count: number;
+};
+
+/**
+ * StatusDistributionResponse
+ */
+export type StatusDistributionResponse = {
+  /**
+   * Total
+   */
+  total: number;
+  /**
+   * Statuses
+   */
+  statuses: Array<StatusCountItem>;
+  /**
+   * Two Factor
+   */
+  two_factor: Array<TwoFactorCountItem>;
+  /**
+   * Top Tags
+   */
+  top_tags: Array<TopTagItem>;
+};
+
+/**
  * TagInput
  */
 export type TagInput = {
@@ -1245,6 +1421,38 @@ export type TagResponse = {
 };
 
 /**
+ * TopTagItem
+ */
+export type TopTagItem = {
+  /**
+   * Id
+   */
+  id: string;
+  /**
+   * Name
+   */
+  name: string;
+  /**
+   * Count
+   */
+  count: number;
+};
+
+/**
+ * TwoFactorCountItem
+ */
+export type TwoFactorCountItem = {
+  /**
+   * Two Factor Status
+   */
+  two_factor_status: 'unknown' | 'disabled' | 'enabled';
+  /**
+   * Count
+   */
+  count: number;
+};
+
+/**
  * VersionInput
  */
 export type VersionInput = {
@@ -1266,6 +1474,122 @@ export type VersionState = {
    * Schema Version
    */
   schema_version: string;
+};
+
+/**
+ * WebAuthnAuthVerifyInput
+ */
+export type WebAuthnAuthVerifyInput = {
+  /**
+   * Challenge Id
+   */
+  challenge_id: string;
+  /**
+   * Credential
+   */
+  credential: {
+    [key: string]: unknown;
+  };
+};
+
+/**
+ * WebAuthnChallengeResponse
+ */
+export type WebAuthnChallengeResponse = {
+  /**
+   * Challenge Id
+   */
+  challenge_id: string;
+  /**
+   * Options
+   */
+  options: {
+    [key: string]: unknown;
+  };
+  /**
+   * Expires At
+   */
+  expires_at: string;
+};
+
+/**
+ * WebAuthnCredentialItem
+ */
+export type WebAuthnCredentialItem = {
+  /**
+   * Id
+   */
+  id: string;
+  /**
+   * Label
+   */
+  label: string;
+  /**
+   * Transports
+   */
+  transports: Array<string>;
+  /**
+   * Discoverable
+   */
+  discoverable: boolean;
+  /**
+   * Backup Eligible
+   */
+  backup_eligible: boolean;
+  /**
+   * Backup State
+   */
+  backup_state: boolean;
+  /**
+   * Created At
+   */
+  created_at: string;
+  /**
+   * Last Used At
+   */
+  last_used_at?: string | null;
+};
+
+/**
+ * WebAuthnRegisterVerifyInput
+ */
+export type WebAuthnRegisterVerifyInput = {
+  /**
+   * Challenge Id
+   */
+  challenge_id: string;
+  /**
+   * Label
+   */
+  label: string;
+  /**
+   * Credential
+   */
+  credential: {
+    [key: string]: unknown;
+  };
+};
+
+/**
+ * WebAuthnRegisterVerifyResponse
+ */
+export type WebAuthnRegisterVerifyResponse = {
+  credential: WebAuthnCredentialItem;
+  session: SessionResponse;
+  /**
+   * Recovery Codes
+   */
+  recovery_codes?: Array<string> | null;
+};
+
+/**
+ * WebAuthnRenameInput
+ */
+export type WebAuthnRenameInput = {
+  /**
+   * Label
+   */
+  label: string;
 };
 
 /**
@@ -1410,6 +1734,21 @@ export type AccountPatchWritable = {
 };
 
 /**
+ * EncryptedExportInput
+ */
+export type EncryptedExportInputWritable = {
+  /**
+   * Scope
+   */
+  scope: 'all' | 'filtered';
+  filters?: AccountQuery | null;
+  /**
+   * Passphrase
+   */
+  passphrase: string;
+};
+
+/**
  * Input
  */
 export type InputWritable = {
@@ -1428,6 +1767,10 @@ export type SessionsListData = {
      * Page Size
      */
     page_size?: number;
+    /**
+     * Active Only
+     */
+    active_only?: boolean;
   };
   url: '/api/v1/auth/sessions';
 };
@@ -1910,6 +2253,53 @@ export type CsvExportResponses = {
 
 export type CsvExportResponse = CsvExportResponses[keyof CsvExportResponses];
 
+export type EncryptedExportData = {
+  body: EncryptedExportInputWritable;
+  path?: never;
+  query?: never;
+  url: '/api/v1/exports/encrypted';
+};
+
+export type EncryptedExportErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Request Entity Too Large
+   */
+  413: ErrorResponse;
+  /**
+   * Unsupported Media Type
+   */
+  415: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type EncryptedExportError =
+  EncryptedExportErrors[keyof EncryptedExportErrors];
+
+export type EncryptedExportResponses = {
+  /**
+   * Successful Response
+   */
+  200: Blob | File;
+};
+
+export type EncryptedExportResponse =
+  EncryptedExportResponses[keyof EncryptedExportResponses];
+
 export type HealthLiveData = {
   body?: never;
   path?: never;
@@ -2308,6 +2698,440 @@ export type AuthChangePasswordResponses = {
 export type AuthChangePasswordResponse =
   AuthChangePasswordResponses[keyof AuthChangePasswordResponses];
 
+export type AuthTotpDisableData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/totp/disable';
+};
+
+export type AuthTotpDisableErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthTotpDisableError =
+  AuthTotpDisableErrors[keyof AuthTotpDisableErrors];
+
+export type AuthTotpDisableResponses = {
+  /**
+   * Successful Response
+   */
+  200: DisableTotpResponse;
+};
+
+export type AuthTotpDisableResponse =
+  AuthTotpDisableResponses[keyof AuthTotpDisableResponses];
+
+export type AuthWebauthnCredentialsListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/credentials';
+};
+
+export type AuthWebauthnCredentialsListErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnCredentialsListError =
+  AuthWebauthnCredentialsListErrors[keyof AuthWebauthnCredentialsListErrors];
+
+export type AuthWebauthnCredentialsListResponses = {
+  /**
+   * Response Authwebauthncredentialslist
+   *
+   * Successful Response
+   */
+  200: Array<WebAuthnCredentialItem>;
+};
+
+export type AuthWebauthnCredentialsListResponse =
+  AuthWebauthnCredentialsListResponses[keyof AuthWebauthnCredentialsListResponses];
+
+export type AuthWebauthnRegisterOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/register/options';
+};
+
+export type AuthWebauthnRegisterOptionsErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnRegisterOptionsError =
+  AuthWebauthnRegisterOptionsErrors[keyof AuthWebauthnRegisterOptionsErrors];
+
+export type AuthWebauthnRegisterOptionsResponses = {
+  /**
+   * Successful Response
+   */
+  200: WebAuthnChallengeResponse;
+};
+
+export type AuthWebauthnRegisterOptionsResponse =
+  AuthWebauthnRegisterOptionsResponses[keyof AuthWebauthnRegisterOptionsResponses];
+
+export type AuthWebauthnRegisterVerifyData = {
+  body: WebAuthnRegisterVerifyInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/register/verify';
+};
+
+export type AuthWebauthnRegisterVerifyErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnRegisterVerifyError =
+  AuthWebauthnRegisterVerifyErrors[keyof AuthWebauthnRegisterVerifyErrors];
+
+export type AuthWebauthnRegisterVerifyResponses = {
+  /**
+   * Successful Response
+   */
+  200: WebAuthnRegisterVerifyResponse;
+};
+
+export type AuthWebauthnRegisterVerifyResponse =
+  AuthWebauthnRegisterVerifyResponses[keyof AuthWebauthnRegisterVerifyResponses];
+
+export type AuthWebauthnCredentialDeleteData = {
+  body?: never;
+  path: {
+    /**
+     * Credential Id
+     */
+    credential_id: string;
+  };
+  query?: never;
+  url: '/api/v1/auth/webauthn/credentials/{credential_id}';
+};
+
+export type AuthWebauthnCredentialDeleteErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnCredentialDeleteError =
+  AuthWebauthnCredentialDeleteErrors[keyof AuthWebauthnCredentialDeleteErrors];
+
+export type AuthWebauthnCredentialDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  200: ActionResponse;
+};
+
+export type AuthWebauthnCredentialDeleteResponse =
+  AuthWebauthnCredentialDeleteResponses[keyof AuthWebauthnCredentialDeleteResponses];
+
+export type AuthWebauthnCredentialRenameData = {
+  body: WebAuthnRenameInput;
+  path: {
+    /**
+     * Credential Id
+     */
+    credential_id: string;
+  };
+  query?: never;
+  url: '/api/v1/auth/webauthn/credentials/{credential_id}';
+};
+
+export type AuthWebauthnCredentialRenameErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnCredentialRenameError =
+  AuthWebauthnCredentialRenameErrors[keyof AuthWebauthnCredentialRenameErrors];
+
+export type AuthWebauthnCredentialRenameResponses = {
+  /**
+   * Successful Response
+   */
+  200: WebAuthnCredentialItem;
+};
+
+export type AuthWebauthnCredentialRenameResponse =
+  AuthWebauthnCredentialRenameResponses[keyof AuthWebauthnCredentialRenameResponses];
+
+export type AuthWebauthnLoginOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/login/options';
+};
+
+export type AuthWebauthnLoginOptionsErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnLoginOptionsError =
+  AuthWebauthnLoginOptionsErrors[keyof AuthWebauthnLoginOptionsErrors];
+
+export type AuthWebauthnLoginOptionsResponses = {
+  /**
+   * Successful Response
+   */
+  200: WebAuthnChallengeResponse;
+};
+
+export type AuthWebauthnLoginOptionsResponse =
+  AuthWebauthnLoginOptionsResponses[keyof AuthWebauthnLoginOptionsResponses];
+
+export type AuthWebauthnLoginVerifyData = {
+  body: WebAuthnAuthVerifyInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/login/verify';
+};
+
+export type AuthWebauthnLoginVerifyErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnLoginVerifyError =
+  AuthWebauthnLoginVerifyErrors[keyof AuthWebauthnLoginVerifyErrors];
+
+export type AuthWebauthnLoginVerifyResponses = {
+  /**
+   * Successful Response
+   */
+  200: SessionResponse;
+};
+
+export type AuthWebauthnLoginVerifyResponse =
+  AuthWebauthnLoginVerifyResponses[keyof AuthWebauthnLoginVerifyResponses];
+
+export type AuthWebauthnStepUpOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/step-up/options';
+};
+
+export type AuthWebauthnStepUpOptionsErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnStepUpOptionsError =
+  AuthWebauthnStepUpOptionsErrors[keyof AuthWebauthnStepUpOptionsErrors];
+
+export type AuthWebauthnStepUpOptionsResponses = {
+  /**
+   * Successful Response
+   */
+  200: WebAuthnChallengeResponse;
+};
+
+export type AuthWebauthnStepUpOptionsResponse =
+  AuthWebauthnStepUpOptionsResponses[keyof AuthWebauthnStepUpOptionsResponses];
+
+export type AuthWebauthnStepUpVerifyData = {
+  body: WebAuthnAuthVerifyInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/webauthn/step-up/verify';
+};
+
+export type AuthWebauthnStepUpVerifyErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
+};
+
+export type AuthWebauthnStepUpVerifyError =
+  AuthWebauthnStepUpVerifyErrors[keyof AuthWebauthnStepUpVerifyErrors];
+
+export type AuthWebauthnStepUpVerifyResponses = {
+  /**
+   * Successful Response
+   */
+  200: SessionResponse;
+};
+
+export type AuthWebauthnStepUpVerifyResponse =
+  AuthWebauthnStepUpVerifyResponses[keyof AuthWebauthnStepUpVerifyResponses];
+
 export type AccountsListData = {
   body?: never;
   path?: never;
@@ -2525,6 +3349,161 @@ export type DashboardSummaryResponses = {
 export type DashboardSummaryResponse =
   DashboardSummaryResponses[keyof DashboardSummaryResponses];
 
+export type DashboardRegistrationTrendData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Timezone
+     */
+    timezone?: string;
+    /**
+     * Months
+     */
+    months?: number;
+  };
+  url: '/api/v1/dashboard/registration-trend';
+};
+
+export type DashboardRegistrationTrendErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type DashboardRegistrationTrendError =
+  DashboardRegistrationTrendErrors[keyof DashboardRegistrationTrendErrors];
+
+export type DashboardRegistrationTrendResponses = {
+  /**
+   * Successful Response
+   */
+  200: RegistrationTrendResponse;
+};
+
+export type DashboardRegistrationTrendResponse =
+  DashboardRegistrationTrendResponses[keyof DashboardRegistrationTrendResponses];
+
+export type DashboardStatusDistributionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/dashboard/status-distribution';
+};
+
+export type DashboardStatusDistributionErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type DashboardStatusDistributionError =
+  DashboardStatusDistributionErrors[keyof DashboardStatusDistributionErrors];
+
+export type DashboardStatusDistributionResponses = {
+  /**
+   * Successful Response
+   */
+  200: StatusDistributionResponse;
+};
+
+export type DashboardStatusDistributionResponse =
+  DashboardStatusDistributionResponses[keyof DashboardStatusDistributionResponses];
+
+export type DashboardRecoveryEmailUsageData = {
+  body?: never;
+  path?: never;
+  query?: {
+    /**
+     * Limit
+     */
+    limit?: number;
+  };
+  url: '/api/v1/dashboard/recovery-email-usage';
+};
+
+export type DashboardRecoveryEmailUsageErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type DashboardRecoveryEmailUsageError =
+  DashboardRecoveryEmailUsageErrors[keyof DashboardRecoveryEmailUsageErrors];
+
+export type DashboardRecoveryEmailUsageResponses = {
+  /**
+   * Successful Response
+   */
+  200: DashboardRecoveryUsageResponse;
+};
+
+export type DashboardRecoveryEmailUsageResponse =
+  DashboardRecoveryEmailUsageResponses[keyof DashboardRecoveryEmailUsageResponses];
+
 export type RecoveryEmailsListData = {
   body?: never;
   path?: never;
@@ -2537,6 +3516,24 @@ export type RecoveryEmailsListData = {
      * Page Size
      */
     page_size?: number;
+    /**
+     * Search
+     */
+    search?: string;
+    /**
+     * Sort
+     */
+    sort?:
+      | 'email'
+      | '-email'
+      | 'account_count'
+      | '-account_count'
+      | 'normal_count'
+      | '-normal_count'
+      | 'abnormal_count'
+      | '-abnormal_count'
+      | 'latest_registered_at'
+      | '-latest_registered_at';
   };
   url: '/api/v1/recovery-emails';
 };
@@ -2580,6 +3577,83 @@ export type RecoveryEmailsListResponses = {
 
 export type RecoveryEmailsListResponse =
   RecoveryEmailsListResponses[keyof RecoveryEmailsListResponses];
+
+export type RecoveryEmailAccountsData = {
+  body?: never;
+  path: {
+    /**
+     * Encoded Email
+     */
+    encoded_email: string;
+  };
+  query?: {
+    /**
+     * Page
+     */
+    page?: number;
+    /**
+     * Page Size
+     */
+    page_size?: number;
+    /**
+     * Sort
+     */
+    sort?:
+      | 'account_no'
+      | 'registered_at'
+      | 'last_verified_at'
+      | 'last_login_at'
+      | 'created_at'
+      | 'updated_at'
+      | '-account_no'
+      | '-registered_at'
+      | '-last_verified_at'
+      | '-last_login_at'
+      | '-created_at'
+      | '-updated_at';
+  };
+  url: '/api/v1/recovery-emails/{encoded_email}/accounts';
+};
+
+export type RecoveryEmailAccountsErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type RecoveryEmailAccountsError =
+  RecoveryEmailAccountsErrors[keyof RecoveryEmailAccountsErrors];
+
+export type RecoveryEmailAccountsResponses = {
+  /**
+   * Successful Response
+   */
+  200: AccountPage;
+};
+
+export type RecoveryEmailAccountsResponse =
+  RecoveryEmailAccountsResponses[keyof RecoveryEmailAccountsResponses];
 
 export type AccountsOptionsData = {
   body?: never;
@@ -2738,6 +3812,53 @@ export type AccountsBatchTagsResponses = {
 
 export type AccountsBatchTagsResponse =
   AccountsBatchTagsResponses[keyof AccountsBatchTagsResponses];
+
+export type AccountsBatchRestoreData = {
+  body: BatchInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/accounts/batch-restore';
+};
+
+export type AccountsBatchRestoreErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsBatchRestoreError =
+  AccountsBatchRestoreErrors[keyof AccountsBatchRestoreErrors];
+
+export type AccountsBatchRestoreResponses = {
+  /**
+   * Successful Response
+   */
+  200: BatchResult;
+};
+
+export type AccountsBatchRestoreResponse =
+  AccountsBatchRestoreResponses[keyof AccountsBatchRestoreResponses];
 
 export type AccountsDeleteData = {
   body: VersionInput;

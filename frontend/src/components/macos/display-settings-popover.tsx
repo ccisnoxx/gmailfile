@@ -1,5 +1,14 @@
 import { useEffect, useId, useRef } from 'react';
-import { AlignJustify, AppWindow, Sparkles, Waves } from 'lucide-react';
+import {
+  AlignJustify,
+  AppWindow,
+  Monitor,
+  Moon,
+  Sparkles,
+  Sun,
+  Waves,
+} from 'lucide-react';
+import { applyThemeMode, isThemeMode, type ThemeMode } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import { NavigationOpacitySlider } from './navigation-opacity-slider';
 
@@ -10,12 +19,14 @@ export type DisplaySettingsState = {
   flowingBackground: boolean;
   animationsEnabled: boolean;
   compactMode: boolean;
+  themeMode: ThemeMode;
 };
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettingsState = {
   flowingBackground: true,
   animationsEnabled: true,
   compactMode: false,
+  themeMode: 'system',
 };
 
 export function readDisplaySettings(): DisplaySettingsState {
@@ -36,6 +47,9 @@ export function readDisplaySettings(): DisplaySettingsState {
         typeof parsed.compactMode === 'boolean'
           ? parsed.compactMode
           : DEFAULT_DISPLAY_SETTINGS.compactMode,
+      themeMode: isThemeMode(parsed.themeMode)
+        ? parsed.themeMode
+        : DEFAULT_DISPLAY_SETTINGS.themeMode,
     };
   } catch {
     return { ...DEFAULT_DISPLAY_SETTINGS };
@@ -43,6 +57,7 @@ export function readDisplaySettings(): DisplaySettingsState {
 }
 
 export function persistDisplaySettings(settings: DisplaySettingsState): void {
+  applyThemeMode(settings.themeMode);
   try {
     window.localStorage.setItem(
       DISPLAY_SETTINGS_STORAGE_KEY,
@@ -178,7 +193,7 @@ export function DisplaySettingsPopover({
   const toggleItems: {
     id: string;
     label: string;
-    key: keyof DisplaySettingsState;
+    key: 'flowingBackground' | 'animationsEnabled' | 'compactMode';
     icon: typeof Waves;
   }[] = [
     {
@@ -199,6 +214,16 @@ export function DisplaySettingsPopover({
       key: 'compactMode',
       icon: AlignJustify,
     },
+  ];
+
+  const themeOptions: {
+    value: ThemeMode;
+    label: string;
+    icon: typeof Sun;
+  }[] = [
+    { value: 'light', label: '浅色', icon: Sun },
+    { value: 'dark', label: '深色', icon: Moon },
+    { value: 'system', label: '系统', icon: Monitor },
   ];
 
   return (
@@ -229,6 +254,41 @@ export function DisplaySettingsPopover({
         >
           界面与显示
         </h2>
+      </div>
+
+      {/* 外观主题：浅色 / 深色 / 跟随系统 */}
+      <div className="border-b border-[var(--table-divider)] py-3">
+        <p className="mb-2 text-[12px] font-medium text-[var(--text-secondary)]">
+          外观主题
+        </p>
+        <div
+          role="group"
+          aria-label="外观主题选择"
+          className="grid grid-cols-3 gap-1 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-0.5"
+        >
+          {themeOptions.map(({ value, label, icon: Icon }) => {
+            const active = settings.themeMode === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={active}
+                onClick={() =>
+                  onSettingsChange({ ...settings, themeMode: value })
+                }
+                className={cn(
+                  'inline-flex h-8 items-center justify-center gap-1.5 rounded-[9px] text-[12px] font-medium transition-colors',
+                  active
+                    ? 'bg-[var(--accent)] text-[var(--primary-foreground)] shadow-xs'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]',
+                )}
+              >
+                <Icon className="size-3.5" aria-hidden="true" />
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 导航栏毛玻璃透明度滑块（复用 NavigationOpacitySlider） */}

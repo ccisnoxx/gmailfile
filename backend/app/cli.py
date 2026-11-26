@@ -1,4 +1,4 @@
-"""只接受受控子命令；密码仅从真正的交互终端读取，审计校验与签名不泄漏凭据。"""
+"""只接受受控子命令；密码仅从真正的交互终端读取，审计校验、签名与密钥轮换不泄漏凭据。"""
 
 import argparse
 import getpass
@@ -13,6 +13,8 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.core.encryption import DecryptionError, EncryptionService
+from app.core.export_crypto import ExportDecryptionError, decrypt_export_file
 from app.core.security import (
     MIN_ADMIN_PASSWORD_LENGTH,
     passwords,
@@ -26,6 +28,7 @@ from app.services.audit_integrity import (
     verify_audit_chain,
 )
 from app.services.auth import AUTH_LOCK
+from app.services.key_rotation import rotate_data_keys, verify_data_keys
 
 
 def create_admin(
@@ -83,23 +86,114 @@ def sign_audit(engine, signing_key_file: Path | None) -> dict:
     return sign_audit_checkpoint(status, key)
 
 
+def rotate_keys_cli(
+    engine,
+    settings: Settings,
+    *,
+    target_version: int | None = None,
+    batch_size: int = 200,
+    dry_run: bool = False,
+) -> dict:
+    encryption = EncryptionService(settings.data_key_directory, settings.active_data_key_version)
+    return rotate_data_keys(
+        engine,
+        encryption,
+        target_version=target_version,
+        batch_size=batch_size,
+        dry_run=dry_run,
+    )
+
+
+def verify_keys_cli(engine, settings: Settings, *, require_version: int | None = None) -> dict:
+    encryption = EncryptionService(settings.data_key_directory, settings.active_data_key_version)
+    return verify_data_keys(engine, encryption, require_version=require_version)
+
+
+def decrypt_export_cli(
+    input_path: Path, output_path: Path, *, read_password=getpass.getpass
+) -> dict:
+    if not sys.stdin.isatty() or not sys.stderr.isatty():
+        raise ValueError("必须在交互式终端运行，不接受管道口令")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            passphrase = read_password("导出加密口令：")
+    except getpass.GetPassWarning:
+        raise ValueError("无法安全读取口令，请检查终端回显控制") from None
+    written = decrypt_export_file(input_path, output_path, passphrase)
+    return {"ok": True, "bytes_written": written}
+
+
 class SafeArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         # argparse 默认会回显未知参数；误把凭据当参数时也不能再次泄漏。
         self.print_usage(sys.stderr)
         self.exit(
             2,
-            "命令参数不正确；仅支持 create-admin、verify-audit、sign-audit-checkpoint，"
-            "密码必须交互式输入。\n",
+            "命令参数不正确；仅支持 create-admin、verify-audit、sign-audit-checkpoint、"
+            "rotate-keys、verify-keys、decrypt-export，密码与口令必须交互式输入。\n",
         )
 
 
-def main() -> int:
+def build_parser() -> SafeArgumentParser:
     parser = SafeArgumentParser(description="Gmail Account Manager 管理命令")
-    parser.add_argument(
-        "command", choices=["create-admin", "verify-audit", "sign-audit-checkpoint"]
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, parser_class=SafeArgumentParser
     )
-    args = parser.parse_args()
+    subparsers.add_parser("create-admin", help="交互式创建唯一管理员")
+    subparsers.add_parser("verify-audit", help="校验防篡改审计日志哈希链")
+    subparsers.add_parser("sign-audit-checkpoint", help="签发审计检查点 HMAC 签名")
+
+    rotate_parser = subparsers.add_parser(
+        "rotate-keys", help="分批将历史密文重加密至目标数据密钥版本"
+    )
+    rotate_parser.add_argument(
+        "--target-version",
+        type=int,
+        default=None,
+        help="目标数据密钥版本号（默认使用 ACTIVE_DATA_KEY_VERSION）",
+    )
+    rotate_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=200,
+        help="单事务重加密批大小（1~5000，默认 200）",
+    )
+    rotate_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="仅盘点当前各版本密文分布与待轮换数量，不写入数据库",
+    )
+
+    verify_keys_parser = subparsers.add_parser(
+        "verify-keys", help="全量认证解密校验数据库密文及密钥版本"
+    )
+    verify_keys_parser.add_argument(
+        "--require-version",
+        type=int,
+        default=None,
+        help="可选要求全部密文已统一至指定密钥版本",
+    )
+
+    decrypt_parser = subparsers.add_parser(
+        "decrypt-export", help="离线流式校验并解密 .gmenc 加密导出文件"
+    )
+    decrypt_parser.add_argument("--input", required=True, type=Path, help="输入 .gmenc 路径")
+    decrypt_parser.add_argument("--output", required=True, type=Path, help="输出 CSV 路径（0600）")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "decrypt-export":
+        try:
+            result = decrypt_export_cli(args.input, args.output)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0
+        except (ValueError, ExportDecryptionError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     settings = Settings()
     engine = create_database_engine(settings)
     try:
@@ -110,10 +204,24 @@ def main() -> int:
             result = verify_audit(engine)
             print(json.dumps(result, ensure_ascii=False))
             return 0 if result["valid"] else 1
-        else:
+        elif args.command == "sign-audit-checkpoint":
             checkpoint = sign_audit(engine, settings.audit_signing_key_file)
             print(json.dumps(checkpoint, ensure_ascii=False))
-    except ValueError as exc:
+        elif args.command == "rotate-keys":
+            result = rotate_keys_cli(
+                engine,
+                settings,
+                target_version=args.target_version,
+                batch_size=args.batch_size,
+                dry_run=args.dry_run,
+            )
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result.get("dry_run") or result.get("verified") else 1
+        elif args.command == "verify-keys":
+            result = verify_keys_cli(engine, settings, require_version=args.require_version)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result["valid"] else 1
+    except (ValueError, DecryptionError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     except (IntegrityError, SQLAlchemyError):

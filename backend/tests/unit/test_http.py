@@ -85,7 +85,14 @@ def test_openapi_uses_declared_response_schemas(settings):
     assert {"/api/v1/health/live", "/api/v1/health/ready", "/api/v1/auth/login"} <= set(
         schema["paths"]
     )
-    assert not any("register" in path or "create-admin" in path for path in schema["paths"])
+    allowed_webauthn_register = {
+        "/api/v1/auth/webauthn/register/options",
+        "/api/v1/auth/webauthn/register/verify",
+    }
+    assert not any(
+        (path not in allowed_webauthn_register and "register" in path) or "create-admin" in path
+        for path in schema["paths"]
+    )
     assert "SessionResponse" in schema["components"]["schemas"]
     assert "HealthResponse" in schema["components"]["schemas"]
 

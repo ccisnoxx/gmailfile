@@ -28,6 +28,7 @@ class AuthStateMachine:
         if not self.ctx.check_password(admin, password):
             self.ctx.fail("login")
         level = "mfa_pending"
+        webauthn_active = len(self.ctx.active_webauthn_credentials(admin.id)) > 0
         if admin.totp_enabled:
             if not self.totp.verify_factor(admin, code, recovery):
                 self.ctx.fail("login", mfa=True)
@@ -35,6 +36,12 @@ class AuthStateMachine:
                 self.sessions.revoke_others()
             else:
                 level = "authenticated"
+        elif webauthn_active:
+            # 仅启用 Passkey 且停用 TOTP 时，密码表单仅允许凭一次性恢复码进入受限重绑态；
+            # 日常无密码登录请使用 /api/v1/auth/webauthn/login/*。
+            if not recovery or not self.totp.verify_factor(admin, "", recovery):
+                self.ctx.fail("login", mfa=True)
+            self.sessions.revoke_others()
         elif not self.ctx.settings.totp_required:
             level = "authenticated"
         self.ctx.db.delete(pre)
@@ -46,6 +53,7 @@ class AuthStateMachine:
             created_at=self.ctx.now,
             expires_at=self.ctx.now + timedelta(hours=self.ctx.settings.session_absolute_hours),
             ip_address=self.ctx.ip,
+            user_agent=self.ctx.device_tag,
         )
         self.ctx.db.add(row)
         result = self.sessions.rotate(row)

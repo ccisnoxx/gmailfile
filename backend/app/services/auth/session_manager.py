@@ -67,7 +67,7 @@ class SessionManager:
             isinstance(row, UserSession)
             and self.ctx.settings.totp_required
             and row.auth_level == "authenticated"
-            and not self.ctx.admin().totp_enabled
+            and not self.ctx.has_any_mfa(self.ctx.admin())
         ):
             row.auth_level = "mfa_pending"
             row.reauthenticated_at = None
@@ -112,19 +112,21 @@ class SessionManager:
     def require_recent(self, row: UserSession, *, require_mfa: bool = False) -> None:
         window = timedelta(minutes=self.ctx.settings.reauth_window_minutes)
         if row.reauthenticated_at is None or row.reauthenticated_at + window <= self.ctx.now:
-            raise SecurityError(403, "REAUTH_REQUIRED", "请先重新验证管理员密码")
+            raise SecurityError(403, "REAUTH_REQUIRED", "请先重新验证管理员身份")
         if require_mfa:
             admin = self.ctx.admin()
             if (
                 admin is not None
-                and admin.totp_enabled
+                and self.ctx.has_any_mfa(admin)
                 and (
                     row.mfa_reauthenticated_at is None
                     or row.mfa_reauthenticated_at + window <= self.ctx.now
                 )
             ):
                 raise SecurityError(
-                    403, "REAUTH_REQUIRED", "请先使用管理员密码和 TOTP 验证码完成重新验证"
+                    403,
+                    "REAUTH_REQUIRED",
+                    "请先使用管理员密码和 TOTP 验证码或通行密钥完成重新验证",
                 )
 
     def state(self, row, csrf: str) -> SessionResponse:
@@ -138,13 +140,12 @@ class SessionManager:
             if authenticated
             else None
         )
-        admin = self.ctx.admin() if authenticated else None
-        step_up_totp = bool(
-            authenticated
-            and self.ctx.settings.step_up_totp_required
-            and admin is not None
-            and admin.totp_enabled
-        )
+        admin = self.ctx.admin()
+        webauthn_creds = self.ctx.active_webauthn_credentials(admin.id) if admin is not None else []
+        webauthn_count = len(webauthn_creds)
+        totp_enabled = bool(admin and admin.totp_enabled)
+        has_mfa = totp_enabled or webauthn_count > 0
+        step_up_totp = bool(authenticated and self.ctx.settings.step_up_totp_required and has_mfa)
         return SessionResponse(
             idle_timeout_seconds=idle_minutes * 60,
             server_time=self.ctx.now,
@@ -164,6 +165,10 @@ class SessionManager:
             if authenticated and getattr(row, "mfa_reauthenticated_at", None)
             else None,
             step_up_totp_required=step_up_totp,
+            totp_enabled=totp_enabled if authenticated else False,
+            webauthn_enabled=webauthn_count > 0 if authenticated else False,
+            webauthn_count=webauthn_count if authenticated else 0,
+            can_passwordless_login=any(c.discoverable for c in webauthn_creds),
         )
 
     def rotate(

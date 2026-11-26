@@ -63,13 +63,30 @@ export type TotpSecurityInfo = {
   demoCode: string;
 };
 
+export type WebAuthnCredentialRow = {
+  id: string;
+  label: string;
+  transports: string[];
+  discoverable: boolean;
+  backupEligible: boolean;
+  backupState: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
 export type ActiveSessionRow = {
   id: string;
   deviceBrowser: string;
+  deviceType?: 'desktop' | 'mobile' | 'tablet' | 'unknown';
+  browser?: string;
+  os?: string;
   current: boolean;
   ipAddress: string;
   loginAt: string;
   lastActiveAt: string;
+  idleExpiresAt?: string;
+  expiresAt?: string;
+  mfaReauthenticated?: boolean;
   state: 'valid' | 'idle_expired' | 'absolute_expired' | 'revoked';
 };
 
@@ -177,6 +194,22 @@ export type SettingsMutationHandlers = {
   reverify: (
     password: string,
     totpCode?: string,
+  ) => Promise<SettingsActionResult>;
+  passkeyReverify: () => Promise<SettingsActionResult>;
+  registerWebAuthnCredential: (
+    label: string,
+    verify?: SensitiveVerifyPayload,
+  ) => Promise<SettingsActionResult>;
+  renameWebAuthnCredential: (
+    credentialId: string,
+    label: string,
+  ) => Promise<SettingsActionResult>;
+  deleteWebAuthnCredential: (
+    credentialId: string,
+    verify?: SensitiveVerifyPayload,
+  ) => Promise<SettingsActionResult>;
+  disableTotp: (
+    verify?: SensitiveVerifyPayload,
   ) => Promise<SettingsActionResult>;
   changePassword: (
     currentPassword: string,

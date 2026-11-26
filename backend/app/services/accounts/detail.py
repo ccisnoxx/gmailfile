@@ -11,6 +11,7 @@ from app.schemas.accounts import (
     AccountCreate,
     AccountDetail,
     AccountPatch,
+    BatchInput,
     BatchResult,
     BatchStatus,
     BatchTags,
@@ -240,6 +241,23 @@ class AccountDetailService:
                     ).all()
                     self.set_tags(row.id, list(set(existing) | set(body.tag_ids)))
                     self.audit("account_updated", row.id, operation="batch-tags")
+            except AccountError as exc:
+                exc.details = {
+                    "account_id": str(item.id),
+                    "expected_row_version": str(item.row_version),
+                }
+                raise
+        return BatchResult(updated_ids=[item.id for item in body.accounts])
+
+    def batch_restore(self, body: BatchInput) -> BatchResult:
+        # 回收站批量恢复：每条 CAS 与审计共用请求事务，任一冲突/未删除整批回滚。
+        for item in sorted(body.accounts, key=lambda entry: entry.id):
+            try:
+                row = self.record(item.id)
+                if row.deleted_at is None:
+                    raise AccountError(409, "ACCOUNT_NOT_DELETED", "该账号未被删除")
+                self.cas(row, item.row_version, {"deleted_at": None})
+                self.audit("account_restored", row.id, operation="batch-restore")
             except AccountError as exc:
                 exc.details = {
                     "account_id": str(item.id),
