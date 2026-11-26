@@ -345,3 +345,56 @@ def test_ssh_uses_fixed_commands_and_no_client_path(monkeypatch):
     monkeypatch.setenv("OFFSITE_DIRECTORY", "/root/other")
     with pytest.raises(ops.OperationError):
         ops.ssh_command("upload")
+
+
+def test_ustar_record_boundary_trailer_is_compatible_both_ways(target, tmp_path):
+    import hashlib
+
+    source = tmp_path / "boundary"
+    expected = bundle(source)
+    manifest_len = (source / "manifest.json").stat().st_size
+    db_len = (source / r.DB_FILE).stat().st_size
+
+    def entry_bytes(size):
+        return 512 + ((size + 511) // 512) * 512
+
+    fixed_prefix = entry_bytes(manifest_len) + entry_bytes(db_len) + 512
+    needed_cfg_blocks = (9728 - fixed_prefix) % 10240
+    if needed_cfg_blocks == 0:
+        needed_cfg_blocks = 10240
+    cfg_payload = r.AGE_HEADER + b"z" * (needed_cfg_blocks - len(r.AGE_HEADER))
+    (source / r.CONFIG_FILE).write_bytes(cfg_payload)
+    expected["sha256"][r.CONFIG_FILE] = hashlib.sha256(cfg_payload).hexdigest()
+    (source / "manifest.json").write_text(json.dumps(expected))
+
+    body_bytes = sum(entry_bytes((source / name).stat().st_size) for name in r.FILES)
+    assert body_bytes % 10240 == 9728
+
+    # New writer always emits a 1024-byte USTAR EOF trailer accepted by <=10240 receivers.
+    raw = packet(source).getvalue()
+    assert len(raw) == body_bytes + 1024 and raw[-1024:] == b"\x00" * 1024
+    with tarfile.open(fileobj=io.BytesIO(raw), mode="r|") as archive:
+        assert [member.name for member in archive] == list(r.FILES)
+    assert send(target, source)["status"] == "published"
+
+    # Reader also accepts 10752-byte trailers emitted by legacy tarfile(w|) peers on fetch.
+    legacy = io.BytesIO()
+    with tarfile.open(fileobj=legacy, mode="w|", format=tarfile.USTAR_FORMAT) as archive:
+        for name in r.FILES:
+            path = source / name
+            info = tarfile.TarInfo(name)
+            info.size = path.stat().st_size
+            info.mode = 0o600
+            with path.open("rb") as stream:
+                archive.addfile(info, stream)
+    legacy_bytes = legacy.getvalue()
+    assert len(legacy_bytes) - body_bytes == 10752
+
+    download = tmp_path / "download"
+    download.mkdir()
+    assert r.read_bundle(download, io.BytesIO(legacy_bytes), reserve=0) == expected
+
+    oversize_download = tmp_path / "oversize"
+    oversize_download.mkdir()
+    with pytest.raises(r.ReceiverError, match="TAR_TRAILER_INVALID"):
+        r.read_bundle(oversize_download, io.BytesIO(legacy_bytes + b"\x00"), reserve=0)

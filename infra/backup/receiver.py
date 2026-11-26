@@ -158,16 +158,28 @@ def validate_bundle(directory):
 
 
 def write_bundle(directory, stream):
-    """Use fixed regular USTAR entries, never arbitrary archive paths or tar.add()."""
-    with tarfile.open(fileobj=stream, mode="w|", format=tarfile.USTAR_FORMAT) as archive:
-        for name in FILES:
-            path = directory / name
-            require(regular(path), "BUNDLE_FILE_TYPE_INVALID")
-            info = tarfile.TarInfo(name)
-            info.size = path.stat().st_size
-            info.mode = 0o600
-            with path.open("rb") as source:
-                archive.addfile(info, source)
+    """Write fixed regular USTAR entries with a deterministic 1024-byte EOF trailer."""
+    for name in FILES:
+        path = directory / name
+        require(regular(path), "BUNDLE_FILE_TYPE_INVALID")
+        size = path.stat().st_size
+        info = tarfile.TarInfo(name)
+        info.size = size
+        info.mode = 0o600
+        stream.write(info.tobuf(format=tarfile.USTAR_FORMAT))
+        remaining = size
+        with path.open("rb") as source:
+            while remaining:
+                chunk = source.read(min(65536, remaining))
+                require(bool(chunk), "BUNDLE_SIZE_CHANGED")
+                stream.write(chunk)
+                remaining -= len(chunk)
+            require(not source.read(1), "BUNDLE_SIZE_CHANGED")
+        padding = (-size) % 512
+        if padding:
+            stream.write(b"\x00" * padding)
+    stream.write(b"\x00" * 1024)
+    stream.flush()
 
 
 def read_bundle(directory, stream, *, reserve=DISK_RESERVE):
@@ -212,8 +224,10 @@ def read_bundle(directory, stream, *, reserve=DISK_RESERVE):
         if expected == "manifest.json":
             read_metadata(directory / expected)
     # The producer closes SSH stdin after tar EOF. Bound and validate the entire trailing padding.
-    tail = stream.read(10241)
-    require(1024 <= len(tail) <= 10240 and not any(tail), "TAR_TRAILER_INVALID")
+    # Legacy tarfile(w|) appends 1024 EOF bytes then pads to 10240-byte records, reaching 10752
+    # bytes when the archive body ends 512 bytes before a 10240-byte boundary.
+    tail = stream.read(10753)
+    require(1024 <= len(tail) <= 10752 and not any(tail), "TAR_TRAILER_INVALID")
     data = validate_bundle(directory)
     sync_directory(directory)
     return data
