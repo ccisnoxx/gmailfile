@@ -23,8 +23,11 @@ export function RecoverySelector({
     id: string;
     gmail_email: string;
   } | null>(
-    account?.recovery_account_id
-      ? { id: account.recovery_account_id, gmail_email: account.recovery_email }
+    account?.recovery_account_id && account.recovery_email
+      ? {
+          id: account.recovery_account_id,
+          gmail_email: account.recovery_email,
+        }
       : null,
   );
   const options = useQuery({

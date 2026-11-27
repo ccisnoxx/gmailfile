@@ -28,6 +28,7 @@ AUDIT_EVENTS = {
     "account_deleted",
     "account_restored",
     "account_permanently_deleted",
+    "permanent_delete_confirmation_failed",
     "password_revealed",
     "password_copied",
     "sensitive_fields_revealed",

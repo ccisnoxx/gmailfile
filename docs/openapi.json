@@ -3991,7 +3991,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BatchInput"
+                "$ref": "#/components/schemas/BatchPermanentDeleteInput"
               }
             }
           },
@@ -6551,7 +6551,14 @@
             "title": "Recovery Email External"
           },
           "recovery_email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Recovery Email"
           },
           "status": {
@@ -6715,7 +6722,6 @@
           "registered_at",
           "recovery_account_id",
           "recovery_email_external",
-          "recovery_email",
           "status",
           "two_factor_status",
           "purpose",
@@ -7276,7 +7282,14 @@
             "title": "Recovery Email External"
           },
           "recovery_email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Recovery Email"
           },
           "status": {
@@ -7408,7 +7421,6 @@
           "registered_at",
           "recovery_account_id",
           "recovery_email_external",
-          "recovery_email",
           "status",
           "two_factor_status",
           "purpose",
@@ -7759,6 +7771,32 @@
           "id"
         ],
         "title": "BatchItem"
+      },
+      "BatchPermanentDeleteInput": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/BatchItem"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Accounts"
+          },
+          "confirmation": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Confirmation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "accounts",
+          "confirmation"
+        ],
+        "title": "BatchPermanentDeleteInput"
       },
       "BatchResult": {
         "properties": {

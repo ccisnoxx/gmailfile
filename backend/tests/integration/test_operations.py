@@ -464,7 +464,7 @@ def test_increasing_idle_does_not_resurrect_old_cookie(env, signed):
     [
         {"password": None},
         {"account_no": "GM-999999"},
-        {"recovery_email": ""},
+        {"recovery_email": "not-an-email"},
         {"registered_at": "2026-11-01T00:00:00"},
         {"status": "invalid"},
         {"tags": "x" * 51},

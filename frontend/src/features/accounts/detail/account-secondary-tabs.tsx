@@ -264,8 +264,12 @@ export function ContactsTabPanel({
       <dl className="grid gap-3 md:grid-cols-2">
         <div className="rounded-2xl border border-white/80 bg-white/60 p-4">
           <dt className="text-xs text-[var(--text-secondary)]">
-            辅助邮箱（
-            {account.recovery_account_id ? '站内关联账号' : '外部邮箱'}）
+            辅助邮箱
+            {account.recovery_account_id
+              ? '（站内关联账号）'
+              : account.recovery_email_external
+                ? '（外部邮箱）'
+                : ''}
           </dt>
           <dd className="mt-2 flex items-center justify-between gap-2 text-sm font-medium text-[var(--text-primary)]">
             <span className="truncate">
@@ -275,7 +279,11 @@ export function ContactsTabPanel({
               <button
                 type="button"
                 aria-label="复制辅助邮箱"
-                onClick={() => onCopyField('辅助邮箱', account.recovery_email)}
+                onClick={() => {
+                  if (account.recovery_email) {
+                    onCopyField('辅助邮箱', account.recovery_email);
+                  }
+                }}
                 className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
               >
                 <Copy className="size-3.5" aria-hidden="true" />

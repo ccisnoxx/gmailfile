@@ -13,6 +13,7 @@ from app.schemas.accounts import (
     AppIconFetchInput,
     AppIconFetchResponse,
     BatchInput,
+    BatchPermanentDeleteInput,
     BatchResult,
     BatchStatus,
     BatchTags,
@@ -163,7 +164,7 @@ def batch_restore(body: BatchInput, service: WriteService):
     response_model=BatchResult,
     operation_id="accountsBatchPermanentDelete",
 )
-def batch_permanent_delete(body: BatchInput, service: WriteService):
+def batch_permanent_delete(body: BatchPermanentDeleteInput, service: WriteService):
     return service.batch_permanent_delete(body)
 
 

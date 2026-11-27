@@ -704,8 +704,7 @@ export function createStatefulApiServer(
           gmail_email: patch.gmail_email ?? current.gmail_email,
           recovery_account_id: nextRecAcc ?? null,
           recovery_email_external: nextRecExt ?? null,
-          recovery_email:
-            linked?.gmail_email ?? nextRecExt ?? current.recovery_email,
+          recovery_email: linked?.gmail_email ?? nextRecExt ?? null,
           phone: patch.phone !== undefined ? patch.phone : current.phone,
           status: patch.status ?? current.status,
           two_factor_status:

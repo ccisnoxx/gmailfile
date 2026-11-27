@@ -343,11 +343,29 @@ def test_csv_skip_empty_fields_preserves_existing_values_on_update():
     assert patch_model.purpose == "新用途"
     assert tag_names is None
 
-    # skip_empty_fields=False: 空白必填字段（recovery_email/status/two_factor_status）应报错阻止清空
+    # skip_empty_fields=False: 空白必填字段（status/two_factor_status）应报错阻止清空，
+    # 而已放宽为可选的 recovery_email 留空时允许清空（不再触发必填报错）
     _, _, rows_ow, errors_ow, plans_ow, _ = analyzer.analyze(
         csv_content, opts_overwrite, default_time=now
     )
     assert [r.action for r in rows_ow] == ["error"]
     assert plans_ow == []
     error_fields = {e.field for e in errors_ow}
-    assert {"recovery_email", "status", "two_factor_status"} <= error_fields
+    assert {"status", "two_factor_status"} <= error_fields
+    assert "recovery_email" not in error_fields
+
+    # 仅留空 recovery_email 且 skip_empty_fields=False 时，允许清空辅助邮箱；新建也可不填辅助邮箱
+    clear_csv = (
+        b"gmail_email,password,recovery_email\n"
+        b"alice@gmail.com,,\n"
+        b"brandnew@gmail.com,StrongPass#2026,\n"
+    )
+    _, _, rows_clear, errors_clear, plans_clear, _ = analyzer.analyze(
+        clear_csv, opts_overwrite, default_time=now
+    )
+    assert errors_clear == []
+    assert [r.action for r in rows_clear] == ["update", "create"]
+    assert plans_clear[0][2].recovery_email_external is None
+    assert plans_clear[0][2].recovery_account_id is None
+    assert plans_clear[1][2].recovery_email_external is None
+    assert plans_clear[1][2].recovery_account_id is None

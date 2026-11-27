@@ -101,7 +101,10 @@ export function BatchBar({
       if (actionKind === 'restore') {
         await accountsBatchRestore({ ...options, body: base });
       } else if (actionKind === 'permanent-delete') {
-        await accountsBatchPermanentDelete({ ...options, body: base });
+        await accountsBatchPermanentDelete({
+          ...options,
+          body: { ...base, confirmation: confirmPhrase.trim() },
+        });
       } else if (actionKind === 'status') {
         await accountsBatchStatus({ ...options, body: { ...base, status } });
       } else {
@@ -136,6 +139,7 @@ export function BatchBar({
         'ACCOUNT_NOT_DELETED',
         'ACCOUNT_NOT_FOUND',
         'TAG_INVALID',
+        'INVALID_CONFIRMATION',
         'VALIDATION_ERROR',
         'AUTH_REQUIRED',
         'MFA_REQUIRED',

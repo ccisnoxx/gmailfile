@@ -36,10 +36,15 @@ async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
 async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Pydantic 的原始错误可能携带密码等 input，不能直接返回或记录。
     details = {}
-    if request.url.path in {"/api/v1/accounts/batch-status", "/api/v1/accounts/batch-tags"}:
+    if request.url.path in {
+        "/api/v1/accounts/batch-status",
+        "/api/v1/accounts/batch-tags",
+        "/api/v1/accounts/batch-restore",
+        "/api/v1/accounts/batch-permanent-delete",
+    }:
         # 只返回已知字段路径和行索引，不返回 input、任意字段名或原始异常。
         location = exc.errors()[0]["loc"]
-        fields = {"accounts", "id", "row_version", "status", "tag_ids"}
+        fields = {"accounts", "id", "row_version", "status", "tag_ids", "confirmation"}
         details["field"] = (
             ".".join(str(part) for part in location if isinstance(part, int) or part in fields)
             or "accounts"

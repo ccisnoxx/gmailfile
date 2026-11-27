@@ -679,9 +679,12 @@ export async function installMockBackend(
       const body = req.postDataJSON() as Record<string, unknown>;
       const hasLinked = Boolean(body.recovery_account_id);
       const hasExternal = Boolean(body.recovery_email_external);
-      if (hasLinked === hasExternal) {
+      if (hasLinked && hasExternal) {
         return json(
-          errorPayload('RECOVERY_INVALID', '辅助邮箱必须且只能填写一种'),
+          errorPayload(
+            'RECOVERY_INVALID',
+            '辅助邮箱不能同时填写外部地址和关联账号',
+          ),
           422,
         );
       }
@@ -838,9 +841,12 @@ export async function installMockBackend(
           'recovery_email_external' in body
             ? body.recovery_email_external
             : target.recovery_email_external;
-        if (Boolean(nextLinked) === Boolean(nextExternal)) {
+        if (Boolean(nextLinked) && Boolean(nextExternal)) {
           return json(
-            errorPayload('RECOVERY_INVALID', '辅助邮箱必须且只能填写一种'),
+            errorPayload(
+              'RECOVERY_INVALID',
+              '辅助邮箱不能同时填写外部地址和关联账号',
+            ),
             422,
           );
         }

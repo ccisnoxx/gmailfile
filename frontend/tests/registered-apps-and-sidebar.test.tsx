@@ -465,6 +465,7 @@ describe('统一可展开侧边栏与第三方已注册应用交互', () => {
             { id: 'acc-1', row_version: 2 },
             { id: 'acc-2', row_version: 4 },
           ],
+          confirmation: 'DELETE 2',
         },
       });
       expect(complete).toHaveBeenCalledWith('permanent-delete');

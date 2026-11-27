@@ -117,8 +117,10 @@ class CsvImportAnalyzer:
             else:
                 data["recovery_account_id"] = target.id
                 snapshot.append([line, "recovery", str(target.id), target.row_version])
-        if not recovery and not link:
-            row_errors.append(issue(line, "recovery_email", "辅助邮箱不能为空"))
+        if recovery and link:
+            row_errors.append(
+                issue(line, "recovery_email", "辅助邮箱不能同时填写外部地址和关联账号")
+            )
 
     @staticmethod
     def _parse_tags(

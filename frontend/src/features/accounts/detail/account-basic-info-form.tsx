@@ -670,7 +670,11 @@ export function AccountBasicInfoForm({
                 type="button"
                 aria-label="复制辅助邮箱"
                 title="复制辅助邮箱"
-                onClick={() => onCopyField('辅助邮箱', account.recovery_email)}
+                onClick={() => {
+                  if (account.recovery_email) {
+                    onCopyField('辅助邮箱', account.recovery_email);
+                  }
+                }}
                 className="absolute right-2 inline-flex size-7 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-white/80 hover:text-[var(--accent)]"
               >
                 <Copy className="size-3.5" aria-hidden="true" />

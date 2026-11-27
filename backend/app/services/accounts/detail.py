@@ -20,6 +20,7 @@ from app.schemas.accounts import (
     AccountDetail,
     AccountPatch,
     BatchInput,
+    BatchPermanentDeleteInput,
     BatchResult,
     BatchStatus,
     BatchTags,
@@ -29,7 +30,7 @@ from app.schemas.accounts import (
 )
 from app.services.accounts.errors import AccountError, flush_unique
 from app.services.accounts.listing import AccountQueryService
-from app.services.auth import AuthService
+from app.services.auth import AuthService, SecurityError
 
 
 class AccountDetailService:
@@ -78,8 +79,8 @@ class AccountDetailService:
         current_recovery_id: UUID | None = None,
         check_incoming: bool = True,
     ) -> None:
-        if (recovery_id is None) == (external is None):
-            raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱必须且只能填写一种")
+        if recovery_id is not None and external is not None:
+            raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱不能同时填写外部地址和关联账号")
         if recovery_id is not None:
             target = self.record(recovery_id)
             if recovery_id == account_id:
@@ -87,7 +88,7 @@ class AccountDetailService:
             if target.deleted_at is not None and recovery_id != current_recovery_id:
                 raise AccountError(422, "RECOVERY_INVALID", "不能新关联已删除的辅助账号")
             external = target.gmail_email
-        if normalize_email(external) == normalize_email(email):
+        if external is not None and normalize_email(external) == normalize_email(email):
             raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱不能与主邮箱相同")
         if check_incoming:
             # 主邮箱改名也不能使已有反向关联变成同一邮箱。
@@ -381,10 +382,21 @@ class AccountDetailService:
         row = self.record(account_id)
         self._purge_one(row, version, operation="permanent-delete")
 
-    def batch_permanent_delete(self, body: BatchInput) -> BatchResult:
-        # 回收站批量永久删除：强制最近 5 分钟内 MFA Step-Up，
+    def batch_permanent_delete(self, body: BatchPermanentDeleteInput) -> BatchResult:
+        # 回收站批量永久删除：强制最近 5 分钟内 MFA Step-Up 与服务端确认短语校验，
         # 每条 CAS 与审计共用请求事务，任一冲突/未删除整批回滚。
         self.auth.require_recent(self.session, require_mfa=True)
+        expected = f"DELETE {len(body.accounts)}"
+        if body.confirmation != expected:
+            self.audit(
+                "permanent_delete_confirmation_failed",
+                operation="batch-permanent-delete",
+            )
+            raise SecurityError(
+                422,
+                "INVALID_CONFIRMATION",
+                f"请输入确认短语 {expected} 后再提交永久删除",
+            )
         batch_ids = {entry.id for entry in body.accounts}
         for item in sorted(body.accounts, key=lambda entry: entry.id):
             try:

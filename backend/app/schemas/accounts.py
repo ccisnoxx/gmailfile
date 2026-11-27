@@ -98,8 +98,8 @@ class AccountCreate(Input):
 
     @model_validator(mode="after")
     def recovery(self) -> Self:
-        if (self.recovery_account_id is None) == (self.recovery_email_external is None):
-            raise ValueError("辅助邮箱必须且只能填写一种")
+        if self.recovery_account_id is not None and self.recovery_email_external is not None:
+            raise ValueError("辅助邮箱不能同时填写外部地址和关联账号")
         if self.recovery_email_external is not None and normalize_email(
             self.recovery_email_external
         ) == normalize_email(self.gmail_email):
@@ -213,7 +213,7 @@ class AccountSummary(BaseModel):
     registered_at: Timestamp
     recovery_account_id: UUID | None
     recovery_email_external: str | None
-    recovery_email: str
+    recovery_email: str | None = None
     status: Status
     two_factor_status: TwoFactor
     purpose: str | None
@@ -423,6 +423,10 @@ class BatchStatus(BatchInput):
 
 class BatchTags(BatchInput):
     tag_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+
+
+class BatchPermanentDeleteInput(BatchInput):
+    confirmation: str = Field(min_length=1, max_length=32)
 
 
 class BatchResult(BaseModel):

@@ -40,15 +40,15 @@ API 接受 `Content-Type: text/csv` 的原始字节，而非 multipart，因此�
 标准列：`account_no,gmail_email,password,registered_at,recovery_email,recovery_account,phone,status,two_factor_status,last_login_at,last_verified_at,password_changed_at,purpose,tags,notes`。
 时间必须是带时区的 ISO 8601，最终按 UTC 保存；不接受模糊本地时间。
 
-- 新账号必须有 Gmail、非空密码和辅助邮箱；空/未映射注册时间取**预览时**时间，状态默认 `pending_verification`，二步验证默认 `unknown`。
+- 新账号必须有 Gmail 与非空密码，辅助邮箱可选（可留空）；空/未映射注册时间取**预览时**时间，状态默认 `pending_verification`，二步验证默认 `unknown`。
 - update 不映射的字段保留；password 未提供或空字符串均保留旧密文，不允许用掩码替换密码。
-- update 映射为空的注册时间/状态/二步验证拒绝；可空的手机号、备注、用途和三个可空时间则清空。
+- update 映射为空的注册时间/状态/二步验证拒绝；可空的辅助邮箱、手机号、备注、用途和三个可空时间在未启用 `skip_empty_fields` 时清空。
 - `account_no` 留空由数据库生成。填写时只允许与规范化地址匹配的已有 `GM-000001` 编号；不能为新账号指定编号。
 - `tags` 使用 `|` 分隔，名称 trim、去重，最多 100 个、每个不超过 50 字符；映射后替换整组，空值清空，未映射保留。缺失标签在同一事务内创建。
 - `recovery_email` 始终是外部邮箱文本，即使与已有账号地址相同也不自动关联。
 - `recovery_account` 明确按已有 GM 编号或规范化邮箱解析关联；目标必须存在且未删除，且不是自身/同一主邮箱。
   不解析本批待新建账号，先导入目标、再单独导入关联，避免顺序歧义。
-- 两种辅助方式至多填一种；只要映射其中任一列，两列一起构成替换值，不能全部为空。两列都未映射时 update 保留原关联。
+- 两种辅助方式至多填一种（不可同时填写）；允许两者均留空。两列都未映射时 update 保留原关联；映射了任一列且两列均为空时，未开启 `skip_empty_fields` 则清空辅助邮箱，开启则保留原关联。
 
 ## 普通导出不会下载敏感字段
 

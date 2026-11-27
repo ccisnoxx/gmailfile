@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.models import GmailAccount
-from app.schemas.accounts import BatchInput, BatchItem
+from app.schemas.accounts import BatchItem, BatchPermanentDeleteInput
 from app.services.accounts import app_icon
 from app.services.accounts.detail import AccountDetailService
 from app.services.accounts.errors import AccountError
@@ -243,12 +243,55 @@ def test_permanent_delete_and_batch_require_mfa_step_up():
 
     with pytest.raises(SecurityError) as exc_batch:
         service.batch_permanent_delete(
-            BatchInput(accounts=[BatchItem(id=trashed.id, row_version=2)])
+            BatchPermanentDeleteInput(
+                accounts=[BatchItem(id=trashed.id, row_version=2)],
+                confirmation="DELETE 1",
+            )
         )
     assert exc_batch.value.status == 403
     assert exc_batch.value.code == "REAUTH_REQUIRED"
     assert require_recent.call_count == 2
     db.get.assert_not_called()
+
+
+@pytest.mark.parametrize("bad_phrase", ["DELETE 1", "delete 2", "DELETE 2 ", "CONFIRM 2"])
+def test_batch_permanent_delete_rejects_invalid_confirmation_and_audits(bad_phrase):
+    from app.services.auth import SecurityError
+
+    now = datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+    first = _make_account(deleted=True, version=1, email="a@gmail.com")
+    second = _make_account(deleted=True, version=2, email="b@gmail.com")
+
+    db = MagicMock()
+    audit = MagicMock()
+    require_recent = MagicMock()
+    auth = SimpleNamespace(db=db, now=now, audit=audit, require_recent=require_recent)
+    session = MagicMock()
+    service = AccountDetailService(auth=auth, session=session, listing=MagicMock())
+
+    with pytest.raises(SecurityError) as exc_info:
+        service.batch_permanent_delete(
+            BatchPermanentDeleteInput(
+                accounts=[
+                    BatchItem(id=first.id, row_version=1),
+                    BatchItem(id=second.id, row_version=2),
+                ],
+                confirmation=bad_phrase,
+            )
+        )
+
+    require_recent.assert_called_once_with(session, require_mfa=True)
+    assert exc_info.value.status == 422
+    assert exc_info.value.code == "INVALID_CONFIRMATION"
+    assert "DELETE 2" in exc_info.value.message
+    db.get.assert_not_called()
+    db.execute.assert_not_called()
+    audit.assert_called_once_with(
+        "permanent_delete_confirmation_failed",
+        session,
+        account_id=None,
+        operation="batch-permanent-delete",
+    )
 
 
 def test_permanent_delete_rejects_active_account_and_version_conflict():
@@ -332,13 +375,53 @@ def test_batch_permanent_delete_attaches_item_details_on_failure():
 
     with pytest.raises(AccountError) as exc_info:
         service.batch_permanent_delete(
-            BatchInput(
+            BatchPermanentDeleteInput(
                 accounts=[
                     BatchItem(id=ordered[0].id, row_version=ordered[0].row_version),
                     BatchItem(id=ordered[1].id, row_version=ordered[1].row_version),
-                ]
+                ],
+                confirmation="DELETE 2",
             )
         )
     require_recent.assert_called_once_with(session, require_mfa=True)
     assert exc_info.value.code == "ACCOUNT_NOT_DELETED"
     assert exc_info.value.details["account_id"] == str(active.id)
+
+
+def test_optional_recovery_allows_empty_and_rejects_dual_mode():
+    from app.schemas.accounts import AccountCreate
+
+    now = datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+    created = AccountCreate(
+        gmail_email="norecovery@gmail.com",
+        password="synthetic-password-123",
+        registered_at=now,
+    )
+    assert created.recovery_account_id is None
+    assert created.recovery_email_external is None
+
+    with pytest.raises(ValueError, match="不能同时填写"):
+        AccountCreate(
+            gmail_email="dual@gmail.com",
+            password="synthetic-password-123",
+            registered_at=now,
+            recovery_account_id=uuid4(),
+            recovery_email_external="ext@example.test",
+        )
+
+    db = MagicMock()
+    auth = SimpleNamespace(db=db, now=now, audit=MagicMock(), require_recent=MagicMock())
+    service = AccountDetailService(auth=auth, session=MagicMock(), listing=MagicMock())
+    # 双空放行
+    service.recovery(uuid4(), "norecovery@gmail.com", None, None, check_incoming=False)
+    # 双非空拒绝
+    with pytest.raises(AccountError) as exc_dual:
+        service.recovery(
+            uuid4(),
+            "dual@gmail.com",
+            uuid4(),
+            "ext@example.test",
+            check_incoming=False,
+        )
+    assert exc_dual.value.status == 422
+    assert exc_dual.value.code == "RECOVERY_INVALID"

@@ -328,6 +328,7 @@ export type {
   BackupStatusResponses,
   BatchInput,
   BatchItem,
+  BatchPermanentDeleteInput,
   BatchResult,
   BatchStatus,
   BatchTags,

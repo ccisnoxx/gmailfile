@@ -230,7 +230,9 @@ function RowActionsMenu({
             </DropdownMenuPrimitive.Item>
             {account.recovery_email && (
               <DropdownMenuPrimitive.Item
-                onSelect={() => onCopy(account.recovery_email)}
+                onSelect={() => {
+                  if (account.recovery_email) onCopy(account.recovery_email);
+                }}
                 className={itemClass}
               >
                 <Copy className="size-3.5 text-[var(--text-secondary)]" />
@@ -610,7 +612,11 @@ export function AccountTable({
                           <button
                             type="button"
                             aria-label={`复制辅助邮箱 ${account.recovery_email}`}
-                            onClick={() => onCopy(account.recovery_email)}
+                            onClick={() => {
+                              if (account.recovery_email) {
+                                onCopy(account.recovery_email);
+                              }
+                            }}
                             className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
                           >
                             <Copy className="size-3.5" aria-hidden="true" />

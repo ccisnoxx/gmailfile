@@ -114,19 +114,28 @@ export function AccountDetailDrawer({
                   ['注册时间', localDate(detail.registered_at)],
                   [
                     '辅助邮箱',
-                    <div
-                      className="flex flex-wrap items-center gap-2"
-                      key="recovery"
-                    >
-                      <span className="break-all">{detail.recovery_email}</span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onCopy(detail.recovery_email)}
+                    detail.recovery_email ? (
+                      <div
+                        className="flex flex-wrap items-center gap-2"
+                        key="recovery"
                       >
-                        复制辅助邮箱
-                      </Button>
-                    </div>,
+                        <span className="break-all">
+                          {detail.recovery_email}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            detail.recovery_email &&
+                            onCopy(detail.recovery_email)
+                          }
+                        >
+                          复制辅助邮箱
+                        </Button>
+                      </div>
+                    ) : (
+                      '—'
+                    ),
                   ],
                   [
                     '绑定手机号',

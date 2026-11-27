@@ -215,6 +215,46 @@ it('新增提交真实字段和UTC，关联切换不会同时提交两种辅助�
   expect(String(submitted!.registered_at)).toMatch(/Z$/);
 });
 
+it('表单允许暂不设置辅助邮箱并提交双空字段', async () => {
+  let submitted: Record<string, unknown> | null = null;
+  const record = row();
+  stubRows(record, async (request) => {
+    submitted = (await request.json()) as Record<string, unknown>;
+    return json(
+      {
+        ...row(),
+        id: id(),
+        gmail_email: 'norecovery@gmail.com',
+        recovery_account_id: null,
+        recovery_email_external: null,
+        recovery_email: null,
+      },
+      201,
+    );
+  });
+  page();
+  await userEvent.click(
+    await screen.findByRole('button', { name: '新建账号' }),
+  );
+  await userEvent.type(
+    await screen.findByLabelText('Gmail 地址'),
+    'norecovery@gmail.com',
+  );
+  const secret = id();
+  await userEvent.type(screen.getByLabelText('Gmail 登录密码'), secret);
+  await userEvent.selectOptions(screen.getByLabelText('辅助邮箱方式'), 'none');
+  await userEvent.click(screen.getByRole('button', { name: '保存账号' }));
+  await waitFor(() =>
+    expect(submitted).toMatchObject({
+      gmail_email: 'norecovery@gmail.com',
+      password: secret,
+      recovery_account_id: null,
+      recovery_email_external: null,
+    }),
+  );
+  expect(submitted).not.toHaveProperty('recovery_mode');
+});
+
 it('表单阻止辅助邮箱与主邮箱同一规范化地址', async () => {
   const record = row();
   const mock = stubRows(record);

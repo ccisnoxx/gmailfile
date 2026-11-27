@@ -42,13 +42,70 @@ def test_method_error_preserves_protocol_headers(client):
 
 
 def test_unexpected_errors_do_not_leak(client):
+    import io
+    import json
+    import logging
+
+    from app.core.encryption import DecryptionError
+    from app.core.logging import JsonFormatter
+
+    def inner_boom():
+        try:
+            raise ValueError("inner-secret-token-999")
+        except ValueError as err:
+            raise RuntimeError("private-password-do-not-log") from err
+
     @client.app.get("/test-error")
     def fail():
-        raise RuntimeError("private-password-do-not-log")
+        inner_boom()
 
-    response = client.get("/test-error")
-    assert response.status_code == 500
-    assert "private-password" not in response.text
+    @client.app.get("/test-decrypt-error")
+    def fail_decrypt():
+        try:
+            raise ValueError("decryption-secret-material-888")
+        except ValueError as err:
+            raise DecryptionError() from err
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    logger = logging.getLogger("gmail_manager")
+    logger.addHandler(handler)
+    try:
+        response = client.get("/test-error?token=query-secret-777")
+        assert response.status_code == 500
+        assert "private-password" not in response.text
+        assert "inner-secret-token" not in response.text
+
+        decrypt_resp = client.get("/test-decrypt-error")
+        assert decrypt_resp.status_code == 500
+        assert decrypt_resp.json()["error"]["code"] == "DECRYPTION_FAILED"
+        assert "decryption-secret-material" not in decrypt_resp.text
+    finally:
+        logger.removeHandler(handler)
+
+    raw_logs = stream.getvalue()
+    assert "private-password" not in raw_logs
+    assert "inner-secret-token" not in raw_logs
+    assert "query-secret-777" not in raw_logs
+    assert "decryption-secret-material" not in raw_logs
+
+    records = [json.loads(line) for line in raw_logs.splitlines() if line.strip()]
+    failed = next(item for item in records if item["event_type"] == "request_failed")
+    assert failed["request_id"] == response.headers["X-Request-ID"]
+    assert failed["method"] == "GET"
+    assert failed["path"] == "/test-error"
+    assert failed["exception_type"] == "RuntimeError"
+    assert failed["cause_types"] == ["ValueError"]
+    assert any(frame.endswith(":inner_boom") for frame in failed["traceback_frames"])
+    assert not any(frame.startswith("/") for frame in failed["traceback_frames"])
+
+    decrypted = next(item for item in records if item["event_type"] == "decryption_failed")
+    assert decrypted["request_id"] == decrypt_resp.headers["X-Request-ID"]
+    assert decrypted["method"] == "GET"
+    assert decrypted["path"] == "/test-decrypt-error"
+    assert decrypted["exception_type"] == "DecryptionError"
+    assert any(frame.endswith(":fail_decrypt") for frame in decrypted["traceback_frames"])
 
 
 def test_validation_errors_do_not_echo_input(client):

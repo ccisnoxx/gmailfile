@@ -17,7 +17,7 @@ from app.core.audit_sink import configure_audit_sink
 from app.core.config import Settings
 from app.core.encryption import DecryptionError, EncryptionService
 from app.core.errors import error_response, http_error, validation_error
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, safe_cause_types, safe_traceback_frames
 from app.core.release_meta import APP_VERSION
 from app.core.upload import CsvUploadLimit
 from app.db.schema import schema_is_current
@@ -68,6 +68,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     async def decryption_error(request: Request, exc: DecryptionError):
+        safe_fields: dict[str, object] = {
+            "request_id": getattr(request.state, "request_id", None),
+            "method": request.method,
+            "path": request.url.path,
+            "exception_type": type(exc).__name__,
+            "traceback_frames": safe_traceback_frames(exc),
+        }
+        if causes := safe_cause_types(exc):
+            safe_fields["cause_types"] = causes
+        logging.getLogger("gmail_manager").error(
+            "decryption_failed", extra={"safe_fields": safe_fields}
+        )
         return error_response(request, 500, "DECRYPTION_FAILED", "无法读取敏感数据，请联系管理员")
 
     app.add_exception_handler(SecurityError, security_error)
@@ -92,8 +104,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else:
                 response = await call_next(request)
         except Exception as exc:
+            safe_fields: dict[str, object] = {
+                "request_id": request.state.request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "exception_type": type(exc).__name__,
+                "traceback_frames": safe_traceback_frames(exc),
+            }
+            if causes := safe_cause_types(exc):
+                safe_fields["cause_types"] = causes
             logging.getLogger("gmail_manager").error(
-                "request_failed", extra={"safe_fields": {"exception_type": type(exc).__name__}}
+                "request_failed", extra={"safe_fields": safe_fields}
             )
             response = error_response(request, 500, "INTERNAL_ERROR", "服务暂时无法处理请求")
         response.headers["X-Request-ID"] = request.state.request_id

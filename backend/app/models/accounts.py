@@ -39,7 +39,7 @@ class GmailAccount(IdentityMixin, UpdatedMixin, Base):
     __table_args__ = (
         UniqueConstraint("gmail_email_normalized"),
         CheckConstraint(
-            "(recovery_account_id IS NOT NULL) <> (recovery_email_external IS NOT NULL)",
+            "NOT (recovery_account_id IS NOT NULL AND recovery_email_external IS NOT NULL)",
             name="recovery_xor",
         ),
         CheckConstraint("recovery_account_id <> id", name="recovery_not_self"),

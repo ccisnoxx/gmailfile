@@ -162,7 +162,7 @@ class AccountRepository:
                 func.max(GmailAccount.registered_at).label("latest_registered_at"),
             )
             .outerjoin(recovery, recovery.id == GmailAccount.recovery_account_id)
-            .where(GmailAccount.deleted_at.is_(None))
+            .where(GmailAccount.deleted_at.is_(None), email.is_not(None))
         )
         if search.strip():
             query = query.where(email.contains(search.strip().lower(), autoescape=True))

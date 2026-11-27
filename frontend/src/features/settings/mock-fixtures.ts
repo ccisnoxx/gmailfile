@@ -320,6 +320,10 @@ const API_EVENT_LABELS: Record<
   account_archived: { label: '归档账号', objectType: 'account' },
   account_deleted: { label: '删除账号', objectType: 'account' },
   account_permanently_deleted: { label: '永久删除账号', objectType: 'account' },
+  permanent_delete_confirmation_failed: {
+    label: '批量永久删除确认失败',
+    objectType: 'account',
+  },
   account_restored: { label: '恢复账号', objectType: 'account' },
   password_revealed: { label: '查看凭据', objectType: 'account' },
   backup_completed: { label: '自动备份', objectType: 'backup' },

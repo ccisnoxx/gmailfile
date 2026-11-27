@@ -70,7 +70,6 @@ def test_empty_database_upgrade_and_downgrade(db_engine, migration_config):
 @pytest.mark.parametrize(
     "changes",
     [
-        {"recovery_email_external": None},
         {"row_version": 0},
         {"status": "invented"},
         {"two_factor_status": "invented"},
@@ -346,3 +345,16 @@ def test_0007_downgrade_blocked_when_orphan_audit_events_exist(db_engine, migrat
         with db_engine.begin() as connection:
             migration_config.attributes["connection"] = connection
             command.downgrade(migration_config, "0006")
+
+
+def test_0008_allows_empty_recovery_and_blocks_downgrade_when_empty_exists(
+    db_engine, migration_config
+):
+    row = account(recovery_email_external=None, recovery_account_id=None)
+    with Session(db_engine) as db, db.begin():
+        db.add(row)
+
+    with pytest.raises(RuntimeError, match="0008 -> 0007"):
+        with db_engine.begin() as connection:
+            migration_config.attributes["connection"] = connection
+            command.downgrade(migration_config, "0007")

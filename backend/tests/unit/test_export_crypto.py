@@ -1,6 +1,11 @@
 """GME1 流式分块加密导出格式单元测试（含多块、空流、错口令、截断、篡改、重排与文件解密）。"""
 
+import base64
+import hashlib
+import json
 import stat
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -109,3 +114,40 @@ def test_decrypt_export_file_permissions_and_cleanup_on_failure(tmp_path):
         decrypt_export_file(enc_file, bad_out, "wrong offline passphrase 2026!")
     assert not bad_out.exists()
     assert not list(tmp_path.glob("*.decrypt.tmp"))
+
+
+def test_gme1_frozen_cross_version_vectors():
+    fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "gme1_vectors.json"
+    spec = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    passphrase = spec["passphrase"]
+    salt = bytes.fromhex(spec["salt_hex"])
+    nonce_prefix = bytes.fromhex(spec["nonce_prefix_hex"])
+    kdf = spec["kdf"]
+    chunk_size = spec["chunk_size"]
+
+    derived = derive_export_key(passphrase, salt, **kdf)
+    assert derived.hex() == spec["expected_key_hex"]
+
+    for name, vector in spec["vectors"].items():
+        expected_plaintext = base64.b64decode(vector["plaintext_b64"])
+        frozen_ciphertext = base64.b64decode(vector["ciphertext_b64"])
+        assert hashlib.sha256(expected_plaintext).hexdigest() == vector["plaintext_sha256"], name
+        assert hashlib.sha256(frozen_ciphertext).hexdigest() == vector["ciphertext_sha256"], name
+        assert frozen_ciphertext.startswith(MAGIC), name
+
+        # 纯离线流式解密固化密文（不依赖当前加密实现），保障跨版本向后兼容。
+        decrypted = b"".join(
+            decrypt_stream(
+                (frozen_ciphertext[i : i + 19] for i in range(0, len(frozen_ciphertext), 19)),
+                passphrase,
+            )
+        )
+        assert decrypted == expected_plaintext, name
+
+        # 固定 salt 与 nonce_prefix 时，加密结果必须与固化向量逐字节一致。
+        with patch("app.core.export_crypto.os.urandom", side_effect=[salt, nonce_prefix]):
+            reproduced = b"".join(
+                encrypt_stream([expected_plaintext], passphrase, chunk_size=chunk_size, **kdf)
+            )
+        assert reproduced == frozen_ciphertext, name

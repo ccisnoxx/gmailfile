@@ -49,7 +49,7 @@ type Form = Omit<
   | 'apps'
 > & {
   registered_at: string;
-  recovery_mode: 'external' | 'account';
+  recovery_mode: 'none' | 'external' | 'account';
   recovery_account_id: string;
   recovery_email_external: string;
   tag_ids: string[];
@@ -104,7 +104,13 @@ export function AccountForm({
       registered_at: inputDate(
         account?.registered_at ?? new Date().toISOString(),
       ),
-      recovery_mode: account?.recovery_account_id ? 'account' : 'external',
+      recovery_mode: account?.recovery_account_id
+        ? 'account'
+        : account?.recovery_email_external
+          ? 'external'
+          : account
+            ? 'none'
+            : 'external',
       recovery_account_id: account?.recovery_account_id ?? '',
       recovery_email_external: account?.recovery_email_external ?? '',
       phone: account?.phone ?? '',
@@ -146,10 +152,11 @@ export function AccountForm({
             return;
           }
         }
+        const trimmedRecoveryExternal = values.recovery_email_external.trim();
         if (
           mode === 'external' &&
-          normalize(values.gmail_email) ===
-            normalize(values.recovery_email_external)
+          trimmedRecoveryExternal &&
+          normalize(values.gmail_email) === normalize(trimmedRecoveryExternal)
         ) {
           setError('recovery_email_external', {
             message: '辅助邮箱不能与主邮箱相同',
@@ -160,9 +167,13 @@ export function AccountForm({
           ...values,
           registered_at: new Date(values.registered_at).toISOString(),
           recovery_account_id:
-            mode === 'account' ? values.recovery_account_id : null,
+            mode === 'account' && values.recovery_account_id
+              ? values.recovery_account_id
+              : null,
           recovery_email_external:
-            mode === 'external' ? values.recovery_email_external : null,
+            mode === 'external' && trimmedRecoveryExternal
+              ? trimmedRecoveryExternal
+              : null,
           phone: values.phone || null,
           purpose: values.purpose || null,
           notes: values.notes || null,
@@ -258,6 +269,7 @@ export function AccountForm({
             <NativeSelectOption value="account">
               关联已有账号
             </NativeSelectOption>
+            <NativeSelectOption value="none">暂不设置</NativeSelectOption>
           </NativeSelect>
         </Field>
         {mode === 'external' ? (
@@ -266,7 +278,7 @@ export function AccountForm({
             <Input
               id="recovery-email"
               type="email"
-              required
+              placeholder="留空表示暂不设置辅助邮箱"
               maxLength={254}
               aria-invalid={!!errors.recovery_email_external}
               aria-describedby={
@@ -283,8 +295,11 @@ export function AccountForm({
                 {errors.recovery_email_external.message}
               </p>
             )}
+            <FieldDescription>
+              可选；留空表示暂不设置辅助邮箱。
+            </FieldDescription>
           </Field>
-        ) : (
+        ) : mode === 'account' ? (
           <Field>
             <FieldLabel htmlFor="recovery-account">关联账号</FieldLabel>
             <RecoverySelector
@@ -294,7 +309,7 @@ export function AccountForm({
               onFailure={onFailure}
             />
           </Field>
-        )}
+        ) : null}
         <Field data-invalid={!!errors.phone}>
           <FieldLabel htmlFor="phone">
             绑定手机号{encryptedPhoneHidden ? '（留空保留原值）' : ''}

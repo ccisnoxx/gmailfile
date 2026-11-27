@@ -76,7 +76,7 @@ def test_release_gate_check_docs_detects_stale_schema_and_delete_claim(tmp_path)
     res = gates.check_docs(tmp_path)
     assert res.ok is False
     joined = "\n".join(res.errors)
-    assert "0007" in joined
+    assert "0008" in joined
     assert "不提供永久删除" in joined
     assert "LICENSE" in joined
     assert "SECURITY.md" in joined

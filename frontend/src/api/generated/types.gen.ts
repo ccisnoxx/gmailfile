@@ -159,7 +159,7 @@ export type AccountDetail = {
   /**
    * Recovery Email
    */
-  recovery_email: string;
+  recovery_email?: string | null;
   /**
    * Status
    */
@@ -488,7 +488,7 @@ export type AccountSummary = {
   /**
    * Recovery Email
    */
-  recovery_email: string;
+  recovery_email?: string | null;
   /**
    * Status
    */
@@ -730,6 +730,20 @@ export type BatchItem = {
    * Id
    */
   id: string;
+};
+
+/**
+ * BatchPermanentDeleteInput
+ */
+export type BatchPermanentDeleteInput = {
+  /**
+   * Accounts
+   */
+  accounts: Array<BatchItem>;
+  /**
+   * Confirmation
+   */
+  confirmation: string;
 };
 
 /**
@@ -4153,7 +4167,7 @@ export type AccountsBatchRestoreResponse =
   AccountsBatchRestoreResponses[keyof AccountsBatchRestoreResponses];
 
 export type AccountsBatchPermanentDeleteData = {
-  body: BatchInput;
+  body: BatchPermanentDeleteInput;
   path?: never;
   query?: never;
   url: '/api/v1/accounts/batch-permanent-delete';

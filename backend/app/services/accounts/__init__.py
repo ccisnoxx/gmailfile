@@ -13,6 +13,7 @@ from app.schemas.accounts import (
     AccountSummary,
     AppIconFetchResponse,
     BatchInput,
+    BatchPermanentDeleteInput,
     BatchResult,
     BatchStatus,
     BatchTags,
@@ -121,7 +122,7 @@ class AccountService:
     def batch_restore(self, body: BatchInput) -> BatchResult:
         return self.details.batch_restore(body)
 
-    def batch_permanent_delete(self, body: BatchInput) -> BatchResult:
+    def batch_permanent_delete(self, body: BatchPermanentDeleteInput) -> BatchResult:
         return self.details.batch_permanent_delete(body)
 
     def status_values(self, row: GmailAccount, status: str) -> dict:

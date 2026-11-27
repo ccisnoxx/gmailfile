@@ -59,7 +59,11 @@ def version(row):
         ("PATCH", "/{id}", {"row_version": 1, "purpose": "test"}),
         ("DELETE", "/{id}", {"row_version": 1}),
         ("DELETE", "/{id}/permanent", {"row_version": 1}),
-        ("POST", "/batch-permanent-delete", {"accounts": [{"id": str(uuid4()), "row_version": 1}]}),
+        (
+            "POST",
+            "/batch-permanent-delete",
+            {"accounts": [{"id": str(uuid4()), "row_version": 1}], "confirmation": "DELETE 1"},
+        ),
         *[
             ("POST", "/{id}/" + action, {} if "password" in action else {"row_version": 1})
             for action in [
@@ -89,7 +93,11 @@ def test_all_account_endpoints_require_full_auth(env, method, path, body):
         ("PATCH", "/{id}", {"row_version": 1}),
         ("DELETE", "/{id}", {"row_version": 1}),
         ("DELETE", "/{id}/permanent", {"row_version": 1}),
-        ("POST", "/batch-permanent-delete", {"accounts": [{"id": str(uuid4()), "row_version": 1}]}),
+        (
+            "POST",
+            "/batch-permanent-delete",
+            {"accounts": [{"id": str(uuid4()), "row_version": 1}], "confirmation": "DELETE 1"},
+        ),
         *[
             ("POST", "/{id}/" + action, {} if "password" in action else {"row_version": 1})
             for action in [
@@ -238,7 +246,6 @@ def test_normalized_duplicate_reserved_after_delete(env, signed):
 @pytest.mark.parametrize(
     "extra",
     [
-        {"recovery_email_external": None},
         {"recovery_account_id": str(uuid4())},
         {"recovery_email_external": "NAME@gmail.com", "gmail_email": "N.a.m.e+test@googlemail.com"},
         {"registered_at": "2026-11-24T18:00:00"},
@@ -252,6 +259,31 @@ def test_normalized_duplicate_reserved_after_delete(env, signed):
 )
 def test_boundary_validation(signed, extra):
     assert request(signed, "POST", body=payload(**extra)).status_code == 422
+
+
+def test_optional_recovery_email_create_clear_and_stats_exclusion(signed):
+    created = create(signed, recovery_email_external=None, recovery_account_id=None)
+    assert created["recovery_email"] is None
+    assert created["recovery_email_external"] is None
+    assert created["recovery_account_id"] is None
+
+    # 为有辅助邮箱的账号清空辅助邮箱应成功
+    with_recovery = create(signed, recovery_email_external="clearable@example.test")
+    cleared = request(
+        signed,
+        "PATCH",
+        "/" + with_recovery["id"],
+        {**version(with_recovery), "recovery_email_external": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["recovery_email"] is None
+
+    # 辅助邮箱统计与仪表盘不应把空辅助邮箱聚合成 null 组
+    client, _ = signed
+    usage = client.get("/api/v1/recovery-emails").json()
+    assert all(item["email"] for item in usage["items"])
+    dash = client.get("/api/v1/dashboard/recovery-email-usage").json()
+    assert all(item["email"] for item in dash["items"])
 
 
 def test_recovery_association_xor_self_and_rename(signed):
@@ -674,7 +706,10 @@ def test_permanent_delete_requires_mfa_step_up_unlinks_recovery_and_releases_ema
         auth_pair,
         "POST",
         "/batch-permanent-delete",
-        {"accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}]},
+        {
+            "accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}],
+            "confirmation": "DELETE 1",
+        },
     )
     assert denied_batch.status_code == 403
     assert denied_batch.json()["error"]["code"] == "REAUTH_REQUIRED"
@@ -707,17 +742,44 @@ def test_permanent_delete_requires_mfa_step_up_unlinks_recovery_and_releases_ema
     recreated = create(auth_pair, gmail_email=target_email)
     assert recreated["id"] != acc_a["id"]
 
-    # 批量永久删除在同一 Step-Up 窗口内成功执行
-    ok_batch = request(
+    # 批量永久删除缺少或写错确认短语时被服务端拒绝，记录失败审计且不删除记录
+    missing_phrase = request(
         auth_pair,
         "POST",
         "/batch-permanent-delete",
         {"accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}]},
     )
+    assert missing_phrase.status_code == 422
+    assert missing_phrase.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert missing_phrase.json()["error"]["details"].get("field") == "confirmation"
+
+    wrong_phrase = request(
+        auth_pair,
+        "POST",
+        "/batch-permanent-delete",
+        {
+            "accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}],
+            "confirmation": "DELETE 2",
+        },
+    )
+    assert wrong_phrase.status_code == 422
+    assert wrong_phrase.json()["error"]["code"] == "INVALID_CONFIRMATION"
+    assert client.get(ROOT + "/" + trashed_c["id"]).status_code == 200
+
+    # 批量永久删除在同一 Step-Up 窗口内提供准确确认短语后成功执行
+    ok_batch = request(
+        auth_pair,
+        "POST",
+        "/batch-permanent-delete",
+        {
+            "accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}],
+            "confirmation": "DELETE 1",
+        },
+    )
     assert ok_batch.status_code == 200
     assert ok_batch.json()["updated_ids"] == [trashed_c["id"]]
 
-    # 审计哈希链完整且仍保留已永久删除账号的 UUID 审计记录
+    # 审计哈希链完整，记录了确认短语失败事件，且仍保留已永久删除账号的 UUID 审计记录
     with Session(env["engine"]) as db:
         status = verify_audit_chain(db)
         assert status.valid is True
@@ -725,6 +787,13 @@ def test_permanent_delete_requires_mfa_step_up_unlinks_recovery_and_releases_ema
             select(AuditEvent).where(AuditEvent.event_type == "account_permanently_deleted")
         ).all()
         assert {str(e.account_id) for e in purged_events} == {trashed_a["id"], trashed_c["id"]}
+        failed_confirm = db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.event_type == "permanent_delete_confirmation_failed"
+            )
+        ).all()
+        assert len(failed_confirm) == 1
+        assert failed_confirm[0].event_metadata == {"operation": "batch-permanent-delete"}
 
     # 超过 5 分钟 Step-Up 窗口后再次永久删除必须重新被拒绝
     trashed_recreated = request(

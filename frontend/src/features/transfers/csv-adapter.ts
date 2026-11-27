@@ -521,7 +521,7 @@ export function createLiveCsvAdapter({
           id: item.id,
           accountNo: item.account_no,
           gmailEmail: item.gmail_email,
-          recoveryEmail: item.recovery_email,
+          recoveryEmail: item.recovery_email ?? '',
           status: item.status,
           twoFactorStatus: item.two_factor_status,
           tags: item.tags.map((t) => t.name),
