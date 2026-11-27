@@ -133,10 +133,13 @@ def test_update_uses_version_keeps_unmapped_and_empty_password(env, signed):
     assert commit(signed, data, p["receipt_id"]).json()["updated"] == 1
     detail = signed[0].get("/api/v1/accounts/" + row["id"]).json()
     assert (
-        detail["notes"] == "keep-notes"
+        detail["has_notes"] is True
+        and detail["notes"] is None
         and detail["purpose"] == "changed"
         and detail["row_version"] == 3
     )
+    revealed = request(signed, "POST", "/" + row["id"] + "/reveal-sensitive", {})
+    assert revealed.status_code == 200 and revealed.json()["notes"] == "keep-notes"
     with Session(env["engine"]) as db:
         assert db.get(GmailAccount, row["id"]).password_ciphertext == cipher
 
@@ -372,7 +375,9 @@ def test_audit_paging_filter_and_status_redaction(env, signed, tmp_path):
     assert (
         client.get("/api/v1/audit-events", params={"event_type": "not-allowed"}).status_code == 422
     )
-    assert client.get("/api/v1/system/version").json()["schema_version"] == "0005"
+    from app.core.release_meta import SCHEMA_VERSION
+
+    assert client.get("/api/v1/system/version").json()["schema_version"] == SCHEMA_VERSION
     assert client.get("/api/v1/system/backup-status").json()["state"] == "unconfigured"
     status = tmp_path / "status.json"
     env["settings"].backup_status_file = status

@@ -12,9 +12,7 @@ export type TransferSubTab = 'import' | 'batch' | 'export';
 export type ImportStrategyOption = 'upsert' | 'insert_only' | 'strict_new';
 
 export type ConflictResolutionOption =
-  | 'csv_overwrite'
-  | 'keep_existing'
-  | 'reject_batch';
+  'csv_overwrite' | 'keep_existing' | 'reject_batch';
 
 export type SystemFieldKey =
   | 'gmail_email'

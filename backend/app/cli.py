@@ -12,6 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.audit_sink import flush_audit_spool
 from app.core.config import Settings
 from app.core.encryption import DecryptionError, EncryptionService
 from app.core.export_crypto import ExportDecryptionError, decrypt_export_file
@@ -26,6 +27,7 @@ from app.models import AdminUser, AuditEvent
 from app.services.audit_integrity import (
     sign_audit_checkpoint,
     verify_audit_chain,
+    verify_audit_checkpoint,
 )
 from app.services.auth import AUTH_LOCK
 from app.services.key_rotation import rotate_data_keys, verify_data_keys
@@ -86,6 +88,24 @@ def sign_audit(engine, signing_key_file: Path | None) -> dict:
     return sign_audit_checkpoint(status, key)
 
 
+def verify_checkpoint_cli(checkpoint_file: Path, key_file: Path) -> dict:
+    try:
+        checkpoint = json.loads(checkpoint_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise ValueError("无法读取或解析审计检查点 JSON 文件") from None
+    try:
+        key_bytes = key_file.read_bytes()
+    except OSError:
+        raise ValueError("无法读取审计验签密钥文件，请检查路径与权限") from None
+    valid = isinstance(checkpoint, dict) and verify_audit_checkpoint(checkpoint, key_bytes)
+    return {
+        "valid": valid,
+        "version": checkpoint.get("version") if isinstance(checkpoint, dict) else None,
+        "algorithm": checkpoint.get("algorithm") if isinstance(checkpoint, dict) else None,
+        "latest_seq": checkpoint.get("latest_seq") if isinstance(checkpoint, dict) else None,
+    }
+
+
 def rotate_keys_cli(
     engine,
     settings: Settings,
@@ -131,7 +151,8 @@ class SafeArgumentParser(argparse.ArgumentParser):
         self.exit(
             2,
             "命令参数不正确；仅支持 create-admin、verify-audit、sign-audit-checkpoint、"
-            "rotate-keys、verify-keys、decrypt-export，密码与口令必须交互式输入。\n",
+            "verify-audit-checkpoint、flush-audit-spool、rotate-keys、verify-keys、"
+            "decrypt-export，密码与口令必须交互式输入。\n",
         )
 
 
@@ -142,7 +163,21 @@ def build_parser() -> SafeArgumentParser:
     )
     subparsers.add_parser("create-admin", help="交互式创建唯一管理员")
     subparsers.add_parser("verify-audit", help="校验防篡改审计日志哈希链")
-    subparsers.add_parser("sign-audit-checkpoint", help="签发审计检查点 HMAC 签名")
+    subparsers.add_parser(
+        "sign-audit-checkpoint", help="签发审计检查点签名（支持 Ed25519 PEM 私钥与 HMAC）"
+    )
+    verify_cp_parser = subparsers.add_parser(
+        "verify-audit-checkpoint", help="离线校验审计检查点签名（Ed25519 公钥或 HMAC 密钥）"
+    )
+    verify_cp_parser.add_argument(
+        "--checkpoint", required=True, type=Path, help="检查点 JSON 文件路径"
+    )
+    verify_cp_parser.add_argument(
+        "--key", required=True, type=Path, help="Ed25519 PEM 公钥或 HMAC 密钥文件路径"
+    )
+    subparsers.add_parser(
+        "flush-audit-spool", help="将本地磁盘队列中积压的审计记录重放至远程 Syslog"
+    )
 
     rotate_parser = subparsers.add_parser(
         "rotate-keys", help="分批将历史密文重加密至目标数据密钥版本"
@@ -194,7 +229,23 @@ def main(argv: list[str] | None = None) -> int:
         except (ValueError, ExportDecryptionError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
+    if args.command == "verify-audit-checkpoint":
+        try:
+            result = verify_checkpoint_cli(args.checkpoint, args.key)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result["valid"] else 1
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     settings = Settings()
+    if args.command == "flush-audit-spool":
+        try:
+            result = flush_audit_spool(settings)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result["remaining"] == 0 else 1
+        except (ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
     engine = create_database_engine(settings)
     try:
         if args.command == "create-admin":

@@ -14,10 +14,12 @@ import {
 import type { AccountDetail, SessionResponse } from '@/api/generated';
 import { GlassPanel } from '@/components/macos';
 import { CredentialForm } from '@/features/auth/credential-form';
+import { StepUpVerifier } from '@/features/auth/step-up-verifier';
 import { cn } from '@/lib/utils';
 import type { ActivityTimelineItem } from './activity-timeline';
 import { formatDetailDateTime, maskPhoneNumber } from './detail-mock-fixtures';
 import { PASSWORD_MASK_TEXT, usePasswordSecret } from './use-password-secret';
+import { useSensitiveFields } from './use-sensitive-fields';
 
 export function SecurityCredentialsTabPanel({
   account,
@@ -194,12 +196,31 @@ export function SecurityCredentialsTabPanel({
 
 export function ContactsTabPanel({
   account,
+  secretEpoch = 0,
+  session,
+  onSession,
+  onFailure,
   onCopyField,
 }: {
   account: AccountDetail;
+  secretEpoch?: number;
+  session?: SessionResponse;
+  onSession?: (value: SessionResponse) => void;
+  onFailure?: (error: unknown) => void;
   onCopyField: (label: string, value: string) => void;
 }) {
   const [showPhone, setShowPhone] = useState(false);
+  const hasPhone = Boolean(account.has_phone || account.phone);
+  const liveStepUpPhone = Boolean(
+    session && account.has_phone && !account.phone,
+  );
+  const sensitive = useSensitiveFields({
+    accountId: account.id,
+    resetEpoch: secretEpoch,
+    session,
+    onSession,
+    onFailure,
+  });
 
   // 切换账号或隐藏标签页时必须立即重新遮蔽手机号，防止缓存详情复用导致明文串显。
   useEffect(() => {
@@ -213,6 +234,13 @@ export function ContactsTabPanel({
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
+
+  const effectivePhone = liveStepUpPhone
+    ? (sensitive.revealed?.phone ?? null)
+    : account.phone;
+  const isPhoneShown = liveStepUpPhone
+    ? Boolean(sensitive.revealed)
+    : showPhone;
 
   return (
     <GlassPanel
@@ -257,30 +285,48 @@ export function ContactsTabPanel({
           </dd>
         </div>
 
-        <div className="rounded-2xl border border-white/80 bg-white/60 p-4">
+        <div className="space-y-2 rounded-2xl border border-white/80 bg-white/60 p-4">
           <dt className="text-xs text-[var(--text-secondary)]">绑定手机号</dt>
           <dd className="mt-2 flex items-center justify-between gap-2 text-sm font-medium tabular-nums text-[var(--text-primary)]">
             <span>
-              {account.phone
-                ? showPhone
-                  ? account.phone
-                  : maskPhoneNumber(account.phone)
-                : '未绑定'}
+              {!hasPhone
+                ? '未绑定'
+                : liveStepUpPhone
+                  ? (effectivePhone ?? '已加密保存（需验证后查看）')
+                  : showPhone
+                    ? account.phone
+                    : maskPhoneNumber(account.phone ?? '')}
             </span>
-            {account.phone && (
+            {hasPhone && (
               <div className="flex shrink-0 items-center gap-1.5">
                 <button
                   type="button"
-                  aria-label={showPhone ? '隐藏手机号' : '显示手机号'}
-                  onClick={() => setShowPhone((v) => !v)}
+                  disabled={sensitive.pending}
+                  aria-label={isPhoneShown ? '隐藏手机号' : '显示手机号'}
+                  onClick={() => {
+                    if (liveStepUpPhone) {
+                      if (sensitive.revealed) sensitive.clear();
+                      else void sensitive.reveal();
+                    } else {
+                      setShowPhone((v) => !v);
+                    }
+                  }}
                   className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
                 >
-                  {showPhone ? '隐藏' : '显示'}
+                  {isPhoneShown ? '隐藏' : '显示'}
                 </button>
                 <button
                   type="button"
+                  disabled={sensitive.pending}
                   aria-label="复制手机号"
-                  onClick={() => onCopyField('手机号', account.phone!)}
+                  onClick={() => {
+                    if (liveStepUpPhone) {
+                      if (effectivePhone) onCopyField('手机号', effectivePhone);
+                      else void sensitive.reveal({ copyPhone: true });
+                    } else if (account.phone) {
+                      onCopyField('手机号', account.phone);
+                    }
+                  }}
                   className="inline-flex h-8 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
                 >
                   <Copy className="size-3.5" aria-hidden="true" />
@@ -289,6 +335,21 @@ export function ContactsTabPanel({
               </div>
             )}
           </dd>
+          {sensitive.statusMessage && (
+            <p role="status" className="text-xs text-[var(--text-secondary)]">
+              {sensitive.statusMessage}
+            </p>
+          )}
+          {sensitive.reauth && session && (
+            <StepUpVerifier
+              session={session}
+              requireMfa={Boolean(session.step_up_totp_required)}
+              forceVerify
+              actionLabel="查看绑定手机号"
+              onVerified={sensitive.handleVerified}
+              onFailure={onFailure}
+            />
+          )}
         </div>
       </dl>
     </GlassPanel>

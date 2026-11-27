@@ -40,6 +40,7 @@ export function useAccountDetail({
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [conflict, setConflict] = useState(false);
+  const [reauthRequired, setReauthRequired] = useState(false);
   const [secretEpoch, setSecretEpoch] = useState(0);
   const generation = useRef(0);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -67,6 +68,11 @@ export function useAccountDetail({
         setConflict(true);
         setNotice(
           '账号已被其他页面修改。当前内容未覆盖服务器，请重新加载最新版本后再编辑。',
+        );
+      } else if (code === 'REAUTH_REQUIRED') {
+        setReauthRequired(true);
+        setNotice(
+          '二次验证已过期，请先完成管理员二次验证后再重新提交（不会自动重放）。',
         );
       } else {
         setNotice(
@@ -107,6 +113,7 @@ export function useAccountDetail({
     setConfirm(null);
     setDetail(null);
     setConflict(false);
+    setReauthRequired(false);
     setSecretEpoch((n) => n + 1);
   }, []);
 
@@ -127,6 +134,7 @@ export function useAccountDetail({
         setConfirm(null);
         setDetail(null);
         setConflict(false);
+        setReauthRequired(false);
         setSecretEpoch((n) => n + 1);
       }
     };
@@ -191,6 +199,8 @@ export function useAccountDetail({
 
   const requestAction = useCallback((action: AccountAction) => {
     setSecretEpoch((n) => n + 1);
+    setReauthRequired(false);
+    setNotice('');
     setConfirm(action);
   }, []);
 
@@ -306,6 +316,8 @@ export function useAccountDetail({
     notice,
     setNotice,
     conflict,
+    reauthRequired,
+    setReauthRequired,
     secretEpoch,
     headers,
     captureFocus,

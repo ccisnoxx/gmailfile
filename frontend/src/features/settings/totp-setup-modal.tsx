@@ -43,7 +43,9 @@ export function TotpSetupModal({
     | { ok: true; setup: TotpSetupChallenge }
     | { ok: false; error: string; requireReauth?: boolean }
   >;
-  onConfirmSetup: (code: string) => Promise<
+  onConfirmSetup: (
+    code: string,
+  ) => Promise<
     | { ok: true; codes: string[]; message?: string }
     | { ok: false; error: string; requireReauth?: boolean }
   >;
@@ -385,7 +387,10 @@ export function TotpSetupModal({
                 className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
               >
                 {busy && (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  <Loader2
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
                 )}
                 <span>{busy ? '正在生成密钥…' : '下一步：获取二维码'}</span>
               </button>
@@ -406,7 +411,8 @@ export function TotpSetupModal({
                 />
               </div>
               <p className="text-center text-[12px] text-[var(--text-secondary)]">
-                使用 Google Authenticator、1Password 等验证器扫描二维码，或手工录入下方密钥：
+                使用 Google Authenticator、1Password
+                等验证器扫描二维码，或手工录入下方密钥：
               </p>
             </div>
 
@@ -437,7 +443,10 @@ export function TotpSetupModal({
             </div>
 
             {copiedNotice && (
-              <p role="status" className="text-[12px] text-[var(--text-secondary)]">
+              <p
+                role="status"
+                className="text-[12px] text-[var(--text-secondary)]"
+              >
                 {copiedNotice}
               </p>
             )}
@@ -495,7 +504,10 @@ export function TotpSetupModal({
                 className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--primary-foreground)] shadow-[0_6px_16px_rgba(22,119,255,0.24)] hover:bg-[var(--accent-hover)] disabled:opacity-60"
               >
                 {busy && (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  <Loader2
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
                 )}
                 <span>{busy ? '正在确认…' : '确认并启用 TOTP'}</span>
               </button>
@@ -543,7 +555,10 @@ export function TotpSetupModal({
             </div>
 
             {copiedNotice && (
-              <p role="status" className="text-[12px] text-[var(--text-secondary)]">
+              <p
+                role="status"
+                className="text-[12px] text-[var(--text-secondary)]"
+              >
                 {copiedNotice}
               </p>
             )}
@@ -571,9 +586,7 @@ export function TotpSetupModal({
                 }}
                 className="size-4 rounded accent-[var(--accent)]"
               />
-              <span>
-                我已将上述 {generatedCodes.length} 个恢复码离线保存
-              </span>
+              <span>我已将上述 {generatedCodes.length} 个恢复码离线保存</span>
             </label>
 
             <DialogFooter>

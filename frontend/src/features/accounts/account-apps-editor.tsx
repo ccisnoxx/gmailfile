@@ -201,7 +201,9 @@ export function AccountAppsEditor({
                       domain={appMeta?.domain}
                       iconData={appMeta?.icon_data}
                       size="md"
-                      className={cn(status === 'banned' && 'opacity-70 grayscale-[35%]')}
+                      className={cn(
+                        status === 'banned' && 'opacity-70 grayscale-[35%]',
+                      )}
                     />
                     <span
                       className={cn(

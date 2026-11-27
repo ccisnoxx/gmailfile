@@ -86,6 +86,10 @@ export function AccountForm({
         note: item.note ?? null,
       })) ?? [],
   );
+  const [clearPhone, setClearPhone] = useState(false);
+  const [clearNotes, setClearNotes] = useState(false);
+  const encryptedPhoneHidden = Boolean(account?.has_phone && !account.phone);
+  const encryptedNotesHidden = Boolean(account?.has_notes && !account.notes);
   const {
     register,
     handleSubmit,
@@ -177,8 +181,18 @@ export function AccountForm({
             ? new Date(values.password_changed_at).toISOString()
             : null,
         };
-        // 表单的辅助模式不属于 API 合同；密码从不读取或回填。
+        // 表单的辅助模式不属于 API 合同；密码与未修改的已加密手机号/备注从不误清空。
         Reflect.deleteProperty(body, 'recovery_mode');
+        if (encryptedPhoneHidden && !values.phone && !clearPhone) {
+          Reflect.deleteProperty(body, 'phone');
+        } else if (clearPhone) {
+          body.phone = null;
+        }
+        if (encryptedNotesHidden && !values.notes && !clearNotes) {
+          Reflect.deleteProperty(body, 'notes');
+        } else if (clearNotes) {
+          body.notes = null;
+        }
         setValue('password', '');
         await onSubmit(body);
       })}
@@ -282,17 +296,38 @@ export function AccountForm({
           </Field>
         )}
         <Field data-invalid={!!errors.phone}>
-          <FieldLabel htmlFor="phone">绑定手机号</FieldLabel>
+          <FieldLabel htmlFor="phone">
+            绑定手机号{encryptedPhoneHidden ? '（留空保留原值）' : ''}
+          </FieldLabel>
           <Input
             id="phone"
             type="tel"
             maxLength={32}
             pattern={String.raw`\+?[0-9 \(\)\-]{6,31}`}
             autoComplete="off"
+            disabled={clearPhone}
+            placeholder={
+              encryptedPhoneHidden
+                ? '已加密保存，留空保留原值；输入新手机号将覆盖'
+                : undefined
+            }
             aria-invalid={!!errors.phone}
             aria-describedby={errors.phone ? 'phone-error' : undefined}
             {...register('phone')}
           />
+          {encryptedPhoneHidden && (
+            <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={clearPhone}
+                onChange={(e) => {
+                  setClearPhone(e.target.checked);
+                  if (e.target.checked) setValue('phone', '');
+                }}
+              />
+              清空已保存的绑定手机号
+            </label>
+          )}
           {errors.phone && (
             <p
               id="phone-error"
@@ -374,15 +409,36 @@ export function AccountForm({
           </Field>
         ))}
         <Field>
-          <FieldLabel htmlFor="notes">敏感备注</FieldLabel>
+          <FieldLabel htmlFor="notes">
+            敏感备注{encryptedNotesHidden ? '（留空保留原值）' : ''}
+          </FieldLabel>
           <Textarea
             id="notes"
             rows={4}
             maxLength={20000}
+            disabled={clearNotes}
+            placeholder={
+              encryptedNotesHidden
+                ? '已加密保存，留空保留原值；输入新备注将覆盖'
+                : undefined
+            }
             {...register('notes')}
           />
+          {encryptedNotesHidden && (
+            <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={clearNotes}
+                onChange={(e) => {
+                  setClearNotes(e.target.checked);
+                  if (e.target.checked) setValue('notes', '');
+                }}
+              />
+              清空已保存的敏感备注
+            </label>
+          )}
           <FieldDescription>
-            手机号和备注以加密形式保存；不记录 Gmail 验证器 Seed 或恢复码。
+            手机号和备注以加密形式保存且按需二次验证查看；修改已有密码同样需要最近重新验证。
           </FieldDescription>
         </Field>
       </FieldGroup>

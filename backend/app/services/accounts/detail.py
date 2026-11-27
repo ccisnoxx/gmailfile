@@ -24,6 +24,7 @@ from app.schemas.accounts import (
     BatchStatus,
     BatchTags,
     PasswordResponse,
+    SensitiveFieldsResponse,
     normalize_email,
 )
 from app.services.accounts.errors import AccountError, flush_unique
@@ -58,24 +59,14 @@ class AccountDetailService:
     def detail(self, account_id: UUID) -> AccountDetail:
         row = self.record(account_id)
         summary = self.listing.summaries(account_id=account_id)[0]
-        values = {}
-        for field in ("phone", "notes"):
-            ciphertext = getattr(row, field + "_ciphertext")
-            values[field] = (
-                None
-                if ciphertext is None
-                else self.auth.encryption.decrypt(
-                    EncryptedValue(
-                        ciphertext,
-                        getattr(row, field + "_nonce"),
-                        getattr(row, field + "_key_version"),
-                    ),
-                    "gmail_account",
-                    row.id,
-                    field,
-                )
-            )
-        return AccountDetail(**summary.model_dump(), **values)
+        # 普通详情仅返回敏感字段是否存在，不解密手机号或敏感备注；需经独立 Step-Up 接口按需查看。
+        return AccountDetail(
+            **summary.model_dump(),
+            has_phone=row.phone_ciphertext is not None,
+            has_notes=row.notes_ciphertext is not None,
+            phone=None,
+            notes=None,
+        )
 
     def recovery(
         self,
@@ -223,6 +214,11 @@ class AccountDetailService:
         if row.deleted_at is not None:
             raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再编辑")
         values = {key: getattr(body, key) for key in body.model_fields_set if key != "row_version"}
+        if "password" in values:
+            # 覆盖已有 Gmail 密码属于不可逆秘密修改，要求最近重新验证（生产强制 MFA Step-Up）。
+            self.auth.require_recent(
+                self.session, require_mfa=self.auth.settings.step_up_totp_required
+            )
         self.recovery(
             account_id,
             values.get("gmail_email", row.gmail_email),
@@ -381,11 +377,14 @@ class AccountDetailService:
         self.audit("account_permanently_deleted", account_id, operation=operation)
 
     def permanent_delete(self, account_id: UUID, version: int) -> None:
+        self.auth.require_recent(self.session, require_mfa=True)
         row = self.record(account_id)
         self._purge_one(row, version, operation="permanent-delete")
 
     def batch_permanent_delete(self, body: BatchInput) -> BatchResult:
-        # 回收站批量永久删除：每条 CAS 与审计共用请求事务，任一冲突/未删除整批回滚。
+        # 回收站批量永久删除：强制最近 5 分钟内 MFA Step-Up，
+        # 每条 CAS 与审计共用请求事务，任一冲突/未删除整批回滚。
+        self.auth.require_recent(self.session, require_mfa=True)
         batch_ids = {entry.id for entry in body.accounts}
         for item in sorted(body.accounts, key=lambda entry: entry.id):
             try:
@@ -424,3 +423,28 @@ class AccountDetailService:
         if row.deleted_at is not None:
             raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再操作")
         self.audit("password_copied", account_id)
+
+    def reveal_sensitive(self, account_id: UUID) -> SensitiveFieldsResponse:
+        self.auth.require_recent(self.session, require_mfa=self.auth.settings.step_up_totp_required)
+        row = self.record(account_id)
+        if row.deleted_at is not None:
+            raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再查看敏感资料")
+        values: dict[str, str | None] = {}
+        for field in ("phone", "notes"):
+            ciphertext = getattr(row, field + "_ciphertext")
+            values[field] = (
+                None
+                if ciphertext is None
+                else self.auth.encryption.decrypt(
+                    EncryptedValue(
+                        ciphertext,
+                        getattr(row, field + "_nonce"),
+                        getattr(row, field + "_key_version"),
+                    ),
+                    "gmail_account",
+                    row.id,
+                    field,
+                )
+            )
+        self.audit("sensitive_fields_revealed", account_id, operation="reveal-sensitive")
+        return SensitiveFieldsResponse(phone=values["phone"], notes=values["notes"])

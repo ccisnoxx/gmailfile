@@ -82,6 +82,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    orphan_count = bind.execute(
+        sa.text(
+            "SELECT count(*) FROM audit_events a "
+            "WHERE a.account_id IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM gmail_accounts g WHERE g.id = a.account_id)"
+        )
+    ).scalar_one()
+    if orphan_count > 0:
+        raise RuntimeError(
+            f"无法回退迁移 0007 -> 0006：audit_events 中存在 {orphan_count} 条引用已永久删除账号的防篡改审计记录，"
+            "重建外键将破坏审计链完整性。该迁移在执行过永久删除的数据库上不可逆，请通过加密备份执行隔离恢复回退。"
+        )
     op.drop_constraint(
         "fk_gmail_account_tags_account_id_gmail_accounts",
         "gmail_account_tags",

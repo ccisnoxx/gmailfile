@@ -28,6 +28,7 @@ import {
 } from '@/features/accounts/account-apps-editor';
 import type { AppStatus } from '@/features/accounts/constants';
 import { CredentialForm } from '@/features/auth/credential-form';
+import { StepUpVerifier } from '@/features/auth/step-up-verifier';
 import { cn } from '@/lib/utils';
 import { maskPhoneNumber } from './detail-mock-fixtures';
 import {
@@ -35,16 +36,19 @@ import {
   PASSWORD_MASK_TEXT,
   usePasswordSecret,
 } from './use-password-secret';
+import { useSensitiveFields } from './use-sensitive-fields';
 
 export type AccountBasicInfoDraft = {
   gmail_email: string;
   password: string;
   phone: string;
+  clearPhone?: boolean;
   recovery_email_external: string;
   status: AccountDetail['status'];
   two_factor_status: AccountDetail['two_factor_status'];
   purpose: string;
   notes: string;
+  clearNotes?: boolean;
   apps: AccountAppInput[];
 };
 
@@ -56,12 +60,14 @@ export function createDraftFromAccount(
     // 编辑模式下密码输入必须为空，绝不回填掩码或原密码。
     password: '',
     phone: account.phone ?? '',
+    clearPhone: false,
     recovery_email_external:
       account.recovery_email_external ?? account.recovery_email ?? '',
     status: account.status,
     two_factor_status: account.two_factor_status,
     purpose: account.purpose ?? '',
     notes: account.notes ?? '',
+    clearNotes: false,
     apps: (account.apps ?? []).map((item) => ({
       app_id: item.app_id,
       status: item.status,
@@ -91,11 +97,13 @@ export function isDraftDirty(
     draft.gmail_email !== base.gmail_email ||
     draft.password !== '' ||
     draft.phone !== base.phone ||
+    Boolean(draft.clearPhone) !== Boolean(base.clearPhone) ||
     draft.recovery_email_external !== base.recovery_email_external ||
     draft.status !== base.status ||
     draft.two_factor_status !== base.two_factor_status ||
     draft.purpose !== base.purpose ||
     draft.notes !== base.notes ||
+    Boolean(draft.clearNotes) !== Boolean(base.clearNotes) ||
     serializeAppsDraft(draft.apps) !== serializeAppsDraft(base.apps)
   );
 }
@@ -138,6 +146,7 @@ export function AccountBasicInfoForm({
   busy = false,
   conflict = false,
   conflictMessage,
+  reauthRequired = false,
   secretEpoch = 0,
   session,
   appsCatalog = [],
@@ -163,6 +172,7 @@ export function AccountBasicInfoForm({
   busy?: boolean;
   conflict?: boolean;
   conflictMessage?: string;
+  reauthRequired?: boolean;
   secretEpoch?: number;
   session?: SessionResponse;
   appsCatalog?: RegisteredAppResponse[];
@@ -195,6 +205,15 @@ export function AccountBasicInfoForm({
     onFailure,
     mockReveal: mockRevealPassword,
     onAuditEvent: onPasswordAuditEvent,
+    onToast,
+  });
+
+  const sensitiveFields = useSensitiveFields({
+    accountId: account.id,
+    resetEpoch: secretEpoch + (isEditing ? 10000 : 0),
+    session,
+    onSession,
+    onFailure,
     onToast,
   });
 
@@ -278,11 +297,24 @@ export function AccountBasicInfoForm({
   const labelClass =
     'text-[13px] font-medium text-[var(--text-secondary)] sm:pt-2';
 
-  const phoneDisplayValue = account.phone
-    ? phoneVisible
-      ? account.phone
-      : maskPhoneNumber(account.phone)
-    : '未绑定';
+  const hasPhone = Boolean(account.has_phone || account.phone);
+  const encryptedPhoneHidden = Boolean(account.has_phone && !account.phone);
+  const encryptedNotesHidden = Boolean(account.has_notes && !account.notes);
+  const liveStepUpPhone = Boolean(session && encryptedPhoneHidden);
+  const liveStepUpNotes = Boolean(session && encryptedNotesHidden);
+  const effectivePhone = liveStepUpPhone
+    ? (sensitiveFields.revealed?.phone ?? null)
+    : account.phone;
+  const phoneDisplayValue = !hasPhone
+    ? '未绑定'
+    : liveStepUpPhone
+      ? (effectivePhone ?? '已加密保存（需验证后查看）')
+      : phoneVisible
+        ? (account.phone ?? '未绑定')
+        : maskPhoneNumber(account.phone ?? '');
+  const isPhoneCurrentlyShown = liveStepUpPhone
+    ? Boolean(sensitiveFields.revealed)
+    : phoneVisible;
 
   const fieldsBody = (
     <>
@@ -487,62 +519,125 @@ export function AccountBasicInfoForm({
             手机号
           </label>
           {isEditing ? (
-            <input
-              id="detail-phone"
-              name="phone"
-              type="tel"
-              maxLength={32}
-              pattern={String.raw`\+?[0-9 \(\)\-]{5,31}`}
-              autoComplete="off"
-              placeholder="例如：+86 139 8420 6728"
-              value={draft.phone}
-              onChange={(e) =>
-                onDraftChange({ ...draft, phone: e.target.value })
-              }
-              className={fieldBoxClass}
-            />
+            <div className="space-y-1.5">
+              <input
+                id="detail-phone"
+                name="phone"
+                type="tel"
+                maxLength={32}
+                pattern={String.raw`\+?[0-9 \(\)\-]{5,31}`}
+                autoComplete="off"
+                disabled={Boolean(draft.clearPhone)}
+                placeholder={
+                  encryptedPhoneHidden
+                    ? '已加密保存（留空保留原值，输入新手机号将覆盖）'
+                    : '例如：+86 139 8420 6728'
+                }
+                value={draft.phone}
+                onChange={(e) =>
+                  onDraftChange({ ...draft, phone: e.target.value })
+                }
+                className={fieldBoxClass}
+              />
+              {encryptedPhoneHidden && (
+                <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(draft.clearPhone)}
+                    onChange={(e) =>
+                      onDraftChange({
+                        ...draft,
+                        clearPhone: e.target.checked,
+                        phone: e.target.checked ? '' : draft.phone,
+                      })
+                    }
+                  />
+                  清空已保存的手机号
+                </label>
+              )}
+            </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex h-10 min-w-[140px] flex-1 items-center rounded-xl border border-white/82 bg-white/58 px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                <output
-                  id="detail-phone"
-                  aria-label="手机号"
-                  className="truncate text-[13.5px] tabular-nums text-[var(--text-primary)]"
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex h-10 min-w-[140px] flex-1 items-center rounded-xl border border-white/82 bg-white/58 px-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                  <output
+                    id="detail-phone"
+                    aria-label="手机号"
+                    className="truncate text-[13.5px] tabular-nums text-[var(--text-primary)]"
+                  >
+                    {phoneDisplayValue}
+                  </output>
+                </div>
+                <button
+                  type="button"
+                  disabled={!hasPhone || sensitiveFields.pending}
+                  aria-label={
+                    isPhoneCurrentlyShown ? '隐藏手机号' : '显示手机号'
+                  }
+                  onClick={() => {
+                    if (liveStepUpPhone) {
+                      if (sensitiveFields.revealed) {
+                        sensitiveFields.clear();
+                      } else {
+                        void sensitiveFields.reveal();
+                      }
+                    } else {
+                      setPhoneVisible((visible) => !visible);
+                    }
+                  }}
+                  className={glassActionButtonClass}
                 >
-                  {phoneDisplayValue}
-                </output>
+                  {isPhoneCurrentlyShown ? (
+                    <>
+                      <EyeOff className="size-3.5" aria-hidden="true" />
+                      <span>隐藏</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="size-3.5" aria-hidden="true" />
+                      <span>显示</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={!hasPhone || sensitiveFields.pending}
+                  aria-label="复制手机号"
+                  onClick={() => {
+                    if (liveStepUpPhone) {
+                      if (effectivePhone) {
+                        onCopyField('手机号', effectivePhone);
+                      } else {
+                        void sensitiveFields.reveal({ copyPhone: true });
+                      }
+                    } else if (account.phone) {
+                      onCopyField('手机号', account.phone);
+                    }
+                  }}
+                  className={glassActionButtonClass}
+                >
+                  <Copy className="size-3.5" aria-hidden="true" />
+                  <span>复制</span>
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={!account.phone}
-                aria-label={phoneVisible ? '隐藏手机号' : '显示手机号'}
-                onClick={() => setPhoneVisible((visible) => !visible)}
-                className={glassActionButtonClass}
-              >
-                {phoneVisible ? (
-                  <>
-                    <EyeOff className="size-3.5" aria-hidden="true" />
-                    <span>隐藏</span>
-                  </>
-                ) : (
-                  <>
-                    <Eye className="size-3.5" aria-hidden="true" />
-                    <span>显示</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                disabled={!account.phone}
-                aria-label="复制手机号"
-                onClick={() => {
-                  if (account.phone) onCopyField('手机号', account.phone);
-                }}
-                className={glassActionButtonClass}
-              >
-                <Copy className="size-3.5" aria-hidden="true" />
-                <span>复制</span>
-              </button>
+              {sensitiveFields.statusMessage && (
+                <p
+                  role="status"
+                  className="text-xs text-[var(--text-secondary)]"
+                >
+                  {sensitiveFields.statusMessage}
+                </p>
+              )}
+              {sensitiveFields.reauth && session && (
+                <StepUpVerifier
+                  session={session}
+                  requireMfa={Boolean(session.step_up_totp_required)}
+                  forceVerify
+                  actionLabel="查看手机号与备注"
+                  onVerified={sensitiveFields.handleVerified}
+                  onFailure={onFailure}
+                />
+              )}
             </div>
           )}
         </div>
@@ -826,41 +921,112 @@ export function AccountBasicInfoForm({
           </div>
         </div>
 
-        {/* 7. 备注（多行输入框 + 字数 29 / 500） */}
+        {/* 7. 备注（支持按需二次验证查看，编辑留空不覆盖原密文） */}
         <div className="grid gap-1.5 sm:grid-cols-[80px_1fr] sm:items-start sm:gap-2.5">
           <label htmlFor="detail-notes" className={labelClass}>
             备注
           </label>
-          <div className="relative">
-            <textarea
-              id="detail-notes"
-              name="notes"
-              rows={4}
-              readOnly={!isEditing}
-              maxLength={MAX_NOTES_LENGTH}
-              placeholder="填写使用说明、授权边界与注意事项…"
-              value={draft.notes}
-              onChange={(e) =>
-                onDraftChange({
-                  ...draft,
-                  notes: e.target.value.slice(0, MAX_NOTES_LENGTH),
-                })
-              }
-              className={cn(
-                'w-full resize-none rounded-xl border px-3 pt-2.5 pb-7 text-[13.5px] leading-relaxed text-[var(--text-primary)] transition-all duration-[160ms] ease-out outline-none',
-                isEditing
-                  ? 'border-[#b9d3f2] bg-white/88 shadow-[inset_0_1px_2px_rgba(32,68,118,0.04)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[#1677ff]/20'
-                  : 'border-white/82 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
-              )}
-            />
-            <span
-              data-slot="notes-char-count"
-              className="pointer-events-none absolute right-3 bottom-2 text-[11.5px] tabular-nums text-[var(--text-secondary)]"
-            >
-              {draft.notes.length} / {MAX_NOTES_LENGTH}
-            </span>
+          <div className="space-y-2">
+            {!isEditing && liveStepUpNotes && !sensitiveFields.revealed ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/82 bg-white/58 px-3 py-3 text-[13px] text-[var(--text-secondary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                <span>已加密保存（需管理员重新验证后查看，20 秒自动隐藏）</span>
+                <button
+                  type="button"
+                  disabled={sensitiveFields.pending}
+                  onClick={() => void sensitiveFields.reveal()}
+                  className={glassActionButtonClass}
+                >
+                  <Eye className="size-3.5" aria-hidden="true" />
+                  <span>
+                    {sensitiveFields.pending ? '正在加载…' : '查看敏感备注'}
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <textarea
+                  id="detail-notes"
+                  name="notes"
+                  rows={4}
+                  readOnly={!isEditing}
+                  disabled={isEditing && Boolean(draft.clearNotes)}
+                  maxLength={MAX_NOTES_LENGTH}
+                  placeholder={
+                    isEditing && encryptedNotesHidden
+                      ? '已加密保存（留空保留原值，输入新内容将覆盖）'
+                      : '填写使用说明、授权边界与注意事项…'
+                  }
+                  value={
+                    !isEditing && liveStepUpNotes
+                      ? (sensitiveFields.revealed?.notes ?? '')
+                      : draft.notes
+                  }
+                  onChange={(e) =>
+                    onDraftChange({
+                      ...draft,
+                      notes: e.target.value.slice(0, MAX_NOTES_LENGTH),
+                    })
+                  }
+                  className={cn(
+                    'w-full resize-none rounded-xl border px-3 pt-2.5 pb-7 text-[13.5px] leading-relaxed text-[var(--text-primary)] transition-all duration-[160ms] ease-out outline-none',
+                    isEditing
+                      ? 'border-[#b9d3f2] bg-white/88 shadow-[inset_0_1px_2px_rgba(32,68,118,0.04)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[#1677ff]/20'
+                      : 'border-white/82 bg-white/58 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]',
+                  )}
+                />
+                <span
+                  data-slot="notes-char-count"
+                  className="pointer-events-none absolute right-3 bottom-2 text-[11.5px] tabular-nums text-[var(--text-secondary)]"
+                >
+                  {!isEditing && liveStepUpNotes
+                    ? (sensitiveFields.revealed?.notes ?? '').length
+                    : draft.notes.length}{' '}
+                  / {MAX_NOTES_LENGTH}
+                </span>
+              </div>
+            )}
+            {!isEditing && liveStepUpNotes && sensitiveFields.revealed && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={sensitiveFields.clear}
+                  className={glassActionButtonClass}
+                >
+                  <EyeOff className="size-3.5" aria-hidden="true" />
+                  <span>立即隐藏敏感资料</span>
+                </button>
+              </div>
+            )}
+            {isEditing && encryptedNotesHidden && (
+              <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+                <input
+                  type="checkbox"
+                  checked={Boolean(draft.clearNotes)}
+                  onChange={(e) =>
+                    onDraftChange({
+                      ...draft,
+                      clearNotes: e.target.checked,
+                      notes: e.target.checked ? '' : draft.notes,
+                    })
+                  }
+                />
+                清空已保存的敏感备注
+              </label>
+            )}
           </div>
         </div>
+
+        {isEditing && reauthRequired && session && (
+          <StepUpVerifier
+            session={session}
+            requireMfa={Boolean(session.step_up_totp_required)}
+            forceVerify
+            disabled={busy}
+            actionLabel="保存密码修改"
+            onVerified={(next) => onSession?.(next)}
+            onFailure={onFailure}
+          />
+        )}
       </div>
 
       {/* 编辑模式底部固定保存 / 取消操作条 */}

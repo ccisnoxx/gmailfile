@@ -455,8 +455,7 @@ export function createLiveCsvAdapter({
       const bak = bakRes.status === 'fulfilled' ? bakRes.value.data : undefined;
       const state = bak?.state;
       return {
-        healthy:
-          state !== 'failed' && state !== 'stale',
+        healthy: state !== 'failed' && state !== 'stale',
         headline:
           state === 'failed'
             ? '备份状态异常'
@@ -511,7 +510,10 @@ export function createLiveCsvAdapter({
 
     async loadBatchWorkspace() {
       const [accountsRes, tagsRes] = await Promise.all([
-        accountsList({ query: { page: 1, page_size: 100 }, throwOnError: true }),
+        accountsList({
+          query: { page: 1, page_size: 100 },
+          throwOnError: true,
+        }),
         tagsList({ throwOnError: true }),
       ]);
       return {

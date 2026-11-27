@@ -93,7 +93,9 @@ function LiveAccountsChartView(props: AccountsChartViewProps) {
   });
 
   const analyticsError =
-    trendQuery.isError || distributionQuery.isError || recoveryChartQuery.isError;
+    trendQuery.isError ||
+    distributionQuery.isError ||
+    recoveryChartQuery.isError;
   const analyticsPending =
     trendQuery.isPending ||
     distributionQuery.isPending ||

@@ -118,6 +118,7 @@ const auditEventLabels: Record<string, string> = {
   account_batch_tags: '批量管理标签',
   password_revealed: '查看凭据（密码）',
   password_copied: '复制凭据（密码）',
+  sensitive_fields_revealed: '查看手机号与敏感备注',
   totp_bound: '绑定二步验证（TOTP）',
   csv_imported: 'CSV 批量导入',
 };
@@ -127,6 +128,7 @@ const auditOperationLabels: Record<string, string> = {
   'mark-logged-in': '标记今天已登录',
   'reveal-password': '查看凭据（密码）',
   'copy-password-event': '复制凭据（密码）',
+  'reveal-sensitive': '查看手机号与敏感备注',
   unarchive: '取消归档账号',
   'permanent-delete': '永久删除账号',
   'batch-permanent-delete': '批量永久删除账号',
@@ -361,6 +363,8 @@ function AccountDetailLiveBody({
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [conflictMessage, setConflictMessage] = useState('');
+  const [reauthRequired, setReauthRequired] = useState(false);
+  const [editReauthRequired, setEditReauthRequired] = useState(false);
   const [secretEpoch, setSecretEpoch] = useState(0);
   const [confirmAction, setConfirmAction] = useState<AccountAction | null>(
     null,
@@ -633,10 +637,15 @@ function AccountDetailLiveBody({
         const keepLinkedRecovery =
           Boolean(account.recovery_account_id) &&
           trimmedRecovery === (account.recovery_email ?? '');
+        const encryptedPhoneHidden = Boolean(
+          account.has_phone && !account.phone,
+        );
+        const encryptedNotesHidden = Boolean(
+          account.has_notes && !account.notes,
+        );
         const patch: AccountPatchWritable = {
           row_version: account.row_version,
           gmail_email: nextDraft.gmail_email,
-          phone: nextDraft.phone || null,
           recovery_account_id: keepLinkedRecovery
             ? account.recovery_account_id
             : null,
@@ -646,7 +655,6 @@ function AccountDetailLiveBody({
           status: nextDraft.status,
           two_factor_status: nextDraft.two_factor_status,
           purpose: nextDraft.purpose || null,
-          notes: nextDraft.notes || null,
           tag_ids: account.tags.map((t) => t.id),
           apps: nextDraft.apps.map((item) => ({
             app_id: item.app_id,
@@ -654,6 +662,16 @@ function AccountDetailLiveBody({
             note: item.note?.trim() || null,
           })),
         };
+        if (nextDraft.clearPhone) {
+          patch.phone = null;
+        } else if (!encryptedPhoneHidden || nextDraft.phone.trim()) {
+          patch.phone = nextDraft.phone || null;
+        }
+        if (nextDraft.clearNotes) {
+          patch.notes = null;
+        } else if (!encryptedNotesHidden || nextDraft.notes) {
+          patch.notes = nextDraft.notes || null;
+        }
         if (nextDraft.password) {
           patch.password = nextDraft.password;
         }
@@ -668,6 +686,7 @@ function AccountDetailLiveBody({
         queryClient.setQueryData(['account-detail', data.id], data);
         setDraft(createDraftFromAccount(data));
         setIsEditing(false);
+        setEditReauthRequired(false);
         prependLocalTimeline(
           data.id,
           summarizeChangedFields(account, nextDraft),
@@ -688,6 +707,11 @@ function AccountDetailLiveBody({
           setConflict(true);
           setConflictMessage(
             `版本冲突：账号已被其他页面修改（本地基于 v${account.row_version}），请重新加载最新版本后再编辑。`,
+          );
+        } else if (code === 'REAUTH_REQUIRED') {
+          setEditReauthRequired(true);
+          showToast(
+            '覆盖已有密码需要最近 5 分钟内管理员重新验证，请完成验证后重新保存。',
           );
         } else {
           showToast(err?.error?.message ?? '保存失败，请稍后重试');
@@ -815,6 +839,11 @@ function AccountDetailLiveBody({
         if (code === 'ROW_VERSION_CONFLICT') {
           setConflict(true);
           setConflictMessage('操作触发版本冲突，请重新加载最新版本后重试。');
+        } else if (code === 'REAUTH_REQUIRED') {
+          setReauthRequired(true);
+          setConflictMessage(
+            '二次验证已过期，请先完成管理员二次验证后再确认永久删除（不会自动重放）。',
+          );
         } else {
           showToast(err?.error?.message ?? '操作失败，请稍后重试');
           if (
@@ -1290,7 +1319,11 @@ function AccountDetailLiveBody({
                 onUnarchive={() => setConfirmAction('unarchive')}
                 onDelete={() => setConfirmAction('delete')}
                 onRestore={() => setConfirmAction('restore')}
-                onPermanentDelete={() => setConfirmAction('permanent-delete')}
+                onPermanentDelete={() => {
+                  setReauthRequired(false);
+                  setConflictMessage('');
+                  setConfirmAction('permanent-delete');
+                }}
                 onViewAudit={() => setActiveTab('audit')}
                 onMarkLoggedIn={() => void handleLifecycleAction('logged-in')}
                 onMarkVerified={() => void handleLifecycleAction('verified')}
@@ -1315,13 +1348,17 @@ function AccountDetailLiveBody({
                       busy={busy}
                       conflict={conflict}
                       conflictMessage={conflictMessage}
+                      reauthRequired={editReauthRequired}
                       secretEpoch={secretEpoch}
                       session={session}
                       appsCatalog={appsQuery.data ?? []}
                       onCreateApp={handleCreateApp}
                       onFetchAppIcon={handleFetchAppIcon}
                       onQuickToggleAppStatus={handleQuickToggleAppStatus}
-                      onSession={onSession}
+                      onSession={(next) => {
+                        setEditReauthRequired(false);
+                        onSession(next);
+                      }}
                       onFailure={onFailure}
                       onDraftChange={setDraft}
                       onSubmit={handleSaveBasicInfo}
@@ -1374,6 +1411,10 @@ function AccountDetailLiveBody({
                 {activeTab === 'contacts' && (
                   <ContactsTabPanel
                     account={account}
+                    secretEpoch={secretEpoch}
+                    session={session}
+                    onSession={onSession}
+                    onFailure={onFailure}
                     onCopyField={(label, val) => void copyField(label, val)}
                   />
                 )}
@@ -1405,14 +1446,26 @@ function AccountDetailLiveBody({
         toastMessage={toastMessage}
       />
 
-      {/* 归档 / 删除 / 恢复 确认弹窗 */}
+      {/* 归档 / 删除 / 恢复 / 永久删除 确认弹窗 */}
       <AccountActionDialog
         confirm={confirmAction}
         detail={account}
+        session={session}
+        reauthRequired={reauthRequired}
         busy={busy}
         conflict={conflict}
         notice={conflictMessage}
-        onClose={() => setConfirmAction(null)}
+        onClose={() => {
+          setReauthRequired(false);
+          setConflictMessage('');
+          setConfirmAction(null);
+        }}
+        onSession={(next) => {
+          setReauthRequired(false);
+          setConflictMessage('');
+          onSession(next);
+        }}
+        onFailure={onFailure}
         onConfirm={(action) => void handleLifecycleAction(action)}
       />
 

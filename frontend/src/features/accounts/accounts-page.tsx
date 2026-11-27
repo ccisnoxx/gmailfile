@@ -16,11 +16,7 @@ import type {
   RegisteredAppResponse,
   SessionResponse,
 } from '@/api/generated';
-import {
-  appsCreate,
-  appsFetchIcon,
-  dashboardSummary,
-} from '@/api/generated';
+import { appsCreate, appsFetchIcon, dashboardSummary } from '@/api/generated';
 import {
   AppWindowShell,
   EmptyState,
@@ -850,6 +846,7 @@ function AccountsPageBody({
           tags={listState.tags.data ?? []}
           session={session}
           deleted={queryState.deleted}
+          onSession={onSession}
           complete={async (kind) => {
             await listState.refresh();
             detailState.setNotice(
@@ -986,6 +983,8 @@ function AccountsPageBody({
           <AccountFormDialog
             form={detailState.form}
             detail={detailState.detail}
+            session={session}
+            reauthRequired={detailState.reauthRequired}
             tags={listState.tags.data ?? []}
             appsCatalog={listState.apps.data ?? []}
             onCreateApp={handleCreateApp}
@@ -996,6 +995,11 @@ function AccountsPageBody({
             onClose={handleCloseDetail}
             onRestoreFocus={detailState.restoreFocus}
             onReload={(account) => void detailState.open(account, true)}
+            onSession={(next) => {
+              detailState.setReauthRequired(false);
+              detailState.setNotice('');
+              onSession(next);
+            }}
             onFailure={detailState.fail}
             onSubmit={detailState.save}
           />
@@ -1005,10 +1009,21 @@ function AccountsPageBody({
       <AccountActionDialog
         confirm={detailState.confirm}
         detail={detailState.detail}
+        session={session}
+        reauthRequired={detailState.reauthRequired}
         busy={detailState.busy}
         conflict={detailState.conflict}
         notice={detailState.notice}
-        onClose={() => detailState.setConfirm(null)}
+        onClose={() => {
+          detailState.setReauthRequired(false);
+          detailState.setConfirm(null);
+        }}
+        onSession={(next) => {
+          detailState.setReauthRequired(false);
+          detailState.setNotice('');
+          onSession(next);
+        }}
+        onFailure={detailState.fail}
         onConfirm={(action) => void detailState.act(action)}
       />
 

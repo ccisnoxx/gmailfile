@@ -556,7 +556,10 @@ it('辅助邮箱快速预览单次编码路径参数，不产生 %2540 双重编
   mock.mockImplementation(async (req: Request) => {
     const url = new URL(req.url);
     requestedPaths.push(url.pathname);
-    if (url.pathname.startsWith('/api/v1/recovery-emails/') && url.pathname.endsWith('/accounts')) {
+    if (
+      url.pathname.startsWith('/api/v1/recovery-emails/') &&
+      url.pathname.endsWith('/accounts')
+    ) {
       return json({
         items: [row()],
         total: 1,
@@ -574,7 +577,9 @@ it('辅助邮箱快速预览单次编码路径参数，不产生 %2540 双重编
   );
   await screen.findByRole('table', { name: '辅助邮箱统计' });
   await userEvent.click(
-    screen.getByRole('button', { name: '快速预览 shared@example.test 关联账号' }),
+    screen.getByRole('button', {
+      name: '快速预览 shared@example.test 关联账号',
+    }),
   );
   await waitFor(() =>
     expect(

@@ -677,9 +677,7 @@ export function RecoveryCodesModal({
                 }}
                 className="size-4 rounded accent-[var(--accent)]"
               />
-              <span>
-                我已将上述 {generatedCodes.length} 个恢复码离线保存
-              </span>
+              <span>我已将上述 {generatedCodes.length} 个恢复码离线保存</span>
             </label>
 
             <DialogFooter>

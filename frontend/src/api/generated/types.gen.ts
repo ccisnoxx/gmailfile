@@ -219,13 +219,21 @@ export type AccountDetail = {
    */
   updated_at: string;
   /**
+   * Has Phone
+   */
+  has_phone?: boolean;
+  /**
+   * Has Notes
+   */
+  has_notes?: boolean;
+  /**
    * Phone
    */
-  phone: string | null;
+  phone?: string | null;
   /**
    * Notes
    */
-  notes: string | null;
+  notes?: string | null;
 };
 
 /**
@@ -1390,6 +1398,20 @@ export type ReverifyInput = {
    * Totp Code
    */
   totp_code?: string;
+};
+
+/**
+ * SensitiveFieldsResponse
+ */
+export type SensitiveFieldsResponse = {
+  /**
+   * Phone
+   */
+  phone: string | null;
+  /**
+   * Notes
+   */
+  notes: string | null;
 };
 
 /**
@@ -4748,6 +4770,58 @@ export type AccountsCopyPasswordEventResponses = {
 export type AccountsCopyPasswordEventResponse =
   AccountsCopyPasswordEventResponses[keyof AccountsCopyPasswordEventResponses];
 
+export type AccountsRevealSensitiveData = {
+  body: InputWritable;
+  path: {
+    /**
+     * Account Id
+     */
+    account_id: string;
+  };
+  query?: never;
+  url: '/api/v1/accounts/{account_id}/reveal-sensitive';
+};
+
+export type AccountsRevealSensitiveErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsRevealSensitiveError =
+  AccountsRevealSensitiveErrors[keyof AccountsRevealSensitiveErrors];
+
+export type AccountsRevealSensitiveResponses = {
+  /**
+   * Successful Response
+   */
+  200: SensitiveFieldsResponse;
+};
+
+export type AccountsRevealSensitiveResponse =
+  AccountsRevealSensitiveResponses[keyof AccountsRevealSensitiveResponses];
+
 export type TagsListData = {
   body?: never;
   path?: never;
@@ -5107,6 +5181,10 @@ export type AppsFetchIconErrors = {
    * Unprocessable Entity
    */
   422: ErrorResponse;
+  /**
+   * Too Many Requests
+   */
+  429: ErrorResponse;
   /**
    * Internal Server Error
    */

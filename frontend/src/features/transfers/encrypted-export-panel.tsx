@@ -68,7 +68,10 @@ export function DataExportPanel({
   exportBusy: boolean;
   onSession?: (next: SessionResponse) => void;
   onFailure?: (error: unknown) => void;
-  onExportCsv: (scope: 'all' | 'filtered', filters?: AccountQuery) => Promise<void>;
+  onExportCsv: (
+    scope: 'all' | 'filtered',
+    filters?: AccountQuery,
+  ) => Promise<void>;
   onToast?: (message: string) => void;
 }) {
   const isMock = mode === 'mock' || !session;
@@ -86,9 +89,9 @@ export function DataExportPanel({
   const [encError, setEncError] = useState('');
   const [encMessage, setEncMessage] = useState('');
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [latestSession, setLatestSession] = useState<SessionResponse | undefined>(
-    session,
-  );
+  const [latestSession, setLatestSession] = useState<
+    SessionResponse | undefined
+  >(session);
 
   useEffect(() => {
     setLatestSession(session);
@@ -122,8 +125,8 @@ export function DataExportPanel({
 
   const hasMfaStepUp = Boolean(
     latestSession &&
-      isUntilActive(latestSession.reauthenticated_until, nowMs) &&
-      isUntilActive(latestSession.mfa_reauthenticated_until, nowMs),
+    isUntilActive(latestSession.reauthenticated_until, nowMs) &&
+    isUntilActive(latestSession.mfa_reauthenticated_until, nowMs),
   );
   const canPasskeyStepUp = Boolean(
     latestSession?.webauthn_enabled && isWebAuthnSupported(),
@@ -253,7 +256,10 @@ export function DataExportPanel({
   return (
     <div data-slot="data-export-panel" className="grid gap-4 lg:grid-cols-2">
       {/* 1. 非敏感 CSV 导出 */}
-      <GlassPanel variant="strong" className="flex flex-col justify-between gap-4 p-5">
+      <GlassPanel
+        variant="strong"
+        className="flex flex-col justify-between gap-4 p-5"
+      >
         <div className="space-y-3.5">
           <div className="flex items-center gap-2.5 border-b border-[var(--table-divider)] pb-3">
             <span className="inline-flex size-8 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)]">
@@ -270,7 +276,8 @@ export function DataExportPanel({
           </div>
 
           <p className="text-[12.5px] leading-6 text-[var(--text-secondary)]">
-            导出账号编号、Gmail 地址、注册/活动时间、辅助邮箱、状态、用途与标签；
+            导出账号编号、Gmail
+            地址、注册/活动时间、辅助邮箱、状态、用途与标签；
             绝不包含密码、绑定手机号、备注、TOTP 密钥、恢复码或会话数据。
           </p>
 
@@ -352,7 +359,10 @@ export function DataExportPanel({
             当前为本地预览模式，加密流式导出（.gmenc）仅在真实登录会话下可用。
           </div>
         ) : (
-          <form onSubmit={(e) => void handleEncryptedSubmit(e)} className="space-y-3.5">
+          <form
+            onSubmit={(e) => void handleEncryptedSubmit(e)}
+            className="space-y-3.5"
+          >
             <label className="block space-y-1.5 text-[12.5px]">
               <span className="font-medium text-[var(--text-primary)]">
                 加密导出范围
@@ -505,7 +515,10 @@ export function DataExportPanel({
                 role="alert"
                 className="flex items-start gap-2 rounded-xl border border-[var(--badge-red-border)] bg-[var(--badge-red-bg)] px-3 py-2 text-[12px] text-[var(--badge-red-text)]"
               >
-                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <AlertCircle
+                  className="mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
                 <span>{encError}</span>
               </div>
             )}
@@ -515,7 +528,10 @@ export function DataExportPanel({
                 role="status"
                 className="flex items-start gap-2 rounded-xl border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-3 py-2 text-[12px] text-[var(--badge-green-text)]"
               >
-                <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <CheckCircle2
+                  className="mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
                 <span className="break-all">{encMessage}</span>
               </div>
             )}

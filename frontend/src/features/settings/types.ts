@@ -222,7 +222,9 @@ export type SettingsMutationHandlers = {
     | { ok: true; setup: TotpSetupChallenge }
     | { ok: false; error: string; requireReauth?: boolean }
   >;
-  confirmTotpSetup: (code: string) => Promise<
+  confirmTotpSetup: (
+    code: string,
+  ) => Promise<
     | { ok: true; codes: string[]; message?: string }
     | { ok: false; error: string; requireReauth?: boolean }
   >;

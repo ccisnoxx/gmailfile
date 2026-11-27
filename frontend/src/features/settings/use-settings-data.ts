@@ -867,7 +867,7 @@ export function useSettingsData({
         return {
           ok: true,
           setup: {
-            secret: 'JBSWY3DPEHPK3PXP',
+            secret: 'MOCKDEMO234567AB',
             qrDataUrl: `data:image/svg+xml;utf8,${svg}`,
             expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
           },

@@ -50,6 +50,7 @@ class Settings(BaseSettings):
         "local6",
         "local7",
     ] = "authpriv"
+    audit_syslog_spool_file: Path | None = None
     audit_signing_key_file: Path | None = None
     audit_retention_days: int = Field(default=365, ge=90, le=3650)
     password_denylist_file: Path | None = None
@@ -108,7 +109,8 @@ class Settings(BaseSettings):
         if len(active_key.read_bytes()) != 32:
             raise ValueError("数据密钥必须是 32 字节原始随机值")
         if self.audit_signing_key_file is not None:
-            if len(self.audit_signing_key_file.read_bytes()) < 32:
-                raise ValueError("审计签名密钥必须至少 32 字节")
+            raw_key = self.audit_signing_key_file.read_bytes()
+            if not raw_key.lstrip().startswith(b"-----BEGIN ") and len(raw_key) < 32:
+                raise ValueError("审计签名密钥必须至少 32 字节或为有效 Ed25519 PEM 私钥")
         if self.password_denylist_file is not None and not self.password_denylist_file.is_file():
             raise ValueError("密码黑名单文件不存在或不可读")

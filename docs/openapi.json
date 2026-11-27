@@ -5190,6 +5190,109 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/reveal-sensitive": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Reveal Sensitive",
+        "operationId": "accountsRevealSensitive",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Input"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensitiveFieldsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/api/v1/tags": {
       "get": {
         "tags": [
@@ -5904,6 +6007,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -6561,6 +6674,16 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "has_phone": {
+            "type": "boolean",
+            "title": "Has Phone",
+            "default": false
+          },
+          "has_notes": {
+            "type": "boolean",
+            "title": "Has Notes",
+            "default": false
+          },
           "phone": {
             "anyOf": [
               {
@@ -6604,9 +6727,7 @@
           "deleted_at",
           "row_version",
           "created_at",
-          "updated_at",
-          "phone",
-          "notes"
+          "updated_at"
         ],
         "title": "AccountDetail"
       },
@@ -8758,6 +8879,38 @@
           "password"
         ],
         "title": "ReverifyInput"
+      },
+      "SensitiveFieldsResponse": {
+        "properties": {
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "notes"
+        ],
+        "title": "SensitiveFieldsResponse"
       },
       "SessionItem": {
         "properties": {

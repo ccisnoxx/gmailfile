@@ -2,6 +2,7 @@
 
 涵盖：
 - check-openapi : 校验 docs/openapi.json 与应用实时契约逐字节一致
+- check-docs    : 校验 README 与安全决策文档中的迁移版本及关键安全声明与代码一致
 - compose-all   : 校验全部 4 组 Docker Compose overlay 语法与安全基线
 - nginx         : 校验 Nginx 安全头、限流范围与敏感路径拦截（安装 nginx 时同步运行 nginx -t）
 - scan-dist     : 扫描 frontend/dist 产物与源码，确保零预览残留、零外链 CDN、零秘密泄露
@@ -108,6 +109,71 @@ def check_openapi(root: Path = ROOT) -> CheckResult:
             ["docs/openapi.json 内容漂移"],
         )
     return CheckResult("check-openapi", True, "docs/openapi.json 与实时契约完全一致")
+
+
+def check_docs(root: Path = ROOT) -> CheckResult:
+    """校验 README 与安全决策文档的迁移版本及关键不可逆语义与单一来源 release_meta 一致。"""
+    errors: list[str] = []
+    notes: list[str] = []
+
+    backend_dir = str((root / "backend").resolve())
+    inserted = False
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+        inserted = True
+    try:
+        from app.core.release_meta import SCHEMA_VERSION, resolve_schema_version
+
+        resolved_head = resolve_schema_version(root / "backend" / "alembic" / "versions")
+        expected_schema = SCHEMA_VERSION
+    finally:
+        if inserted and backend_dir in sys.path:
+            sys.path.remove(backend_dir)
+
+    if resolved_head != expected_schema:
+        errors.append(
+            f"release_meta.SCHEMA_VERSION ({expected_schema}) 与 Alembic head ({resolved_head})"
+            " 不一致"
+        )
+    notes.append(f"schema baseline={expected_schema}")
+
+    readme_path = root / "README.md"
+    if not readme_path.is_file():
+        errors.append(f"缺少 README.md: {readme_path}")
+    else:
+        readme_text = readme_path.read_text(encoding="utf-8")
+        if f"当前迁移版本为 `{expected_schema}`" not in readme_text:
+            errors.append(f"README.md 未声明当前迁移版本为 `{expected_schema}`")
+        if f"当前 head 为 `{expected_schema}`" not in readme_text:
+            errors.append(f"README.md 初始化章节未声明当前 head 为 `{expected_schema}`")
+        if "不提供永久删除" in readme_text:
+            errors.append("README.md 仍残留过时的“不提供永久删除”声明，与当前实现冲突")
+        if "/api/v1/accounts/{id}/permanent" not in readme_text:
+            errors.append("README.md 接口列表缺少永久删除端点说明")
+
+    sec_doc_path = root / "docs" / "security-decisions.md"
+    if not sec_doc_path.is_file():
+        errors.append(f"缺少 docs/security-decisions.md: {sec_doc_path}")
+    else:
+        sec_text = sec_doc_path.read_text(encoding="utf-8")
+        if f"`{expected_schema}`" not in sec_text:
+            errors.append(f"docs/security-decisions.md 未记录迁移 `{expected_schema}` 的安全决策")
+
+    for governance_file in ("LICENSE", "SECURITY.md", "CHANGELOG.md"):
+        gov_path = root / governance_file
+        if not gov_path.is_file() or gov_path.stat().st_size == 0:
+            errors.append(f"仓库根目录缺少治理文档: {governance_file}")
+
+    if errors:
+        return CheckResult(
+            "check-docs", False, f"文档一致性校验发现 {len(errors)} 项漂移", errors, notes
+        )
+    return CheckResult(
+        "check-docs",
+        True,
+        f"README 与安全文档与迁移基线 {expected_schema} 一致",
+        notes=notes,
+    )
 
 
 def _write_dummy_file(path: Path, content: str = "dummy-gate-placeholder\n") -> None:
@@ -376,6 +442,7 @@ def check_nginx(root: Path = ROOT) -> CheckResult:
     # 1. 限流区与基础安全配置
     for directive in (
         "zone=gm_login:",
+        "zone=gm_icon_fetch:",
         "zone=gm_api:",
         "server_tokens off;",
         "ssl_protocols TLSv1.2 TLSv1.3;",
@@ -439,6 +506,16 @@ def check_nginx(root: Path = ROOT) -> CheckResult:
     if "zone=gm_login" not in login_body or "limit_req_status 429;" not in login_body:
         errors.append(
             "location = /api/v1/auth/login 必须配置 zone=gm_login 与 limit_req_status 429;"
+        )
+
+    icon_fetch_body = location_map.get("= /api/v1/apps/fetch-icon", "")
+    if (
+        "zone=gm_icon_fetch" not in icon_fetch_body
+        or "limit_req_status 429;" not in icon_fetch_body
+    ):
+        errors.append(
+            "location = /api/v1/apps/fetch-icon 必须配置 zone=gm_icon_fetch "
+            "与 limit_req_status 429;"
         )
 
     gm_login_regexes: list[re.Pattern[str]] = []
@@ -666,6 +743,70 @@ def _check_dockerfile_digests(dockerfile: Path, errors: list[str]) -> None:
             stages.add(stage)
 
 
+def _run_online_python_audit(root: Path, errors: list[str], notes: list[str]) -> None:
+    pip_audit = shutil.which("pip-audit")
+    uv_bin = shutil.which("uv")
+    if pip_audit is None:
+        notes.append("pip-audit not installed (skipped online Python CVE query)")
+        return
+    if uv_bin is None:
+        notes.append("uv not installed (cannot export uv.lock to requirements for pip-audit)")
+        return
+    with tempfile.TemporaryDirectory(prefix="gm_pip_audit_") as tmp:
+        req_file = Path(tmp) / "requirements.txt"
+        export_proc = subprocess.run(
+            [
+                uv_bin,
+                "export",
+                "--locked",
+                "--no-hashes",
+                "--no-emit-project",
+                "--format",
+                "requirements-txt",
+                "-o",
+                str(req_file),
+            ],
+            cwd=root / "backend",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if export_proc.returncode != 0:
+            errors.append(
+                "uv export 导出锁定依赖失败: "
+                + (export_proc.stderr.strip() or export_proc.stdout.strip())
+            )
+            return
+        proc = subprocess.run(
+            [pip_audit, "--no-deps", "-r", str(req_file)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        notes.append(f"pip-audit exit={proc.returncode}")
+        if proc.returncode != 0:
+            errors.append(f"pip-audit 报告漏洞或失败: {proc.stderr.strip() or proc.stdout.strip()}")
+
+
+def _run_online_frontend_audit(root: Path, errors: list[str], notes: list[str]) -> None:
+    pnpm_bin = shutil.which("pnpm")
+    if pnpm_bin is None:
+        notes.append("pnpm not installed (skipped online frontend npm CVE query)")
+        return
+    proc = subprocess.run(
+        [pnpm_bin, "audit", "--prod", "--audit-level=high"],
+        cwd=root / "frontend",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    notes.append(f"pnpm-audit exit={proc.returncode}")
+    if proc.returncode != 0:
+        errors.append(
+            f"pnpm audit 报告高危漏洞或失败: {proc.stderr.strip() or proc.stdout.strip()}"
+        )
+
+
 def audit_deps(root: Path = ROOT, *, run_online: bool = False) -> CheckResult:
     errors: list[str] = []
     notes: list[str] = []
@@ -716,18 +857,8 @@ def audit_deps(root: Path = ROOT, *, run_online: bool = False) -> CheckResult:
     _check_dockerfile_digests(root / "infra" / "backup" / "Dockerfile", errors)
 
     if run_online:
-        pip_audit = shutil.which("pip-audit")
-        if pip_audit is not None:
-            proc = subprocess.run(
-                [pip_audit, "-r", str(uv_lock)], capture_output=True, text=True, check=False
-            )
-            notes.append(f"pip-audit exit={proc.returncode}")
-            if proc.returncode != 0:
-                errors.append(
-                    f"pip-audit 报告漏洞或失败: {proc.stderr.strip() or proc.stdout.strip()}"
-                )
-        else:
-            notes.append("pip-audit not installed (skipped online Python CVE query)")
+        _run_online_python_audit(root, errors, notes)
+        _run_online_frontend_audit(root, errors, notes)
     else:
         notes.append(
             "online CVE advisory scan not run (offline deterministic lockfile/digest check)"
@@ -755,7 +886,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="gmailfile 本地发布质量门禁检查工具")
     parser.add_argument(
         "command",
-        choices=("check-openapi", "compose-all", "nginx", "scan-dist", "audit-deps", "all"),
+        choices=(
+            "check-openapi",
+            "check-docs",
+            "compose-all",
+            "nginx",
+            "scan-dist",
+            "audit-deps",
+            "all",
+        ),
         help="要执行的检查项",
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="仓库根目录")
@@ -770,6 +909,7 @@ def main(argv: list[str] | None = None) -> int:
 
     runners = {
         "check-openapi": lambda: check_openapi(root),
+        "check-docs": lambda: check_docs(root),
         "compose-all": lambda: check_compose_all(root),
         "nginx": lambda: check_nginx(root),
         "scan-dist": lambda: scan_dist(dist_dir, src_dir=src_dir),

@@ -145,3 +145,55 @@ def test_cli_safe_argument_parser_never_echoes_secret_argument(monkeypatch, caps
     assert secret_arg not in captured.out
     assert secret_arg not in captured.err
     assert "never-echo-this-secret-value-2026" not in captured.err
+
+
+def test_cli_ed25519_sign_and_offline_public_key_verify_checkpoint(
+    db_engine, settings, tmp_path, monkeypatch, capsys
+):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    _seed_audit_events(db_engine, count=3)
+    priv = Ed25519PrivateKey.generate()
+    priv_file = tmp_path / "audit_ed25519.pem"
+    pub_file = tmp_path / "audit_ed25519.pub.pem"
+    priv_file.write_bytes(
+        priv.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    pub_file.write_bytes(
+        priv.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    settings.audit_signing_key_file = priv_file
+    _wire_cli(monkeypatch, db_engine, settings)
+
+    monkeypatch.setattr(sys, "argv", ["app.cli", "sign-audit-checkpoint"])
+    assert cli.main() == 0
+    cp_json = capsys.readouterr().out
+    checkpoint = json.loads(cp_json)
+    assert checkpoint["version"] == 2
+    assert checkpoint["algorithm"] == "ed25519"
+
+    cp_file = tmp_path / "checkpoint.json"
+    cp_file.write_text(cp_json, encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "app.cli",
+            "verify-audit-checkpoint",
+            "--checkpoint",
+            str(cp_file),
+            "--key",
+            str(pub_file),
+        ],
+    )
+    assert cli.main() == 0
+    verify_res = json.loads(capsys.readouterr().out)
+    assert verify_res["valid"] is True and verify_res["algorithm"] == "ed25519"

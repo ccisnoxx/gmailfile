@@ -25,6 +25,7 @@ from app.schemas.accounts import (
     RegisteredAppResponse,
     RegisteredAppUsage,
     RegistrationTrendResponse,
+    SensitiveFieldsResponse,
     StatusDistributionResponse,
     TagResponse,
 )
@@ -177,6 +178,9 @@ class AccountService:
 
     def copied(self, account_id: UUID) -> None:
         self.details.copied(account_id)
+
+    def reveal_sensitive(self, account_id: UUID) -> SensitiveFieldsResponse:
+        return self.details.reveal_sensitive(account_id)
 
     @staticmethod
     def tag_response(row: Tag) -> TagResponse:

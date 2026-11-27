@@ -9,6 +9,10 @@ import ipaddress
 import re
 import socket
 import ssl
+import struct
+import threading
+import time
+import zlib
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
@@ -26,10 +30,50 @@ CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
 MAX_ICON_BYTES = 65536
 MAX_ICON_DATA_URI_LEN = 98304
 MAX_HTML_BYTES = 65536
+MAX_ICON_DIMENSION = 1024
+MAX_ICON_PIXELS = 1024 * 1024
+MAX_PNG_DECOMPRESSED_BYTES = 4 * 1024 * 1024
 FETCH_TIMEOUT_SECONDS = 5.0
+TOTAL_FETCH_BUDGET_SECONDS = 8.0
+DEFAULT_MAX_CONCURRENT_ICON_FETCHES = 2
 MAX_REDIRECTS = 3
 MAX_CANDIDATES = 6
 USER_AGENT = "GmailAccountManager-IconFetcher/1.0"
+
+
+class IconFetchSlot:
+    """线程安全且幂等释放的图标抓取并发槽位句柄。"""
+
+    def __init__(self, semaphore: threading.BoundedSemaphore) -> None:
+        self._semaphore = semaphore
+        self._lock = threading.Lock()
+        self._released = False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        self._semaphore.release()
+
+    def __del__(self) -> None:
+        self.release()
+
+
+def try_acquire_icon_fetch_slot(semaphore: threading.BoundedSemaphore) -> IconFetchSlot | None:
+    """非阻塞申请一个应用图标抓取并发槽位；满载时立即返回 None。"""
+    if not semaphore.acquire(blocking=False):
+        return None
+    return IconFetchSlot(semaphore)
+
+
+def _remaining_timeout(deadline: float | None) -> float:
+    if deadline is None:
+        return FETCH_TIMEOUT_SECONDS
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return 0.0
+    return min(FETCH_TIMEOUT_SECONDS, remaining)
 
 
 def normalize_domain(raw: str | None) -> str | None:
@@ -61,21 +105,181 @@ def normalize_domain(raw: str | None) -> str | None:
     return host
 
 
+def _inspect_png(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 33 or data[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", data[16:24])
+    if width <= 0 or height <= 0 or width > MAX_ICON_DIMENSION or height > MAX_ICON_DIMENSION:
+        return None
+    if width * height > MAX_ICON_PIXELS:
+        return None
+    pos = 8
+    decompressor = zlib.decompressobj()
+    decompressed = 0
+    saw_idat = False
+    while pos + 12 <= len(data):
+        chunk_len = struct.unpack(">I", data[pos : pos + 4])[0]
+        chunk_type = data[pos + 4 : pos + 8]
+        chunk_end = pos + 8 + chunk_len
+        if chunk_end + 4 > len(data):
+            return None
+        if chunk_type == b"IDAT":
+            saw_idat = True
+            remaining = MAX_PNG_DECOMPRESSED_BYTES - decompressed
+            try:
+                out = decompressor.decompress(data[pos + 8 : chunk_end], remaining + 1)
+            except zlib.error:
+                return None
+            decompressed += len(out)
+            if decompressed > MAX_PNG_DECOMPRESSED_BYTES:
+                return None
+        elif chunk_type == b"IEND":
+            break
+        pos = chunk_end + 4
+    if not saw_idat:
+        return None
+    try:
+        tail = decompressor.flush(MAX_PNG_DECOMPRESSED_BYTES - decompressed + 1)
+    except zlib.error:
+        return None
+    if decompressed + len(tail) > MAX_PNG_DECOMPRESSED_BYTES:
+        return None
+    return width, height
+
+
+def _inspect_jpeg(data: bytes) -> tuple[int, int] | None:
+    pos = 2
+    sof_markers = {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+    while pos + 1 < len(data):
+        while pos < len(data) and data[pos] != 0xFF:
+            pos += 1
+        while pos < len(data) and data[pos] == 0xFF:
+            pos += 1
+        if pos >= len(data):
+            break
+        marker = data[pos]
+        pos += 1
+        if marker in {0xD8, 0xD9, 0x01} or 0xD0 <= marker <= 0xD7:
+            if marker == 0xD9:
+                break
+            continue
+        if pos + 2 > len(data):
+            return None
+        seg_len = struct.unpack(">H", data[pos : pos + 2])[0]
+        if seg_len < 2 or pos + seg_len > len(data):
+            return None
+        if marker in sof_markers:
+            if seg_len < 7:
+                return None
+            height, width = struct.unpack(">HH", data[pos + 3 : pos + 7])
+            return width, height
+        pos += seg_len
+    return None
+
+
+def _inspect_webp(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 30:
+        return None
+    chunk = data[12:16]
+    if chunk == b"VP8X":
+        width = 1 + int.from_bytes(data[24:27], "little")
+        height = 1 + int.from_bytes(data[27:30], "little")
+        return width, height
+    if chunk == b"VP8 ":
+        width = struct.unpack("<H", data[26:28])[0] & 0x3FFF
+        height = struct.unpack("<H", data[28:30])[0] & 0x3FFF
+        return width, height
+    if chunk == b"VP8L":
+        bits = struct.unpack("<I", data[21:25])[0]
+        return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+    return None
+
+
+def _inspect_ico(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 22:
+        return None
+    count = struct.unpack("<H", data[4:6])[0]
+    header_end = 6 + count * 16
+    if count < 1 or count > 32 or header_end > len(data):
+        return None
+    max_w = 0
+    max_h = 0
+    for idx in range(count):
+        base = 6 + idx * 16
+        w = data[base] or 256
+        h = data[base + 1] or 256
+        size, offset = struct.unpack("<II", data[base + 8 : base + 16])
+        if size == 0 or offset < header_end or offset + size > len(data):
+            return None
+        payload = data[offset : offset + size]
+        if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+            dims = _inspect_png(payload)
+            if dims is None:
+                return None
+            w, h = dims
+        max_w = max(max_w, w)
+        max_h = max(max_h, h)
+    return max_w, max_h
+
+
+def _inspect_raster_dimensions(data: bytes, mime: str) -> tuple[int, int] | None:
+    if mime == "image/png":
+        return _inspect_png(data)
+    if mime == "image/gif":
+        return struct.unpack("<HH", data[6:10]) if len(data) >= 10 else None
+    if mime == "image/jpeg":
+        return _inspect_jpeg(data)
+    if mime == "image/webp":
+        return _inspect_webp(data)
+    if mime == "image/x-icon":
+        return _inspect_ico(data)
+    return None
+
+
 def detect_safe_raster_mime(data: bytes) -> str | None:
-    """仅按文件魔数识别安全光栅图片格式；绝不接受 SVG 或脚本内容。"""
+    """按文件魔数与光栅尺寸/解压炸弹边界校验安全图片格式；绝不接受 SVG、超大尺寸或压缩炸弹。"""
     if not data or len(data) > MAX_ICON_BYTES:
         return None
+    mime: str | None = None
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if data.startswith((b"GIF87a", b"GIF89a")):
-        return "image/gif"
-    if len(data) >= 22 and data[:4] == b"\x00\x00\x01\x00":
-        return "image/x-icon"
-    return None
+        mime = "image/png"
+    elif len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        mime = "image/webp"
+    elif data.startswith(b"\xff\xd8\xff"):
+        mime = "image/jpeg"
+    elif data.startswith((b"GIF87a", b"GIF89a")):
+        mime = "image/gif"
+    elif len(data) >= 22 and data[:4] == b"\x00\x00\x01\x00":
+        mime = "image/x-icon"
+    if mime is None:
+        return None
+    dims = _inspect_raster_dimensions(data, mime)
+    if dims is None:
+        return None
+    width, height = dims
+    if (
+        width <= 0
+        or height <= 0
+        or width > MAX_ICON_DIMENSION
+        or height > MAX_ICON_DIMENSION
+        or width * height > MAX_ICON_PIXELS
+    ):
+        return None
+    return mime
 
 
 def validate_icon_data(raw: str | None) -> str | None:
@@ -157,11 +361,15 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
-def _fetch_https_bytes(url: str, *, max_bytes: int) -> tuple[str, bytes] | None:
-    """安全抓取单个公开 HTTPS URL；逐跳校验重定向与公网 IP，并限制最大读取字节数。"""
+def _fetch_https_bytes(
+    url: str, *, max_bytes: int, deadline: float | None = None
+) -> tuple[str, bytes] | None:
+    """安全抓取单个公开 HTTPS URL；逐跳校验重定向、公网 IP 与全局剩余预算，并限制最大读取字节数。"""
     current = url
     ssl_context = ssl.create_default_context()
     for _ in range(MAX_REDIRECTS + 1):
+        if _remaining_timeout(deadline) <= 0:
+            return None
         parsed = urlsplit(current)
         if parsed.scheme.lower() != "https" or not parsed.hostname:
             return None
@@ -171,6 +379,9 @@ def _fetch_https_bytes(url: str, *, max_bytes: int) -> tuple[str, bytes] | None:
         if not host:
             return None
         ips = resolve_public_ips(host, 443)
+        timeout = _remaining_timeout(deadline)
+        if timeout <= 0:
+            return None
         path = parsed.path or "/"
         if parsed.query:
             path = f"{path}?{parsed.query}"
@@ -178,7 +389,7 @@ def _fetch_https_bytes(url: str, *, max_bytes: int) -> tuple[str, bytes] | None:
             host=host,
             pinned_ip=ips[0],
             port=443,
-            timeout=FETCH_TIMEOUT_SECONDS,
+            timeout=timeout,
             context=ssl_context,
         )
         try:
@@ -194,6 +405,12 @@ def _fetch_https_bytes(url: str, *, max_bytes: int) -> tuple[str, bytes] | None:
                     "Accept-Encoding": "identity",
                 },
             )
+            if deadline is not None:
+                rem = _remaining_timeout(deadline)
+                if rem <= 0:
+                    return None
+                if conn.sock is not None:
+                    conn.sock.settimeout(rem)
             resp = conn.getresponse()
             if resp.status in {301, 302, 303, 307, 308}:
                 location = resp.getheader("Location")
@@ -211,6 +428,12 @@ def _fetch_https_bytes(url: str, *, max_bytes: int) -> tuple[str, bytes] | None:
             chunks: list[bytes] = []
             total = 0
             while total < max_bytes + 1:
+                if deadline is not None:
+                    rem = _remaining_timeout(deadline)
+                    if rem <= 0:
+                        return None
+                    if conn.sock is not None:
+                        conn.sock.settimeout(rem)
                 chunk = resp.read(min(8192, max_bytes + 1 - total))
                 if not chunk:
                     break
@@ -261,10 +484,12 @@ class _IconLinkParser(HTMLParser):
         self.candidates.append((priority, href))
 
 
-def _discover_icon_urls(domain: str) -> list[str]:
+def _discover_icon_urls(domain: str, *, deadline: float | None = None) -> list[str]:
+    if _remaining_timeout(deadline) <= 0:
+        return []
     base_url = f"https://{domain}/"
     discovered: list[tuple[int, str]] = []
-    html_result = _fetch_https_bytes(base_url, max_bytes=MAX_HTML_BYTES)
+    html_result = _fetch_https_bytes(base_url, max_bytes=MAX_HTML_BYTES, deadline=deadline)
     if html_result is not None:
         content_type, raw_html = html_result
         if "html" in content_type or b"<link" in raw_html[:8192].lower():
@@ -287,14 +512,23 @@ def _discover_icon_urls(domain: str) -> list[str]:
     return urls
 
 
-def fetch_domain_icon(raw_domain: str) -> tuple[str, str]:
+def fetch_domain_icon(
+    raw_domain: str, *, budget_seconds: float = TOTAL_FETCH_BUDGET_SECONDS
+) -> tuple[str, str]:
     """从指定公开 HTTPS 域名抓取并验证图标，返回 (规范域名, data:image/...;base64,...)。"""
     domain = normalize_domain(raw_domain)
     if not domain:
         raise AccountError(422, "APP_DOMAIN_INVALID", "请输入有效的应用域名（如 claude.ai）")
+    deadline = time.monotonic() + max(0.01, budget_seconds)
     # 提前校验主域名公网解析，避免非法/内网目标进入候选抓取循环
     resolve_public_ips(domain, 443)
-    for candidate in _discover_icon_urls(domain):
+    if _remaining_timeout(deadline) <= 0:
+        raise AccountError(
+            422, "APP_ICON_FETCH_FAILED", "获取应用图标超时，请检查域名可达性或稍后重试"
+        )
+    for candidate in _discover_icon_urls(domain, deadline=deadline):
+        if _remaining_timeout(deadline) <= 0:
+            break
         if candidate.startswith("data:"):
             try:
                 validated = validate_icon_data(candidate)
@@ -303,7 +537,7 @@ def fetch_domain_icon(raw_domain: str) -> tuple[str, str]:
             if validated:
                 return domain, validated
             continue
-        fetched = _fetch_https_bytes(candidate, max_bytes=MAX_ICON_BYTES)
+        fetched = _fetch_https_bytes(candidate, max_bytes=MAX_ICON_BYTES, deadline=deadline)
         if fetched is None:
             continue
         _, body = fetched
@@ -311,6 +545,10 @@ def fetch_domain_icon(raw_domain: str) -> tuple[str, str]:
         if mime is not None:
             encoded = base64.b64encode(body).decode("ascii")
             return domain, f"data:{mime};base64,{encoded}"
+    if _remaining_timeout(deadline) <= 0:
+        raise AccountError(
+            422, "APP_ICON_FETCH_FAILED", "获取应用图标超时，请检查域名可达性或稍后重试"
+        )
     raise AccountError(
         422,
         "APP_ICON_FETCH_FAILED",

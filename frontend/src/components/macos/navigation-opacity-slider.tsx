@@ -227,22 +227,22 @@ export function NavigationOpacitySlider({
         className,
       )}
     >
-          <label
-            htmlFor={id}
-            className="text-[11px] leading-none font-medium tracking-tight text-[var(--text-primary)]"
-          >
-            {resolvedLabel}
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              id={id}
-              type="range"
-              min={MIN_NAV_ALPHA}
-              max={MAX_NAV_ALPHA}
-              step={1}
-              value={clamped}
-              aria-label={resolvedLabel}
-              aria-valuetext={`${clamped}%`}
+      <label
+        htmlFor={id}
+        className="text-[11px] leading-none font-medium tracking-tight text-[var(--text-primary)]"
+      >
+        {resolvedLabel}
+      </label>
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          type="range"
+          min={MIN_NAV_ALPHA}
+          max={MAX_NAV_ALPHA}
+          step={1}
+          value={clamped}
+          aria-label={resolvedLabel}
+          aria-valuetext={`${clamped}%`}
           onChange={(e) => onChange(clampNavAlpha(Number(e.target.value)))}
           style={{
             background: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${progress}%, rgba(148, 178, 214, 0.38) ${progress}%, rgba(148, 178, 214, 0.38) 100%)`,

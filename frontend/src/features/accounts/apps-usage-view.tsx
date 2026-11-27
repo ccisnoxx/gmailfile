@@ -443,7 +443,9 @@ export function AppsUsageView({
                     >
                       <AppBrandIcon
                         name={editName.trim() || row.name}
-                        domain={editDomain.trim() || inferDefaultDomain(editName)}
+                        domain={
+                          editDomain.trim() || inferDefaultDomain(editName)
+                        }
                         iconData={editIconData}
                         size="md"
                       />

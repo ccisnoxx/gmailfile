@@ -310,3 +310,39 @@ def test_concurrent_audit_inserts_produce_gapless_valid_chain(db_engine):
     with Session(db_engine) as db:
         status = verify_audit_chain(db)
         assert status.valid and status.total_events == 12 and status.latest_seq == 12
+
+
+def test_0007_downgrade_blocked_when_orphan_audit_events_exist(db_engine, migration_config):
+    from app.models import AuditEvent
+    from app.services.audit_integrity import verify_audit_chain
+
+    row = account(deleted_at=datetime.now(UTC))
+    with Session(db_engine) as db, db.begin():
+        db.add(row)
+        db.flush()
+        purged_id = row.id
+        db.add(
+            AuditEvent(
+                event_type="account_created",
+                account_id=purged_id,
+                event_metadata={"operation": "create"},
+            )
+        )
+    with Session(db_engine) as db, db.begin():
+        db.execute(text("DELETE FROM gmail_accounts WHERE id = :aid"), {"aid": purged_id})
+        db.add(
+            AuditEvent(
+                event_type="account_permanently_deleted",
+                account_id=purged_id,
+                event_metadata={"operation": "permanent-delete"},
+            )
+        )
+
+    with Session(db_engine) as db:
+        status = verify_audit_chain(db)
+        assert status.valid and status.total_events == 2
+
+    with pytest.raises(RuntimeError, match="不可逆"):
+        with db_engine.begin() as connection:
+            migration_config.attributes["connection"] = connection
+            command.downgrade(migration_config, "0006")

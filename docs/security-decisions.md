@@ -122,6 +122,15 @@ Nginx 覆盖 XFF 并清除 Forwarded，公开示例中的 PROXY protocol 链路�
 - **深色模式与 PWA 安全红线**：主题模式（`light` / `dark` / `system`）仅在 `localStorage` 写入非敏感偏好键 `gm_theme_mode`，首屏防闪烁逻辑抽离至同源外部脚本 `/theme-init.js`，完全符合严格 CSP `script-src 'self'`（零内联脚本）与 WCAG 2.2 AA 对比度要求。PWA 仅缓存显式白名单的公开静态壳资源（`/assets/*`、`/icons/*`、`/favicon.svg`、`/manifest.webmanifest`、`/theme-init.js`）；手写零依赖 `public/sw.js` 硬性绕过 `/api/*`、所有非 `GET` 请求、携带 `Authorization` 的请求、HTML `navigate` 导航及任何 JSON/CSV/二进制附件响应，并在会话退出、隐藏或清空敏感状态时主动清理所有 Service Worker 缓存。
 - **WebAuthn / FIDO2 通行密钥（迁移 `0005`）**：锁定 `webauthn==3.0.1`，新增 `admin_webauthn_credentials` 与 `webauthn_challenges` 表；严格同源绑定 `RP ID` 与 `Origin`，强制 `ResidentKeyRequirement.REQUIRED`（Discoverable Passkey）与 `UserVerificationRequirement.REQUIRED`（UV），支持无密码一步登录、高风险 UV Step-Up 验证、与 TOTP 共存或满足 `>= 1` 个活跃通行密钥时停用 TOTP（始终通过 `LAST_MFA_FACTOR` 保护至少保留一种有效二步验证因子）。挑战采用 PostgreSQL 原子 `UPDATE ... WHERE consumed_at IS NULL AND expires_at > now RETURNING` 单次消费防重放；验签通过后检查非零 `sign_count` 单调递增，发现回滚即拒绝并记录 `webauthn_clone_suspected` 审计事件；Nginx `gm_login` 限流与后端 `AuthThrottle` 覆盖全部 WebAuthn 端点与 `totp/disable`；当停用 TOTP 时，离线恢复切换脚本 `scripts/backup_tool.py switch` 自动回退为「管理员密码 + 一次性恢复码」二步验证，并同步清理恢复库的 `webauthn_challenges`。
 
+## 迁移 `0006`–`0007` 安全决策（已注册应用、图标抓取与永久删除）
+
+- **第三方已注册应用目录与关联（迁移 `0006`）**：新增 `registered_apps` 与 `gmail_account_apps` 表管理账号在外部应用中的注册与封禁状态；删除已注册应用时在同一事务内递增全部关联账号的 `row_version` 并逐条写入审计，避免绕过乐观锁。
+- **回收站不可逆永久删除与 MFA Step-Up（迁移 `0007`）**：`DELETE /api/v1/accounts/{id}/permanent` 与 `POST /api/v1/accounts/batch-permanent-delete` 仅允许操作已软删除账号，与加密导出保持同等高风险门槛——服务端强制校验 `require_recent(..., require_mfa=True)`（最近 5 分钟内 Passkey UV 或密码 + TOTP）、CSRF、业务写锁与 `row_version` CAS；前端单条/批量弹窗均接入 Step-Up 验证，批量永久删除额外要求输入 `DELETE <条数>` 确认短语。永久删除自动将其他账号指向该记录的站内辅助邮箱转为外部辅助邮箱文本（保全 `recovery_xor` 约束并递增其版本号），彻底删除账号行并释放规范化邮箱唯一性。
+- **防篡改审计保留与 `0007` 回退边界**：为保持 `audit_events` 追加哈希链连续性，迁移 `0007` 移除了 `audit_events.account_id -> gmail_accounts.id` 外键，永久删除后审计记录继续保留原 `account_id` UUID。`0007.downgrade()` 在重建外键前先查询是否存在孤立 `audit_events.account_id`，若存在则明确报错拒绝降级并指引通过加密备份执行隔离恢复回退，避免盲目触发外键约束错误或篡改审计表。
+- **应用图标抓取 SSRF 与资源隔离（`POST /api/v1/apps/fetch-icon`）**：仅允许公开 HTTPS 443 域名，拒绝 IP 字面量与内网/环回/CGNAT/保留地址；DNS 全地址校验后固定连接已校验公网 IP 并保留原域名 SNI 与 TLS 证书校验（防 DNS Rebinding）；逐跳校验重定向；仅按文件魔数与光栅头尺寸（≤ 1024×1024 像素、≤ 1,048,576 总像素、PNG zlib 解压 ≤ 4 MiB）接受 PNG/JPEG/WebP/GIF/ICO 光栅图标（严格拒绝 SVG、异常尺寸与压缩炸弹）；强制单次请求 8 秒全局时间预算（贯穿连接、重定向与分块读取），后端通过 `BoundedSemaphore` 限制并发抓取槽位（满载返回 `429 APP_ICON_FETCH_BUSY`），Nginx 配置独立限流区 `gm_icon_fetch`（10r/m, burst=5）。
+- **敏感字段按需 Step-Up 与不可逆改密保护**：`GET /api/v1/accounts/{id}` 不再默认解密 `phone`/`notes`，仅返回 `has_phone`/`has_notes`；查看手机号与敏感备注统一走 `POST /api/v1/accounts/{id}/reveal-sensitive`（与密码查看同等级 Step-Up、20 秒自动清除、`no-store` 与独立审计事件 `sensitive_fields_revealed`）；`PATCH /api/v1/accounts/{id}` 覆盖已有 Gmail 密码同样强制最近重新验证。
+- **审计非对称签名与 Syslog 补偿队列**：`sign-audit-checkpoint` 支持 Ed25519 PEM 私钥签发 v2 检查点（配合 `verify-audit-checkpoint` 使用独立公钥离线验签，同时兼容 v1 HMAC-SHA256）；配置 `AUDIT_SYSLOG_SPOOL_FILE` 时，远程 Syslog 瞬时不可达的审计 JSON 会以 `0600` 权限落入有界本地磁盘队列（上限 10 MiB），并在后续投递或 `flush-audit-spool` 时按 FIFO 自动补偿重放。
+
 ## 公开与私有资料边界
 
 代码与通用安全合同公开；实例配置、原始验证、发布/镜像清单及恢复拓扑只在私有侧维护，见 [公开仓库发布规范](public-repository.md)。

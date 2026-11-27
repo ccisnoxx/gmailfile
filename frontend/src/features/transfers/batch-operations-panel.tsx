@@ -91,10 +91,8 @@ export function BatchOperationsPanel({
   );
 
   const allSelected =
-    filtered.length > 0 &&
-    filtered.every((item) => selectedIds.has(item.id));
-  const someSelected =
-    visibleSelectedTargets.length > 0 && !allSelected;
+    filtered.length > 0 && filtered.every((item) => selectedIds.has(item.id));
+  const someSelected = visibleSelectedTargets.length > 0 && !allSelected;
 
   const toggleAll = (checked: boolean) => {
     setSelectedIds((prev) => {
@@ -143,7 +141,9 @@ export function BatchOperationsPanel({
         const tagIds = Array.from(selectedTagIds);
         if (tagIds.length === 0) return;
         await onApplyTags(visibleSelectedTargets, tagIds);
-        setFeedback(`已为 ${visibleSelectedTargets.length} 个账号同步标签配置。`);
+        setFeedback(
+          `已为 ${visibleSelectedTargets.length} 个账号同步标签配置。`,
+        );
       }
       setSelectedIds(new Set());
       setPendingConfirm(null);

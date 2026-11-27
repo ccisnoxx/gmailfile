@@ -24,6 +24,7 @@ from app.db.schema import schema_is_current
 from app.db.session import create_database_engine
 from app.schemas.system import ErrorResponse
 from app.services.accounts import AccountError
+from app.services.accounts.app_icon import DEFAULT_MAX_CONCURRENT_ICON_FETCHES
 from app.services.auth import SecurityError
 from app.services.csv_transfer import DEFAULT_MAX_CONCURRENT_EXPORTS
 
@@ -59,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.export_semaphore = threading.BoundedSemaphore(DEFAULT_MAX_CONCURRENT_EXPORTS)
+    app.state.icon_fetch_semaphore = threading.BoundedSemaphore(DEFAULT_MAX_CONCURRENT_ICON_FETCHES)
 
     async def security_error(request: Request, exc: SecurityError):
         return error_response(

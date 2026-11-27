@@ -221,35 +221,37 @@ export function AuthShell({
                   从安全开始。
                 </h1>
                 <p className="max-w-md text-[13.5px] leading-6 text-[var(--text-secondary)]">
-                  仅供管理员使用。通过主密码、验证器或通行密钥解锁受保护的
-                  Gmail 账号与第三方应用注册档案。
+                  仅供管理员使用。通过主密码、验证器或通行密钥解锁受保护的 Gmail
+                  账号与第三方应用注册档案。
                 </p>
               </div>
 
               <ul className="space-y-2.5 pt-1" aria-label="工作区安全特性">
-                {SECURITY_HIGHLIGHTS.map(({ icon: Icon, tone, title: itemTitle, desc }) => (
-                  <li
-                    key={itemTitle}
-                    className="macos-glass-panel flex items-start gap-3 rounded-2xl p-3.5"
-                  >
-                    <span
-                      className={cn(
-                        'inline-flex size-9 shrink-0 items-center justify-center rounded-xl',
-                        tone,
-                      )}
+                {SECURITY_HIGHLIGHTS.map(
+                  ({ icon: Icon, tone, title: itemTitle, desc }) => (
+                    <li
+                      key={itemTitle}
+                      className="macos-glass-panel flex items-start gap-3 rounded-2xl p-3.5"
                     >
-                      <Icon className="size-4" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-semibold text-[var(--text-primary)]">
-                        {itemTitle}
-                      </p>
-                      <p className="mt-0.5 text-xs leading-5 text-[var(--text-secondary)]">
-                        {desc}
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                      <span
+                        className={cn(
+                          'inline-flex size-9 shrink-0 items-center justify-center rounded-xl',
+                          tone,
+                        )}
+                      >
+                        <Icon className="size-4" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                          {itemTitle}
+                        </p>
+                        <p className="mt-0.5 text-xs leading-5 text-[var(--text-secondary)]">
+                          {desc}
+                        </p>
+                      </div>
+                    </li>
+                  ),
+                )}
               </ul>
             </div>
 

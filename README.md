@@ -2,10 +2,10 @@
 
 单管理员、同源部署的 Gmail 资料管理工具。需求基线见 [产品与技术规格](gmail-account-manager-spec.md)。
 
-账号管理、CSV/流式加密导出、Session 设备管理、防篡改审计、加密备份/恢复、深色模式、离线 PWA、密钥轮换与 WebAuthn/Passkey 均已实现，当前迁移版本为 `0005`。
+账号管理、第三方已注册应用及图标管理、回收站永久删除（MFA Step-Up 保护）、CSV/流式加密导出、Session 设备管理、防篡改审计、加密备份/恢复、深色模式、可安装离线提示 PWA、密钥轮换与 WebAuthn/Passkey 均已实现，当前迁移版本为 `0007`。
 本仓库只发布应用代码、部署示例和通用运维说明；**示例配置不是任何实际实例的配置或上线证明**。
 真实域名、主机、网络、生产验证证据、发布/镜像清单和恢复拓扑由运营者在私有配置库维护。
-公开与私有资料的边界见 [公开仓库发布规范](docs/public-repository.md)，部署步骤见 [部署手册](docs/production-deployment.md)。
+公开与私有资料的边界见 [公开仓库发布规范](docs/public-repository.md)，部署步骤见 [部署手册](docs/production-deployment.md)，威胁模型与应急响应见 [安全政策](SECURITY.md)，版本演进见 [变更日志](CHANGELOG.md)，许可协议见 [LICENSE](LICENSE)。
 
 GitHub 仓库仅用于代码存储和同步，不启用 GitHub Actions；提交和推送不要求运行测试。
 检查、测试和构建命令保留，按开发需要手动执行。
@@ -65,7 +65,7 @@ uv run --locked uvicorn app.main:create_app --factory \
 
 ## 初始化与使用认证
 
-先运行 `alembic upgrade head`（当前 head 为 `0005`），再通过交互终端初始化唯一管理员：
+先运行 `alembic upgrade head`（当前 head 为 `0007`），再通过交互终端初始化唯一管理员：
 
 ```bash
 # 原生开发：在 backend/，使用上节的应用角色与 Secret 文件配置。
@@ -89,7 +89,7 @@ docker compose --env-file .env -f infra/docker-compose.yml exec api python -m ap
 2. 首次输入正确密码后进入受限会话，可选择绑定 TOTP 验证器或直接绑定 WebAuthn/FIDO2 通行密钥（Passkey）。完成前没有账号访问权限。
 3. 首次绑定 TOTP 或 Passkey 成功后都会展示 10 个离线恢复码，仅此一次，可当场下载。离线保存后清除展示；刷新、隐藏页面、退出或超时也会清除。
 4. 后续可使用「密码 + TOTP」或直接通过「Passkey 无密码一步登录（Discoverable + UV）」。TOTP 允许前后各一个 30 秒时间步，已使用时间步不能重放；WebAuthn 挑战单次原子消费防重放，并启用签名计数反克隆检测。
-5. 已绑定至少 1 个通行密钥时，可在系统设置按需停用 TOTP（系统始终强制保留至少一种有效二步因子）；高风险敏感操作（查看/复制密码、加密导出、改密、会话/密钥管理）均支持 Passkey UV Step-Up 或「密码 + TOTP」验证。
+5. 已绑定至少 1 个通行密钥时，可在系统设置按需停用 TOTP（系统始终强制保留至少一种有效二步因子）；高风险敏感操作（查看/复制密码、回收站单条/批量永久删除、加密导出、改密、会话/密钥管理）均支持 Passkey UV Step-Up 或「密码 + TOTP」验证。
 6. 认证器丢失时使用「密码 + 一次性恢复码」登录：立即撤销其他会话并进入受限态，重新绑定 TOTP 或 Passkey 后恢复完整权限；停用 TOTP 时，离线 `backup_tool.py switch` 同样使用「密码 + 一次性恢复码」兜底。
 
 改密撤销所有会话并返回登录；重绑确认或恢复码重生成撤销其他会话，旧恢复码整批失效。
@@ -112,6 +112,8 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 管理员 TOTP、待确认 Secret、Gmail 密码、完整手机号和敏感备注均使用此服务。
 应用 Secret 文件和数据密钥仍需按 [Secret 说明](secrets/README.md) 单独离线备份。
 
+**威胁模型与加密边界：**本系统为**服务端可解密保险库**（非客户端零知识架构）。上述敏感字段采用字段级 AES-256-GCM 加密，可防御仅数据库泄露的场景；而主邮箱、辅助邮箱关系、状态、用途、标签、已注册应用及时间元数据以可检索形式存储在 PostgreSQL 中。若宿主机 root 失陷、API 进程被远程执行，或 Secret 目录与数据库同时泄露，攻击者可解密全部字段，因此生产部署必须依赖宿主机加固、Secret 离线隔离备份与及时安全更新。
+
 ## 账号管理
 
 完成登录和 MFA 后默认进入账号列表。安全设置可从右上角进入，再返回账号列表。
@@ -119,14 +121,15 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 - **新增/编辑**使用同一表单；注册时间默认为当前时间，按浏览器时区输入和显示，API 统一返回 UTC ISO 8601。
 - 地址保留原始显示值。仅 `gmail.com` / `googlemail.com` 去点号、去 `+tag` 并统一域名；其他域名仅小写和去首尾空格用于唯一性。
 - 辅助邮箱可填外部文本或关联已有账号，不能同时填写、与主邮箱相同或关联自身。切换方式时请求明确将另一项设为 `null`。
-- 编辑时密码框始终为空；留空不会提交 `password`，原密文保持不变。不会读取密码回填表单，也不会提交掩码占位符。
-- 归档、删除需确认。删除只设置 `deleted_at`，在“已删除记录”逐条恢复；不提供永久删除，也不释放邮箱唯一性。
+- 编辑时密码框始终为空；留空不会提交 `password`，原密文保持不变。若填写新密码覆盖既有账号密码，要求最近 5 分钟内完成重新验证（生产强制 MFA Step-Up）。同样，编辑时若未查看或未修改已加密的手机号/敏感备注，留空默认保留原密文，需显式勾选清空才会置空。
+- 归档、软删除需确认。软删除只设置 `deleted_at` 且不释放邮箱唯一性，可在“回收站（已删除记录）”单条或批量恢复。
+- 回收站额外支持**不可逆永久删除**（单条/批量），均强制最近 5 分钟内管理员 MFA Step-Up（Passkey UV 或 密码 + TOTP），批量永久删除另要求输入 `DELETE <条数>` 确认短语。永久删除会彻底删除账号行及其标签/应用关联、释放邮箱唯一性，并将其他账号指向它的站内辅助邮箱关联自动转为外部辅助邮箱文本；历史防篡改审计记录仍保留原 `account_id` UUID（因此发生永久删除后迁移 `0007` 不可通过 `alembic downgrade` 回退，回退须通过加密备份隔离恢复）。
 - 对既有账号的所有修改（含人工时间标记、归档、删除、恢复）带 `row_version`。冲突返回 409，界面要求手动重新加载，不自动重放。
 - 标签支持新增、重命名、删除和账号关联。删除只解除关联并递增关联账号版本，不删除账号。
 - 已删除的辅助账号仍保留被引用关系和显示地址；恢复后可继续使用。Gmail 二步验证只记录状态，不保存 Seed 或恢复码。
 
-**密码按需访问：**普通列表/详情不返回密码和任何密文字段；独立 POST 要求完整认证、CSRF 和最近 5 分钟重新验证。
-前端密码 mutation 返回 `void`，密码不进入 Query/Mutation 缓存或持久化存储。20 秒后、关闭详情、切换界面/路由、隐藏、锁定或退出立即清除，晚到响应不能恢复展示。
+**敏感字段按需访问（密码、手机号、敏感备注）：**普通列表和详情不返回密码、手机号、备注原文及任何密文字段，详情仅返回 `has_phone`/`has_notes` 标记；独立 `POST /reveal-password` 与 `POST /reveal-sensitive` 均要求完整认证、CSRF 和最近 5 分钟重新验证（生产强制 MFA Step-Up）。
+前端敏感展示仅保存在组件局部内存，不进入 Query/Mutation 缓存或持久化存储。20 秒后、关闭详情、切换界面/路由、隐藏、锁定或退出立即清除，晚到响应不能恢复展示。
 每次显示/复制都有审计；复制事件请求不带密码。剪贴板清理只尽力执行，浏览器可能拒绝权限，不承诺绝对成功。
 
 ### 检索和批量管理
@@ -164,8 +167,8 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
   uv run --locked python -m app.cli rotate-keys --target-version 2
   uv run --locked python -m app.cli verify-keys
   ```
-- **回收站批量恢复与辅助邮箱统计**：回收站支持多选并原子批量恢复（`POST /api/v1/accounts/batch-restore`）；独立 `/recovery-emails` 路由支持搜索、排序与关联账号预览。
-- **Session 设备管理、深色模式、统计图表与 PWA**：活动会话展示脱敏白名单设备/系统/浏览器标签与活跃过滤；支持浅色/深色/跟随系统主题切换（WCAG 2.2 AA）；内置安全聚合趋势/状态/2FA 图表；支持同源离线 PWA 安装（Service Worker 严格不缓存 `/api/*` 与凭据响应）。
+- **回收站批量恢复、永久删除与辅助邮箱统计**：回收站支持多选并原子批量恢复（`POST /api/v1/accounts/batch-restore`）以及 MFA Step-Up 保护的单条/批量永久删除（`DELETE /api/v1/accounts/{id}/permanent`、`POST /api/v1/accounts/batch-permanent-delete`）；独立 `/recovery-emails` 与 `/apps` 路由支持辅助邮箱及第三方已注册应用统计与管理。
+- **Session 设备管理、深色模式、统计图表与 PWA**：活动会话展示脱敏白名单设备/系统/浏览器标签与活跃过滤；支持浅色/深色/跟随系统主题切换（WCAG 2.2 AA）；内置安全聚合趋势/状态/2FA 图表；支持可安装离线提示 PWA（Service Worker 严格不缓存 `/api/*` 与凭据响应，离线时仅展示无状态提示页）。
 - **审计**：按事件、账号/Session ID、日期过滤并分页，只返回白名单事件和脱敏操作代码。
 - **状态与锁定**：当前应用/迁移版本、真实备份状态；可改闲置期限，改密/TOTP/恢复码原功能保留。
 
@@ -186,6 +189,8 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 | `make test-db` | 真实 PostgreSQL 集成测试，必须指定独立测试库 |
 | `make dev-api` / `make dev-web` | 原生启动本机开发服务 |
 | `make compose-check` | 只验证 Compose 配置，不启动容器 |
+| `make gate-release` | 本地发布前静态/契约/文档/配置/单测/非集成覆盖率门禁 |
+| `make gate-release-full` | 本地发布前完整门禁（叠加真实 PostgreSQL 集成测试、全量覆盖率与实时 E2E） |
 | `cd frontend && pnpm test:e2e` | Chromium 认证/账号 UI 冒烟测试，需已安装 Playwright Chromium；或通过 `PLAYWRIGHT_CHROME_EXECUTABLE` 指定本机 Chrome |
 
 数据库测试设置 `TEST_DATABASE_URL`，数据库名必须以 `gm_test` 开头。每个测试创建随机独立 schema，
@@ -205,12 +210,14 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 - `POST /api/v1/auth/totp/setup`、`confirm`、`regenerate-recovery-codes`、`disable`：TOTP 绑定、恢复码与（存在 Passkey 时）停用。
 - `GET /api/v1/auth/webauthn/credentials`、`POST /api/v1/auth/webauthn/(register|login|step-up)/(options|verify)`、`PATCH/DELETE /api/v1/auth/webauthn/credentials/{id}`：WebAuthn/Passkey 全链路管理与认证。
 - `GET/POST /api/v1/accounts`、`GET/PATCH/DELETE /api/v1/accounts/{id}`：服务端查询/分页/新增/详情/编辑/软删除。
-- `POST /api/v1/accounts/{id}/archive|restore|mark-verified|mark-logged-in`：携带 `row_version` 的账号操作。
-- `POST /api/v1/accounts/{id}/reveal-password|copy-password-event`：独立敏感访问与复制审计。
+- `DELETE /api/v1/accounts/{id}/permanent`、`POST /api/v1/accounts/batch-permanent-delete`：回收站单条/批量不可逆永久删除，强制最近 5 分钟内 MFA Step-Up。
+- `POST /api/v1/accounts/{id}/archive|unarchive|restore|mark-verified|mark-logged-in`：携带 `row_version` 的账号操作。
+- `POST /api/v1/accounts/{id}/reveal-password|copy-password-event|reveal-sensitive`：独立敏感访问（密码与手机号/敏感备注按需 Step-Up）与复制审计。
 - `GET /api/v1/dashboard/summary|registration-trend|status-distribution|recovery-email-usage`：全局 KPI 与图表安全聚合统计。
 - `POST /api/v1/accounts/batch-status|batch-tags|batch-restore`：整批事务，输入所选账号 ID/版本与目标状态/标签或回收站批量恢复。
 - `GET /api/v1/accounts/options`：非删除辅助账号搜索/分页，只返回 ID、编号和邮箱。
 - `GET /api/v1/recovery-emails`、`GET /api/v1/recovery-emails/{encoded_email}/accounts`：分页使用量统计与按邮箱关联账号预览。
+- `GET/POST /api/v1/apps`、`GET /api/v1/apps/usage`、`PATCH/DELETE /api/v1/apps/{id}`、`POST /api/v1/apps/fetch-icon`：第三方已注册应用目录、用量统计及带 SSRF/总时限/并发/限流保护的图标抓取。
 - `POST /api/v1/auth/activity`：仅用户交互触发、CSRF 保护、不轮换 Token 的会话活动确认。
 - `GET/POST /api/v1/tags`、`PATCH/DELETE /api/v1/tags/{id}`：标签管理。
 - `POST /api/v1/imports/csv/preview|commit`：原始 text/csv 请求；预览 options 为 JSON 查询参数，提交只带 receipt_id，Schema/客户端由 OpenAPI 生成。

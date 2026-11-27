@@ -11,7 +11,12 @@ export function AccountAppPill({
 }: {
   app: Pick<
     AccountAppItem,
-    'app_name' | 'app_domain' | 'app_icon_data' | 'status' | 'note' | 'banned_at'
+    | 'app_name'
+    | 'app_domain'
+    | 'app_icon_data'
+    | 'status'
+    | 'note'
+    | 'banned_at'
   >;
   compact?: boolean;
   className?: string;

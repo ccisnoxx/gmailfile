@@ -58,6 +58,8 @@ def version(row):
         ("GET", "/{id}", None),
         ("PATCH", "/{id}", {"row_version": 1, "purpose": "test"}),
         ("DELETE", "/{id}", {"row_version": 1}),
+        ("DELETE", "/{id}/permanent", {"row_version": 1}),
+        ("POST", "/batch-permanent-delete", {"accounts": [{"id": str(uuid4()), "row_version": 1}]}),
         *[
             ("POST", "/{id}/" + action, {} if "password" in action else {"row_version": 1})
             for action in [
@@ -67,6 +69,7 @@ def version(row):
                 "mark-logged-in",
                 "reveal-password",
                 "copy-password-event",
+                "reveal-sensitive",
             ]
         ],
     ],
@@ -85,6 +88,8 @@ def test_all_account_endpoints_require_full_auth(env, method, path, body):
         ("POST", "", payload()),
         ("PATCH", "/{id}", {"row_version": 1}),
         ("DELETE", "/{id}", {"row_version": 1}),
+        ("DELETE", "/{id}/permanent", {"row_version": 1}),
+        ("POST", "/batch-permanent-delete", {"accounts": [{"id": str(uuid4()), "row_version": 1}]}),
         *[
             ("POST", "/{id}/" + action, {} if "password" in action else {"row_version": 1})
             for action in [
@@ -94,6 +99,7 @@ def test_all_account_endpoints_require_full_auth(env, method, path, body):
                 "mark-logged-in",
                 "reveal-password",
                 "copy-password-event",
+                "reveal-sensitive",
             ]
         ],
     ],
@@ -129,11 +135,14 @@ def test_complete_crud_encryption_and_response_whitelist(env, signed):
     row = request(signed, "POST", body=body).json()
     assert row["gmail_email"] == body["gmail_email"]
     assert row["registered_at"].startswith("2026-11-24T10:30:00")
-    assert row["phone"] == phone and row["notes"] == notes
-    client, _ = signed
+    # 默认详情不返回手机号与敏感备注原文，仅返回是否存在标记
+    assert row["has_phone"] is True and row["has_notes"] is True
+    assert row["phone"] is None and row["notes"] is None
+    client, state = signed
     summary = client.get(ROOT).json()["items"][0]
     detail = client.get(ROOT + "/" + row["id"]).json()
     assert detail["registered_at"].startswith("2026-11-24T10:30:00")
+    assert detail["has_phone"] is True and detail["has_notes"] is True
     for response in [row, summary, detail]:
         assert "password" not in response
         assert all(
@@ -141,7 +150,27 @@ def test_complete_crud_encryption_and_response_whitelist(env, signed):
             for field in response
         )
         assert password not in str(response)
+        assert phone not in str(response)
+        assert notes not in str(response)
     assert "phone" not in summary and "notes" not in summary
+
+    # 按需敏感字段接口与覆盖已有密码均要求最近重新验证
+    unverified_reveal = request(signed, "POST", "/" + row["id"] + "/reveal-sensitive", {})
+    assert unverified_reveal.status_code == 403
+    assert unverified_reveal.json()["error"]["code"] == "REAUTH_REQUIRED"
+    unverified_pw_patch = request(
+        signed, "PATCH", "/" + row["id"], {**version(row), "password": random_token()}
+    )
+    assert unverified_pw_patch.status_code == 403
+    assert unverified_pw_patch.json()["error"]["code"] == "REAUTH_REQUIRED"
+
+    state = post(client, "reverify", state, {"password": env["password"]}).json()
+    signed = (client, state)
+    sensitive = request(signed, "POST", "/" + row["id"] + "/reveal-sensitive", {})
+    assert sensitive.status_code == 200
+    assert sensitive.headers["Cache-Control"] == "no-store"
+    assert sensitive.json() == {"phone": phone, "notes": notes}
+
     with Session(env["engine"]) as db:
         stored = db.get(GmailAccount, row["id"])
         original = stored.password_ciphertext
@@ -159,6 +188,8 @@ def test_complete_crud_encryption_and_response_whitelist(env, signed):
             )
             with pytest.raises(DecryptionError):
                 client.app.state.encryption.decrypt(cipher, "gmail_account", uuid4(), field)
+        events = db.scalars(select(AuditEvent).where(AuditEvent.account_id == row["id"])).all()
+        assert any(e.event_type == "sensitive_fields_revealed" for e in events)
     updated = request(
         signed,
         "PATCH",
@@ -167,7 +198,8 @@ def test_complete_crud_encryption_and_response_whitelist(env, signed):
     )
     assert updated.status_code == 200
     row = updated.json()
-    assert row["row_version"] == 2 and row["phone"] is None and row["notes"] is None
+    assert row["row_version"] == 2 and row["has_phone"] is False and row["has_notes"] is False
+    assert row["phone"] is None and row["notes"] is None
     with Session(env["engine"]) as db:
         assert db.get(GmailAccount, row["id"]).password_ciphertext == original
     assert (
@@ -496,11 +528,13 @@ def test_full_account_lifecycle_versions_visibility_password_and_audit(env, sign
     with Session(env["engine"]) as db:
         assert db.get(GmailAccount, row["id"]).password_ciphertext == cipher_v1
 
-    # 3. 修改密码（v3），重新验证后按需查看返回新密码
-    row = request(signed, "PATCH", "/" + row["id"], {**version(row), "password": rotated_pw}).json()
-    assert row["row_version"] == 3
+    # 3. 修改密码（v3）需先重新验证，验证后修改并按需查看返回新密码
+    denied_pw = request(signed, "PATCH", "/" + row["id"], {**version(row), "password": rotated_pw})
+    assert denied_pw.status_code == 403 and denied_pw.json()["error"]["code"] == "REAUTH_REQUIRED"
     state = post(client, "reverify", state, {"password": env["password"]}).json()
     signed = (client, state)
+    row = request(signed, "PATCH", "/" + row["id"], {**version(row), "password": rotated_pw}).json()
+    assert row["row_version"] == 3
     revealed = request(signed, "POST", "/" + row["id"] + "/reveal-password", {})
     assert revealed.status_code == 200 and revealed.json()["password"] == rotated_pw
 
@@ -604,3 +638,101 @@ def test_concurrent_restore_only_one_commits(signed):
     assert sorted(r.status_code for r in responses) == [200, 409]
     loser = next(r for r in responses if r.status_code == 409)
     assert loser.json()["error"]["code"] in {"ROW_VERSION_CONFLICT", "ACCOUNT_NOT_DELETED"}
+
+
+def test_permanent_delete_requires_mfa_step_up_unlinks_recovery_and_releases_email(env):
+    import pyotp
+
+    from app.services.audit_integrity import verify_audit_chain
+
+    client = env["client"]()
+    totp_secret, enrolled = enroll(env, client)
+    state = enrolled["session"]
+    auth_pair = (client, state)
+
+    target_email = "purge.reusable@gmail.com"
+    acc_a = create(auth_pair, gmail_email=target_email)
+    acc_b = create(
+        auth_pair,
+        gmail_email="dependent.account@gmail.com",
+        recovery_account_id=acc_a["id"],
+        recovery_email_external=None,
+    )
+    acc_c = create(auth_pair, gmail_email="batch.purge@gmail.com")
+
+    trashed_a = request(auth_pair, "DELETE", "/" + acc_a["id"], version(acc_a)).json()
+    trashed_c = request(auth_pair, "DELETE", "/" + acc_c["id"], version(acc_c)).json()
+
+    # 未完成最近重新验证时，单条与批量永久删除均被拒绝
+    denied_single = request(
+        auth_pair, "DELETE", f"/{trashed_a['id']}/permanent", version(trashed_a)
+    )
+    assert denied_single.status_code == 403
+    assert denied_single.json()["error"]["code"] == "REAUTH_REQUIRED"
+
+    denied_batch = request(
+        auth_pair,
+        "POST",
+        "/batch-permanent-delete",
+        {"accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}]},
+    )
+    assert denied_batch.status_code == 403
+    assert denied_batch.json()["error"]["code"] == "REAUTH_REQUIRED"
+
+    # 仅输入密码未提供 TOTP 时，因永久删除强制 require_mfa=True，依然拒绝
+    state = post(client, "reverify", state, {"password": env["password"]}).json()
+    auth_pair = (client, state)
+    denied_pwd_only = request(
+        auth_pair, "DELETE", f"/{trashed_a['id']}/permanent", version(trashed_a)
+    )
+    assert denied_pwd_only.status_code == 403
+    assert denied_pwd_only.json()["error"]["code"] == "REAUTH_REQUIRED"
+
+    # 使用密码 + TOTP 完成 MFA Step-Up 后允许执行单条永久删除
+    advance(env, 31)
+    code = pyotp.TOTP(totp_secret).at(env["clock"][0])
+    state = post(client, "reverify", state, {"password": env["password"], "totp_code": code}).json()
+    auth_pair = (client, state)
+
+    ok_single = request(auth_pair, "DELETE", f"/{trashed_a['id']}/permanent", version(trashed_a))
+    assert ok_single.status_code == 200
+
+    # 依赖账号的站内辅助邮箱已自动转为外部文本，且版本号递增
+    updated_b = client.get(ROOT + "/" + acc_b["id"]).json()
+    assert updated_b["recovery_account_id"] is None
+    assert updated_b["recovery_email_external"] == target_email
+    assert updated_b["row_version"] == acc_b["row_version"] + 1
+
+    # 邮箱唯一性已释放，允许重新创建同地址账号
+    recreated = create(auth_pair, gmail_email=target_email)
+    assert recreated["id"] != acc_a["id"]
+
+    # 批量永久删除在同一 Step-Up 窗口内成功执行
+    ok_batch = request(
+        auth_pair,
+        "POST",
+        "/batch-permanent-delete",
+        {"accounts": [{"id": trashed_c["id"], "row_version": trashed_c["row_version"]}]},
+    )
+    assert ok_batch.status_code == 200
+    assert ok_batch.json()["updated_ids"] == [trashed_c["id"]]
+
+    # 审计哈希链完整且仍保留已永久删除账号的 UUID 审计记录
+    with Session(env["engine"]) as db:
+        status = verify_audit_chain(db)
+        assert status.valid is True
+        purged_events = db.scalars(
+            select(AuditEvent).where(AuditEvent.event_type == "account_permanently_deleted")
+        ).all()
+        assert {str(e.account_id) for e in purged_events} == {trashed_a["id"], trashed_c["id"]}
+
+    # 超过 5 分钟 Step-Up 窗口后再次永久删除必须重新被拒绝
+    trashed_recreated = request(
+        auth_pair, "DELETE", "/" + recreated["id"], version(recreated)
+    ).json()
+    advance(env, 301)
+    expired = request(
+        auth_pair, "DELETE", f"/{trashed_recreated['id']}/permanent", version(trashed_recreated)
+    )
+    assert expired.status_code == 403
+    assert expired.json()["error"]["code"] == "REAUTH_REQUIRED"

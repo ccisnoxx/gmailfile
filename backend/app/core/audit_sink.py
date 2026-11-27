@@ -9,9 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import logging.handlers
+import os
 import socket
 import sys
+import tempfile
+import threading
 from datetime import UTC
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from sqlalchemy import event
@@ -22,6 +26,8 @@ from app.models import AuditEvent
 
 AUDIT_LOGGER_NAME = "gmail_manager.audit"
 _PENDING_KEY = "pending_audit_records"
+MAX_SPOOL_BYTES = 10 * 1024 * 1024
+_SPOOL_LOCK = threading.Lock()
 
 _FACILITY_MAP: dict[str, int] = {
     "auth": logging.handlers.SysLogHandler.LOG_AUTH,
@@ -59,15 +65,138 @@ def parse_syslog_target(address: str) -> tuple[str | tuple[str, int], socket.Soc
     return (parsed.hostname, port), socktype
 
 
+def _append_spool_record(spool_file: Path, payload: dict[str, object]) -> None:
+    line = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+    with _SPOOL_LOCK:
+        spool_file.parent.mkdir(parents=True, exist_ok=True)
+        current_size = spool_file.stat().st_size if spool_file.exists() else 0
+        if current_size + len(line) > MAX_SPOOL_BYTES:
+            logging.getLogger("gmail_manager").error(
+                "audit_spool_full",
+                extra={"safe_fields": {"max_bytes": MAX_SPOOL_BYTES}},
+            )
+            return
+        fd = os.open(spool_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            os.chmod(spool_file, 0o600)
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+
+
+def _rewrite_spool_lines(spool_file: Path, lines: list[str]) -> None:
+    if not lines:
+        spool_file.unlink(missing_ok=True)
+        return
+    spool_file.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".audit_spool_", dir=str(spool_file.parent))
+    try:
+        os.chmod(tmp_name, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            for item in lines:
+                handle.write(item.rstrip("\n") + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, spool_file)
+    except OSError:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
 class _ResilientSysLogHandler(logging.handlers.SysLogHandler):
-    """远程 Syslog 写入异常时转为安全告警日志，不向 stderr 倾倒堆栈且不阻断事务。"""
+    """远程 Syslog 写入异常时转为安全告警日志并写入可选持久化队列，不阻断事务。"""
+
+    def __init__(self, *args, spool_file: Path | None = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._spool_file = spool_file
+        self.last_emit_failed = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.last_emit_failed = False
+        super().emit(record)
 
     def handleError(self, record: logging.LogRecord) -> None:
+        self.last_emit_failed = True
         _, exc, _ = sys.exc_info()
         logging.getLogger("gmail_manager").error(
             "audit_sink_failed",
             extra={"safe_fields": {"exception_type": type(exc).__name__ if exc else "OSError"}},
         )
+        if self._spool_file is not None and not getattr(record, "_from_spool", False):
+            payload = getattr(record, "audit_payload", None)
+            if isinstance(payload, dict):
+                try:
+                    _append_spool_record(self._spool_file, payload)
+                except OSError as spool_exc:
+                    logging.getLogger("gmail_manager").error(
+                        "audit_spool_write_failed",
+                        extra={"safe_fields": {"exception_type": type(spool_exc).__name__}},
+                    )
+
+
+def _drain_spool_with_handler(handler: _ResilientSysLogHandler) -> tuple[int, int]:
+    spool_file = handler._spool_file
+    if spool_file is None or not spool_file.is_file():
+        return 0, 0
+    with _SPOOL_LOCK:
+        if not spool_file.is_file():
+            return 0, 0
+        raw_lines = [
+            line for line in spool_file.read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
+        if not raw_lines:
+            spool_file.unlink(missing_ok=True)
+            return 0, 0
+        flushed = 0
+        remaining: list[str] = []
+        for idx, line in enumerate(raw_lines):
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            rec = logging.LogRecord(
+                name=AUDIT_LOGGER_NAME,
+                level=logging.INFO,
+                pathname=__file__,
+                lineno=0,
+                msg=str(payload.get("event_type", "audit")),
+                args=(),
+                exc_info=None,
+            )
+            rec.audit_payload = payload
+            rec._from_spool = True
+            handler.emit(rec)
+            if handler.last_emit_failed:
+                remaining = raw_lines[idx:]
+                break
+            flushed += 1
+        _rewrite_spool_lines(spool_file, remaining)
+        return flushed, len(remaining)
+
+
+def flush_audit_spool(settings: Settings) -> dict[str, int]:
+    """将持久化磁盘队列中的待发审计记录重放至远程 Syslog。"""
+    if not settings.audit_syslog_address:
+        raise ValueError("未配置 AUDIT_SYSLOG_ADDRESS，无法重放远程 Syslog 队列")
+    if settings.audit_syslog_spool_file is None:
+        raise ValueError("未配置 AUDIT_SYSLOG_SPOOL_FILE，没有可重放的持久化队列")
+    target, socktype = parse_syslog_target(settings.audit_syslog_address)
+    facility = _FACILITY_MAP[settings.audit_syslog_facility]
+    kwargs: dict = {
+        "address": target,
+        "facility": facility,
+        "spool_file": settings.audit_syslog_spool_file,
+    }
+    if socktype is not None:
+        kwargs["socktype"] = socktype
+    handler = _ResilientSysLogHandler(**kwargs)
+    handler.ident = "gmail-manager-audit: "
+    handler.setFormatter(AuditJsonFormatter())
+    try:
+        flushed, remaining = _drain_spool_with_handler(handler)
+        return {"flushed": flushed, "remaining": remaining}
+    finally:
+        handler.close()
 
 
 def configure_audit_sink(settings: Settings) -> logging.Logger:
@@ -86,7 +215,11 @@ def configure_audit_sink(settings: Settings) -> logging.Logger:
     if settings.audit_syslog_address:
         target, socktype = parse_syslog_target(settings.audit_syslog_address)
         facility = _FACILITY_MAP[settings.audit_syslog_facility]
-        kwargs: dict = {"address": target, "facility": facility}
+        kwargs: dict = {
+            "address": target,
+            "facility": facility,
+            "spool_file": settings.audit_syslog_spool_file,
+        }
         if socktype is not None:
             kwargs["socktype"] = socktype
         syslog_handler = _ResilientSysLogHandler(**kwargs)
@@ -124,6 +257,16 @@ def emit_audit_records(records: list[dict[str, object]]) -> None:
         return
     audit_logger = logging.getLogger(AUDIT_LOGGER_NAME)
     app_logger = logging.getLogger("gmail_manager")
+    # 投递新记录前，若已配置 Syslog 磁盘补偿队列则优先尝试按 FIFO 重放历史积压。
+    for handler in list(audit_logger.handlers):
+        if isinstance(handler, _ResilientSysLogHandler) and handler._spool_file is not None:
+            try:
+                _drain_spool_with_handler(handler)
+            except OSError as exc:
+                app_logger.error(
+                    "audit_spool_drain_failed",
+                    extra={"safe_fields": {"exception_type": type(exc).__name__}},
+                )
     for payload in records:
         try:
             audit_logger.info(str(payload["event_type"]), extra={"audit_payload": payload})

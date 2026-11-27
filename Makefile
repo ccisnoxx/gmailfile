@@ -2,8 +2,8 @@ COMPOSE = docker compose --env-file .env -f infra/docker-compose.yml
 DEV_COMPOSE = $(COMPOSE) -f infra/docker-compose.dev.yml
 
 .PHONY: install generate-api check test test-db dev-api dev-web compose-check up-dev \
-	check-openapi compose-check-all check-nginx scan-dist audit-deps \
-	test-cov test-cov-db test-e2e test-e2e-live test-a11y test-compat bench-csv gate-release
+	check-openapi check-docs compose-check-all check-nginx scan-dist audit-deps \
+	test-cov test-cov-db test-e2e test-e2e-live test-a11y test-compat bench-csv gate-release gate-release-full
 install:
 	cd backend && uv sync --locked
 	cd frontend && pnpm install --frozen-lockfile
@@ -46,6 +46,9 @@ bench-csv:
 check-openapi:
 	cd backend && uv run --locked python ../scripts/check-release-gates.py check-openapi
 
+check-docs:
+	cd backend && uv run --locked python ../scripts/check-release-gates.py check-docs
+
 compose-check-all:
 	cd backend && uv run --locked python ../scripts/check-release-gates.py compose-all
 
@@ -58,7 +61,10 @@ scan-dist:
 audit-deps:
 	cd backend && uv run --locked python ../scripts/check-release-gates.py audit-deps
 
-gate-release: check check-openapi compose-check-all check-nginx scan-dist audit-deps test test-cov
+gate-release: check check-openapi check-docs compose-check-all check-nginx scan-dist audit-deps test test-cov
+
+# 本地/私有发布前完整验证门禁（需独立 PostgreSQL TEST_DATABASE_URL 与 Playwright 环境）
+gate-release-full: gate-release test-db test-cov-db test-e2e-live
 
 dev-api:
 	cd backend && uv run --locked uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log --no-proxy-headers

@@ -35,7 +35,6 @@ const OperationsPage = lazy(() =>
   })),
 );
 
-
 type CredentialValues = Credentials &
   Partial<Pick<ChangePasswordInput, 'new_password'>>;
 
@@ -202,7 +201,9 @@ function AuthWorkspace({
       {!auth.session ? (
         <div role="status" className="flex flex-col items-start gap-4">
           <p className="text-muted-foreground">
-            {auth.notice.message ? '请刷新页面以重新建立安全会话。' : '正在建立安全连接…'}
+            {auth.notice.message
+              ? '请刷新页面以重新建立安全会话。'
+              : '正在建立安全连接…'}
           </p>
           {auth.notice.message && (
             <Button type="button" onClick={() => window.location.reload()}>

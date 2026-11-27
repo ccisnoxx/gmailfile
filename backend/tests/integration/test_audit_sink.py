@@ -280,4 +280,58 @@ def test_audit_sink_syslog_udp_unix_and_resilient_failure_handling(db_engine, se
                 unix_sock.close()
     finally:
         settings.audit_syslog_address = ""
+        settings.audit_syslog_spool_file = None
+        configure_audit_sink(settings)
+
+
+def test_audit_sink_spools_failed_syslog_events_and_flushes_on_recovery(
+    db_engine, settings, tmp_path
+):
+    from app.core.audit_sink import flush_audit_spool
+
+    spool_file = tmp_path / "audit-spool.jsonl"
+    try:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="gm_sp_") as short_dir:
+            unix_path = Path(short_dir) / "s.sock"
+            # 1. 先让套接字存在以初始化 handler，随后移除套接字模拟 Syslog 暂时宕机
+            down_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            down_sock.bind(str(unix_path))
+            settings.audit_syslog_address = str(unix_path)
+            settings.audit_syslog_spool_file = spool_file
+            configure_audit_sink(settings)
+            down_sock.close()
+            unix_path.unlink(missing_ok=True)
+
+            with Session(db_engine) as db:
+                attach_audit_session_hooks(db)
+                with db.begin():
+                    ev = AuditEvent(event_type="logout", event_metadata={"operation": "spool"})
+                    db.add(ev)
+                    db.flush()
+                    expected_seq = ev.seq
+
+            assert spool_file.is_file()
+            assert (spool_file.stat().st_mode & 0o777) == 0o600
+            queued = _parse_json_lines(spool_file.read_text(encoding="utf-8"))
+            assert len(queued) == 1 and queued[0]["seq"] == expected_seq
+
+            # 2. Syslog 恢复上线，执行 flush_audit_spool 重放并清空磁盘队列
+            up_sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            try:
+                up_sock.bind(str(unix_path))
+                up_sock.settimeout(2.0)
+                result = flush_audit_spool(settings)
+                assert result == {"flushed": 1, "remaining": 0}
+                assert not spool_file.exists()
+                packet, _ = up_sock.recvfrom(4096)
+                replayed = json.loads(
+                    packet.decode("utf-8").split("gmail-manager-audit: ", 1)[1].rstrip("\x00\n")
+                )
+                assert replayed["seq"] == expected_seq
+                assert replayed["event_type"] == "logout"
+            finally:
+                up_sock.close()
+    finally:
+        settings.audit_syslog_address = ""
+        settings.audit_syslog_spool_file = None
         configure_audit_sink(settings)

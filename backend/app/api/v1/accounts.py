@@ -27,6 +27,7 @@ from app.schemas.accounts import (
     RegisteredAppResponse,
     RegisteredAppUsage,
     RegistrationTrendResponse,
+    SensitiveFieldsResponse,
     Sort,
     StatusDistributionResponse,
     SummaryQuery,
@@ -37,7 +38,8 @@ from app.schemas.accounts import (
 )
 from app.schemas.auth import ActionResponse
 from app.schemas.system import ErrorResponse
-from app.services.accounts import AccountService
+from app.services.accounts import AccountError, AccountService
+from app.services.accounts.app_icon import try_acquire_icon_fetch_slot
 from app.services.auth import AuthService
 
 router = APIRouter(
@@ -259,6 +261,15 @@ def copied(account_id: UUID, body: Input, service: Service):
     return ActionResponse()
 
 
+@router.post(
+    "/accounts/{account_id}/reveal-sensitive",
+    response_model=SensitiveFieldsResponse,
+    operation_id="accountsRevealSensitive",
+)
+def reveal_sensitive(account_id: UUID, body: Input, service: Service):
+    return service.reveal_sensitive(account_id)
+
+
 @router.get("/tags", response_model=list[TagResponse], operation_id="tagsList")
 def tags(service: Service):
     return service.tags()
@@ -293,10 +304,19 @@ def apps_usage(service: Service):
 @router.post(
     "/apps/fetch-icon",
     response_model=AppIconFetchResponse,
+    responses={429: {"model": ErrorResponse}},
     operation_id="appsFetchIcon",
 )
 def app_fetch_icon(body: AppIconFetchInput, service: Service):
-    return service.fetch_app_icon(body.domain)
+    slot = try_acquire_icon_fetch_slot(service.auth.request.app.state.icon_fetch_semaphore)
+    if slot is None:
+        raise AccountError(
+            429, "APP_ICON_FETCH_BUSY", "当前已有多个应用图标抓取正在进行，请稍后重试"
+        )
+    try:
+        return service.fetch_app_icon(body.domain)
+    finally:
+        slot.release()
 
 
 @router.post(

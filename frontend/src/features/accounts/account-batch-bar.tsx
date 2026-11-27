@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import {
   accountsBatchPermanentDelete,
@@ -23,7 +23,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
+import {
+  StepUpVerifier,
+  useStepUpActive,
+} from '@/features/auth/step-up-verifier';
 import { statusLabels } from './constants';
 
 export function BatchBar({
@@ -31,6 +36,7 @@ export function BatchBar({
   tags,
   session,
   deleted = false,
+  onSession,
   complete,
   onFailure,
 }: {
@@ -38,34 +44,57 @@ export function BatchBar({
   tags: TagResponse[];
   session: SessionResponse;
   deleted?: boolean;
+  onSession?: (next: SessionResponse) => void;
   complete: (
     kind?: 'status' | 'tags' | 'restore' | 'permanent-delete',
   ) => Promise<void>;
   onFailure: (e: unknown) => void;
 }) {
+  const phraseId = useId();
   const returnFocus = useRef<HTMLElement | null>(null);
+  const [activeSession, setActiveSession] = useState<SessionResponse>(session);
   const [status, setStatus] = useState<AccountSummary['status']>('normal');
   const [tag, setTag] = useState('');
   const [confirmation, setConfirmation] = useState<
     'status' | 'tags' | 'restore' | 'permanent-delete' | null
   >(null);
+  const [confirmPhrase, setConfirmPhrase] = useState('');
+  const [reauthRequired, setReauthRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [failed, setFailed] = useState(false);
 
+  useEffect(() => {
+    setActiveSession(session);
+  }, [session]);
+
+  useEffect(() => {
+    if (confirmation === null) {
+      setConfirmPhrase('');
+      setReauthRequired(false);
+    }
+  }, [confirmation, selected.length]);
+
   const selectedTag = tags.find((t) => t.id === tag) ?? null;
   const effectiveTagId = selectedTag ? selectedTag.id : '';
+  const isPermanentDelete = confirmation === 'permanent-delete';
+  const expectedPhrase = `DELETE ${selected.length}`;
+  const stepUpActive = useStepUpActive(activeSession, true);
+  const stepUpReady = !reauthRequired && stepUpActive;
+  const phraseMatched = confirmPhrase.trim() === expectedPhrase;
+  const canSubmitPermanentDelete = stepUpReady && phraseMatched;
 
   async function submit() {
     if (!confirmation) return;
     const actionKind = confirmation;
+    if (actionKind === 'permanent-delete' && !canSubmitPermanentDelete) return;
     setBusy(true);
     setMessage('');
     const base = {
       accounts: selected.map((a) => ({ id: a.id, row_version: a.row_version })),
     };
     const options = {
-      headers: { 'X-CSRF-Token': session.csrf_token },
+      headers: { 'X-CSRF-Token': activeSession.csrf_token },
       throwOnError: true as const,
     };
     try {
@@ -83,9 +112,18 @@ export function BatchBar({
         });
       }
       setConfirmation(null);
+      setConfirmPhrase('');
+      setReauthRequired(false);
       await complete(actionKind);
     } catch (e) {
       const error = e as ErrorResponse;
+      if (error.error?.code === 'REAUTH_REQUIRED') {
+        setReauthRequired(true);
+        setMessage(
+          '二次验证已过期，请先完成管理员二次验证后再手动确认提交（整批未提交，不会自动重放）。',
+        );
+        return;
+      }
       const target = error.error?.details?.account_id;
       const row = target
         ? selected.find((a) => a.id === target)
@@ -139,6 +177,9 @@ export function BatchBar({
             disabled={!selected.length || busy || failed}
             onClick={() => {
               returnFocus.current = document.activeElement as HTMLElement;
+              setConfirmPhrase('');
+              setReauthRequired(false);
+              setMessage('');
               setConfirmation('permanent-delete');
             }}
           >
@@ -210,7 +251,7 @@ export function BatchBar({
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmation === 'permanent-delete'
+              {isPermanentDelete
                 ? '确认批量永久删除账号？'
                 : confirmation === 'restore'
                   ? '确认批量恢复账号'
@@ -218,7 +259,7 @@ export function BatchBar({
             </AlertDialogTitle>
             <AlertDialogDescription>
               对当前页选中的 {selected.length} 条
-              {confirmation === 'permanent-delete'
+              {isPermanentDelete
                 ? '已删除账号执行不可逆永久删除（彻底清除密码、备注、标签与应用关联，释放邮箱占用；若被其他账号用作站内辅助邮箱将自动转为外部文本保留）'
                 : confirmation === 'restore'
                   ? '已删除账号执行原子恢复（保留原状态、归档标记与标签）'
@@ -228,6 +269,42 @@ export function BatchBar({
               。整批成功或整批回滚，不包含其他页面的账号。
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {isPermanentDelete && (
+            <div className="space-y-3">
+              <StepUpVerifier
+                session={activeSession}
+                requireMfa
+                forceVerify={reauthRequired}
+                disabled={busy}
+                actionLabel="执行批量永久删除"
+                onVerified={(next) => {
+                  setActiveSession(next);
+                  setReauthRequired(false);
+                  setMessage('');
+                  onSession?.(next);
+                }}
+                onFailure={onFailure}
+              />
+              <div className="space-y-1.5">
+                <label htmlFor={phraseId} className="block text-xs font-medium">
+                  请输入{' '}
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
+                    {expectedPhrase}
+                  </code>{' '}
+                  以确认永久删除选中的 {selected.length} 条账号
+                </label>
+                <Input
+                  id={phraseId}
+                  type="text"
+                  autoComplete="off"
+                  disabled={busy}
+                  value={confirmPhrase}
+                  onChange={(e) => setConfirmPhrase(e.target.value)}
+                  placeholder={expectedPhrase}
+                />
+              </div>
+            </div>
+          )}
           {message && (
             <p role="alert" className="text-sm text-destructive">
               {message}
@@ -236,16 +313,18 @@ export function BatchBar({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>取消批量操作</AlertDialogCancel>
             <AlertDialogAction
-              variant={
-                confirmation === 'permanent-delete' ? 'destructive' : 'default'
+              variant={isPermanentDelete ? 'destructive' : 'default'}
+              disabled={
+                busy ||
+                failed ||
+                (isPermanentDelete && !canSubmitPermanentDelete)
               }
-              disabled={busy || failed}
               onClick={(e) => {
                 e.preventDefault();
                 void submit();
               }}
             >
-              {confirmation === 'permanent-delete'
+              {isPermanentDelete
                 ? '确认整批永久删除'
                 : confirmation === 'restore'
                   ? '确认整批恢复'

@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     LargeBinary,
     SmallInteger,
     String,
@@ -131,7 +132,10 @@ class RegisteredApp(IdentityMixin, CreatedMixin, Base):
 
 class GmailAccountApp(UpdatedMixin, Base):
     __tablename__ = "gmail_account_apps"
-    __table_args__ = (CheckConstraint("status IN ('active','restricted','banned')", name="status"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('active','restricted','banned')", name="status"),
+        Index("ix_gmail_account_apps_app_id_status", "app_id", "status"),
+    )
 
     account_id: Mapped[UUID] = mapped_column(
         ForeignKey("gmail_accounts.id", ondelete="CASCADE"), primary_key=True

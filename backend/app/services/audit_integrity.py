@@ -201,13 +201,94 @@ def _checkpoint_payload(checkpoint: dict) -> bytes:
         "latest_seq": checkpoint["latest_seq"],
         "latest_hash": checkpoint["latest_hash"],
     }
+    if "key_id" in checkpoint:
+        canonical["key_id"] = checkpoint["key_id"]
     return json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _load_ed25519_private_key(pem_bytes: bytes):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    try:
+        key = serialization.load_pem_private_key(pem_bytes, password=None)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("无效的 Ed25519 PEM 私钥文件") from exc
+    if not isinstance(key, Ed25519PrivateKey):
+        raise ValueError("审计非对称签名密钥必须是 Ed25519 私钥")
+    return key
+
+
+def _load_ed25519_public_key(pem_bytes: bytes):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    try:
+        key = serialization.load_pem_public_key(pem_bytes)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("无效的 Ed25519 PEM 公钥文件") from exc
+    if not isinstance(key, Ed25519PublicKey):
+        raise ValueError("审计非对称校验密钥必须是 Ed25519 公钥")
+    return key
+
+
+def _ed25519_key_id(public_key) -> str:
+    from cryptography.hazmat.primitives import serialization
+
+    raw_pub = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
+    )
+    return hashlib.sha256(raw_pub).hexdigest()[:16]
+
+
+def sign_audit_checkpoint_ed25519(
+    status: AuditChainStatus, private_key_pem: bytes, *, now: datetime | None = None
+) -> dict:
+    """使用 Ed25519 非对称私钥签发审计检查点，外部核验方仅需公钥即可验签且无法伪造。"""
+    if not status.valid:
+        raise ValueError("审计链完整性校验失败，拒绝签发检查点")
+    private_key = _load_ed25519_private_key(private_key_pem)
+    public_key = private_key.public_key()
+    stamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
+    checkpoint = {
+        "version": 2,
+        "algorithm": "ed25519",
+        "key_id": _ed25519_key_id(public_key),
+        "signed_at": stamp,
+        "total_events": status.total_events,
+        "latest_seq": status.latest_seq,
+        "latest_hash": status.latest_hash,
+    }
+    checkpoint["signature"] = private_key.sign(_checkpoint_payload(checkpoint)).hex()
+    return checkpoint
+
+
+def verify_audit_checkpoint_ed25519(checkpoint: dict, public_key_pem: bytes) -> bool:
+    from cryptography.exceptions import InvalidSignature
+
+    if checkpoint.get("version") != 2 or checkpoint.get("algorithm") != "ed25519":
+        return False
+    signature = checkpoint.get("signature")
+    if not isinstance(signature, str):
+        return False
+    try:
+        public_key = _load_ed25519_public_key(public_key_pem)
+        if checkpoint.get("key_id") != _ed25519_key_id(public_key):
+            return False
+        sig_bytes = bytes.fromhex(signature)
+        payload = _checkpoint_payload(checkpoint)
+        public_key.verify(sig_bytes, payload)
+        return True
+    except (ValueError, KeyError, InvalidSignature):
+        return False
 
 
 def sign_audit_checkpoint(
     status: AuditChainStatus, signing_key: bytes, *, now: datetime | None = None
 ) -> dict:
-    """对已验证的审计链末端生成可离线核验的 HMAC-SHA256 定期检查点签名。"""
+    """签发可离线核验的审计检查点：PEM 私钥使用 Ed25519（推荐），原始随机字节兼容 HMAC-SHA256。"""
+    if signing_key.lstrip().startswith(b"-----BEGIN "):
+        return sign_audit_checkpoint_ed25519(status, signing_key, now=now)
     if not status.valid:
         raise ValueError("审计链完整性校验失败，拒绝签发检查点")
     if len(signing_key) < 32:
@@ -228,6 +309,8 @@ def sign_audit_checkpoint(
 
 
 def verify_audit_checkpoint(checkpoint: dict, signing_key: bytes) -> bool:
+    if checkpoint.get("algorithm") == "ed25519" or checkpoint.get("version") == 2:
+        return verify_audit_checkpoint_ed25519(checkpoint, signing_key)
     if len(signing_key) < 32 or checkpoint.get("version") != 1:
         return False
     if checkpoint.get("algorithm") != "hmac-sha256":

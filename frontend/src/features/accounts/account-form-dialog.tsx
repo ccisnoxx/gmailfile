@@ -2,6 +2,7 @@ import type {
   AccountCreateWritable,
   AccountDetail,
   RegisteredAppResponse,
+  SessionResponse,
   TagResponse,
 } from '@/api/generated';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -13,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { StepUpVerifier } from '@/features/auth/step-up-verifier';
 import type {
   CreateAppHandler,
   FetchAppIconHandler,
@@ -22,6 +24,8 @@ import { AccountForm } from './account-form';
 export function AccountFormDialog({
   form,
   detail,
+  session,
+  reauthRequired = false,
   tags,
   appsCatalog = [],
   onCreateApp,
@@ -32,11 +36,14 @@ export function AccountFormDialog({
   onClose,
   onRestoreFocus,
   onReload,
+  onSession,
   onFailure,
   onSubmit,
 }: {
   form: 'new' | 'edit' | null;
   detail: AccountDetail | null;
+  session?: SessionResponse;
+  reauthRequired?: boolean;
   tags: TagResponse[];
   appsCatalog?: RegisteredAppResponse[];
   onCreateApp?: CreateAppHandler;
@@ -47,6 +54,7 @@ export function AccountFormDialog({
   onClose: () => void;
   onRestoreFocus: (event: Event) => void;
   onReload: (account: AccountDetail) => void;
+  onSession?: (next: SessionResponse) => void;
   onFailure: (error: unknown) => void;
   onSubmit: (body: AccountCreateWritable) => Promise<void>;
 }) {
@@ -73,6 +81,17 @@ export function AccountFormDialog({
           <Alert variant="destructive">
             <AlertDescription>{notice}</AlertDescription>
           </Alert>
+        )}
+        {reauthRequired && session && (
+          <StepUpVerifier
+            session={session}
+            requireMfa={Boolean(session.step_up_totp_required)}
+            forceVerify
+            disabled={busy}
+            actionLabel="保存密码修改"
+            onVerified={(next) => onSession?.(next)}
+            onFailure={onFailure}
+          />
         )}
         {conflict && detail && (
           <Button variant="outline" onClick={() => onReload(detail)}>

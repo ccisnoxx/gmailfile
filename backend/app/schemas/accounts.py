@@ -230,6 +230,13 @@ class AccountSummary(BaseModel):
 
 
 class AccountDetail(AccountSummary):
+    has_phone: bool = False
+    has_notes: bool = False
+    phone: str | None = None
+    notes: str | None = None
+
+
+class SensitiveFieldsResponse(BaseModel):
     phone: str | None
     notes: str | None
 

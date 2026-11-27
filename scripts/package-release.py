@@ -25,6 +25,9 @@ from app.core.release_meta import (  # noqa: E402
 
 ROOT_FILES = [
     "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
     "Makefile",
     ".env.example",
     ".dockerignore",

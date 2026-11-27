@@ -60,6 +60,9 @@ import type {
   AccountsRevealPasswordData,
   AccountsRevealPasswordErrors,
   AccountsRevealPasswordResponses,
+  AccountsRevealSensitiveData,
+  AccountsRevealSensitiveErrors,
+  AccountsRevealSensitiveResponses,
   AccountsUnarchiveData,
   AccountsUnarchiveErrors,
   AccountsUnarchiveResponses,
@@ -1294,6 +1297,29 @@ export const accountsCopyPasswordEvent = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/accounts/{account_id}/copy-password-event',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Reveal Sensitive
+ */
+export const accountsRevealSensitive = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsRevealSensitiveData, ThrowOnError>,
+): RequestResult<
+  AccountsRevealSensitiveResponses,
+  AccountsRevealSensitiveErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsRevealSensitiveResponses,
+    AccountsRevealSensitiveErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/{account_id}/reveal-sensitive',
     ...options,
     headers: {
       'Content-Type': 'application/json',

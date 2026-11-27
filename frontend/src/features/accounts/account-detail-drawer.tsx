@@ -18,6 +18,7 @@ import {
   type AccountAction,
 } from './constants';
 import { PasswordControl } from './password-control';
+import { SensitiveFieldsControl } from './sensitive-fields-control';
 
 export function AccountDetailDrawer({
   open,
@@ -90,13 +91,23 @@ export function AccountDetailDrawer({
                 </div>
               </div>
               {!detail.deleted_at && (
-                <PasswordControl
-                  key={`${detail.id}-${secretEpoch}`}
-                  accountId={detail.id}
-                  session={session}
-                  onSession={onSession}
-                  onFailure={onFailure}
-                />
+                <>
+                  <PasswordControl
+                    key={`${detail.id}-${secretEpoch}`}
+                    accountId={detail.id}
+                    session={session}
+                    onSession={onSession}
+                    onFailure={onFailure}
+                  />
+                  <SensitiveFieldsControl
+                    key={`${detail.id}-sensitive-${secretEpoch}`}
+                    detail={detail}
+                    session={session}
+                    onSession={onSession}
+                    onFailure={onFailure}
+                    onCopy={onCopy}
+                  />
+                </>
               )}
               <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-4 text-sm">
                 {[
@@ -117,7 +128,12 @@ export function AccountDetailDrawer({
                       </Button>
                     </div>,
                   ],
-                  ['绑定手机号', detail.phone || '—'],
+                  [
+                    '绑定手机号',
+                    detail.has_phone || detail.phone
+                      ? '已加密保存（请点击上方按需查看）'
+                      : '—',
+                  ],
                   ['二步验证', factorLabels[detail.two_factor_status]],
                   ['用途', detail.purpose || '—'],
                   [
@@ -136,7 +152,12 @@ export function AccountDetailDrawer({
                   ['最后登录', localDate(detail.last_login_at)],
                   ['最后验证', localDate(detail.last_verified_at)],
                   ['密码修改', localDate(detail.password_changed_at)],
-                  ['敏感备注', detail.notes || '—'],
+                  [
+                    '敏感备注',
+                    detail.has_notes || detail.notes
+                      ? '已加密保存（请点击上方按需查看）'
+                      : '—',
+                  ],
                   ['归档时间', localDate(detail.archived_at)],
                   ['删除时间', localDate(detail.deleted_at)],
                   ['创建时间', localDate(detail.created_at)],
