@@ -5,8 +5,10 @@ import {
   EmptyState,
   GlassPanel,
   GmailMark,
+  isEditableElement,
   LoadingState,
   TagPill,
+  useAppShellContext,
 } from '@/components/macos';
 import { cn } from '@/lib/utils';
 
@@ -99,6 +101,8 @@ export function AccountListPane({
   isLoading = false,
   isError = false,
   onRetry,
+  hasInheritedFilter = false,
+  onClearInheritedFilter,
   className,
 }: {
   accounts: AccountSummary[];
@@ -115,8 +119,12 @@ export function AccountListPane({
   isLoading?: boolean;
   isError?: boolean;
   onRetry?: () => void;
+  hasInheritedFilter?: boolean;
+  onClearInheritedFilter?: () => void;
   className?: string;
 }) {
+  const shell = useAppShellContext();
+  const inPersistentShell = Boolean(shell?.persistentShell);
   const [funnelOpen, setFunnelOpen] = useState(false);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [only2Fa, setOnly2Fa] = useState(false);
@@ -124,7 +132,7 @@ export function AccountListPane({
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!onSearchQueryChange) return;
+    if (!onSearchQueryChange || inPersistentShell) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         if (document.querySelector('[role="dialog"], [role="alertdialog"]')) {
@@ -132,11 +140,23 @@ export function AccountListPane({
         }
         event.preventDefault();
         searchInputRef.current?.focus();
+        return;
+      }
+      if (
+        event.key === '/' &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !isEditableElement(event.target) &&
+        !document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onSearchQueryChange]);
+  }, [inPersistentShell, onSearchQueryChange]);
 
   const visibleAccounts = useMemo(() => {
     return accounts.filter((account) => {
@@ -196,7 +216,11 @@ export function AccountListPane({
               ref={searchInputRef}
               type="search"
               aria-label="搜索账号（编号、邮箱或辅助邮箱）"
-              placeholder="搜索编号、邮箱或辅助邮箱（⌘/Ctrl K）"
+              placeholder={
+                inPersistentShell
+                  ? '搜索编号、邮箱或辅助邮箱（按 / 聚焦）'
+                  : '搜索编号、邮箱或辅助邮箱（⌘/Ctrl K）'
+              }
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
               maxLength={254}
@@ -213,6 +237,21 @@ export function AccountListPane({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {hasInheritedFilter && (
+        <div className="mx-4 mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-[var(--badge-blue-border)] bg-[var(--badge-blue-bg)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--badge-blue-text)]">
+          <span>已继承主列表筛选队列</span>
+          {onClearInheritedFilter && (
+            <button
+              type="button"
+              onClick={onClearInheritedFilter}
+              className="font-semibold underline hover:opacity-85"
+            >
+              显示全部
+            </button>
+          )}
         </div>
       )}
 
@@ -386,6 +425,7 @@ export function AccountListPane({
               >
                 <button
                   type="button"
+                  data-account-item="true"
                   aria-current={isSelected ? 'true' : undefined}
                   onClick={() => onSelectAccount(account.id)}
                   className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"

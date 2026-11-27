@@ -25,6 +25,7 @@ export const SAVED_VIEW_QUERY_KEYS = [
   'password_stale_over_days',
   'missing_metadata',
   'conflict_check',
+  'upstream_recovery_risk',
   'sort',
   'page_size',
 ] as const;
@@ -87,6 +88,14 @@ export const BUILTIN_ACCOUNT_VIEWS: readonly SavedAccountView[] = [
     description: '关联第三方应用处于受限或已封禁状态',
     category: 'risk',
     query: { app_statuses: 'restricted,banned' },
+    builtin: true,
+  },
+  {
+    id: 'builtin:upstream-risk',
+    name: '上游辅助账号异常',
+    description: '站内辅助账号受限、停用或已软删除的连带风险账号',
+    category: 'risk',
+    query: { upstream_recovery_risk: 'true' },
     builtin: true,
   },
   {

@@ -730,7 +730,7 @@ export function AccountTable({
       data-slot="account-table-card"
       className="macos-glass-panel macos-glass-panel-strong overflow-hidden"
     >
-      <div className="macos-thin-scrollbar max-h-[540px] w-full overflow-x-auto overflow-y-auto">
+      <div className="macos-thin-scrollbar max-h-[calc(100vh-228px)] min-h-[300px] w-full overflow-x-auto overflow-y-auto">
         <table
           aria-label={deleted ? '已删除账号列表' : '账号列表'}
           className="w-full border-collapse text-left text-[12.5px] xl:text-[13px]"

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Popover as PopoverPrimitive } from 'radix-ui';
 import {
   AlertTriangle,
   ArrowUpRight,
   Copy,
+  HelpCircle,
+  Link2,
+  Loader2,
   Mail,
   Search,
   Users,
@@ -11,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   recoveryEmailAccounts,
+  recoveryEmailsLinkInternal,
   recoveryEmailsList,
   type RecoveryEmailsListData,
 } from '@/api/generated';
@@ -41,22 +46,55 @@ const sortOptions: { value: RecoverySortKey; label: string }[] = [
 export function RecoveryPage({
   params,
   change,
+  csrfToken,
   onFailure,
   onCopy,
   onOpenAccountsFilter,
 }: {
   params: URLSearchParams;
   change: AccountLocationChange;
+  csrfToken?: string;
   onFailure: (e: unknown) => void;
   onCopy?: (value: string) => void;
   onOpenAccountsFilter?: (email: string) => void;
 }) {
+  const queryClient = useQueryClient();
   const rawPage = Number(params.get('recovery_page') || 1);
   const page = Number.isInteger(rawPage) && rawPage >= 1 ? rawPage : 1;
   const search = params.get('recovery_search') || '';
   const sort = (params.get('recovery_sort') ||
     '-account_count') as RecoverySortKey;
   const [inspectEmail, setInspectEmail] = useState<string | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkNotice, setLinkNotice] = useState('');
+
+  const handleLinkAllInternal = async () => {
+    if (!csrfToken || linkBusy) return;
+    setLinkBusy(true);
+    setLinkNotice('');
+    try {
+      const { data } = await recoveryEmailsLinkInternal({
+        body: {},
+        headers: { 'X-CSRF-Token': csrfToken },
+        throwOnError: true,
+      });
+      setLinkNotice(
+        data.linked_count > 0
+          ? `已将 ${data.linked_count} 条匹配站内主账号的外部辅助邮箱自动转为站内强关联。`
+          : '当前没有匹配站内主账号的外部辅助邮箱文本。',
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['recovery-usage'] }),
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] }),
+      ]);
+    } catch (error) {
+      setLinkNotice('归并站内辅助账号失败，请稍后重试。');
+      onFailure(error);
+    } finally {
+      setLinkBusy(false);
+    }
+  };
 
   const usage = useQuery({
     queryKey: ['recovery-usage', page, search, sort],
@@ -115,19 +153,60 @@ export function RecoveryPage({
 
   return (
     <section aria-label="辅助邮箱使用情况" className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-[var(--text-primary)]">
-            辅助邮箱使用情况
-          </h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            关联记录含归档、不含删除；文本和系统关联按地址去首尾空格、小写后合并（不合并
-            Gmail 点号或 +
-            别名）。最近关联按注册时间，不是修改时间；已删除辅助账号的引用保留。
+          <div className="flex items-center gap-2">
+            <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-[var(--text-primary)]">
+              辅助邮箱使用情况
+            </h1>
+            <PopoverPrimitive.Root>
+              <PopoverPrimitive.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label="查看辅助邮箱统计口径说明"
+                  className="inline-flex size-6 items-center justify-center rounded-full text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
+                >
+                  <HelpCircle className="size-4" aria-hidden="true" />
+                </button>
+              </PopoverPrimitive.Trigger>
+              <PopoverPrimitive.Portal>
+                <PopoverPrimitive.Content
+                  align="start"
+                  sideOffset={6}
+                  className="macos-glass-modal z-50 max-w-sm rounded-2xl p-3.5 text-xs leading-5 text-[var(--text-primary)] outline-none"
+                >
+                  <p className="mb-1 font-semibold">统计口径说明</p>
+                  <p className="text-[var(--text-secondary)]">
+                    关联记录含归档、不含软删除；外部文本与站内关联按地址去首尾空格、小写合并（不折叠
+                    Gmail 点号或 +
+                    别名）。最近关联时间取子账号的注册时间，而非修改时间。
+                  </p>
+                </PopoverPrimitive.Content>
+              </PopoverPrimitive.Portal>
+            </PopoverPrimitive.Root>
+          </div>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+            统计每个辅助邮箱关联的账号规模与异常分布，快速排查集中风险
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {csrfToken && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={linkBusy}
+              onClick={() => void handleLinkAllInternal()}
+            >
+              {linkBusy ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <Link2 className="size-3.5" aria-hidden="true" />
+              )}
+              <span>归并站内主号关联</span>
+            </Button>
+          )}
           <div className="relative flex items-center">
             <Search
               className="pointer-events-none absolute left-3 size-3.5 text-[var(--text-secondary)]"
@@ -174,6 +253,15 @@ export function RecoveryPage({
           </NativeSelect>
         </div>
       </div>
+
+      {linkNotice && (
+        <p
+          role="status"
+          className="rounded-xl border border-[var(--border)] bg-[var(--surface-control)] px-3.5 py-2 text-xs text-[var(--text-primary)]"
+        >
+          {linkNotice}
+        </p>
+      )}
 
       {/* 顶部统计汇总卡片 */}
       <div className="grid gap-3 sm:grid-cols-3">

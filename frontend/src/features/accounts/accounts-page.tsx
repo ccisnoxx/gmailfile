@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback } from 'react';
+import { lazy, Suspense, useCallback, useEffect } from 'react';
 import { useInRouterContext, useNavigate, useParams } from 'react-router-dom';
 import { resolveAppHref } from '@/app/navigation';
 import {
@@ -7,6 +7,7 @@ import {
   GlassToolbar,
   LoadingState,
   PrimarySidebar,
+  useAppShellContext,
 } from '@/components/macos';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AccountActionDialog } from './account-action-dialog';
@@ -15,7 +16,7 @@ import { BatchBar } from './account-batch-bar';
 import { Filters } from './account-filters';
 import { Pagination } from './account-pagination';
 import { AccountStatusStrip } from './account-summary';
-import { AccountTable, ColumnToggle } from './account-table';
+import { AccountTable } from './account-table';
 import { AccountsToolbar } from './accounts-toolbar';
 import {
   useAccountsPageController,
@@ -109,103 +110,55 @@ function RoutedAccountsPage(props: AccountsPageProps) {
 
 function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
   const { session, onSession, onSecurity, onOperations, onLogout } = props;
+  const shell = useAppShellContext();
+  const inPersistentShell = Boolean(shell?.persistentShell);
   const ctrl = useAccountsPageController(props);
   const { queryState, detailState, listState, tagState } = ctrl;
 
-  return (
-    <AppWindowShell
-      navAlpha={ctrl.navAlpha}
-      flowingBackground={ctrl.displaySettings.flowingBackground}
-      animationsEnabled={ctrl.displaySettings.animationsEnabled}
-      compactMode={ctrl.displaySettings.compactMode}
-      toolbar={
-        <GlassToolbar
-          activeNav={ctrl.isChartView ? 'dashboard' : 'accounts'}
-          navAlpha={ctrl.navAlpha}
-          onNavAlphaChange={ctrl.handleNavAlphaChange}
-          displaySettings={ctrl.displaySettings}
-          onDisplaySettingsChange={ctrl.handleDisplaySettingsChange}
-          onSelectNav={ctrl.handleTopNav}
-          onOpenSecurity={() => {
-            ctrl.handleCloseDetail();
-            onSecurity();
-          }}
-          onOpenTransfer={() => ctrl.handleTopNav('transfer')}
-          onOpenRecoveryUsage={ctrl.handleOpenRecoveryUsage}
-          onToggleShowcase={
-            ctrl.allowDebugUiState
-              ? () => ctrl.setShowcaseToggle((prev) => !prev)
-              : undefined
-          }
-          showcaseActive={ctrl.showStateShowcase}
-          onLogout={() => {
-            ctrl.handleCloseDetail();
-            onLogout();
-          }}
-          notifications={detailState.notice ? [detailState.notice] : []}
-          onClearNotifications={() => detailState.setNotice('')}
-        />
-      }
-      sidebar={
-        <PrimarySidebar
-          activeSection={ctrl.isStandaloneSubView ? null : ctrl.activeSection}
-          activeTagId={queryState.params.get('tag')}
-          dashboardActive={ctrl.isChartView}
-          appsActive={ctrl.isAppsView}
-          recoveryActive={ctrl.isRecoveryView}
-          counts={ctrl.visibleCounts}
-          tags={ctrl.sidebarTags}
-          onSelectSection={ctrl.handleSelectSection}
-          onSelectTag={ctrl.handleSelectTag}
-          onAddTag={tagState.openDialog}
-          onOpenDashboard={() => ctrl.handleTopNav('dashboard')}
-          onOpenApps={ctrl.handleOpenAppsUsage}
-          onOpenRecoveryUsage={ctrl.handleOpenRecoveryUsage}
-          onOpenTransfer={() => ctrl.handleTopNav('transfer')}
-          onOpenAudit={() => ctrl.handleTopNav('audit')}
-          onOpenBackup={() => {
-            ctrl.handleCloseDetail();
-            if (onOperations) onOperations('status');
-            else onSecurity();
-          }}
-          onOpenSettings={() => {
-            ctrl.handleCloseDetail();
-            onSecurity();
-          }}
-        />
-      }
-    >
-      <AccountsToolbar
-        isRecoveryView={ctrl.isRecoveryView}
-        isAppsView={ctrl.isAppsView}
-        isStandaloneSubView={ctrl.isStandaloneSubView}
-        isChartView={ctrl.isChartView}
-        deleted={queryState.deleted}
-        viewMode={ctrl.viewMode}
-        searchInputRef={ctrl.searchInputRef}
-        searchDraft={ctrl.searchDraft}
-        filtersOpen={ctrl.filtersOpen}
-        activeFilterCount={ctrl.activeFilterCount}
-        params={queryState.params}
-        columns={listState.columns}
-        onSearchChange={ctrl.handleSearchInputChange}
-        onCommitSearch={ctrl.commitSearch}
-        onToggleFilters={() => ctrl.setFiltersOpen((open) => !open)}
-        onApplySavedView={ctrl.handleApplySavedView}
-        onSetViewMode={ctrl.handleSetViewMode}
-        onPreloadChartView={() => void loadAccountsChartView()}
-        onRefresh={() => void listState.refresh()}
-        onCreateNew={detailState.openNew}
-        onReturnToList={() => ctrl.handleSelectSection('all')}
-      />
+  useEffect(() => {
+    if (inPersistentShell && detailState.notice) {
+      shell?.pushNotification?.(detailState.notice);
+    }
+  }, [detailState.notice, inPersistentShell, shell]);
 
-      {!ctrl.isStandaloneSubView && !ctrl.isChartView && (
-        <AccountStatusStrip
-          stats={ctrl.stats}
-          activeSection={ctrl.activeSection}
-          onSelectSection={ctrl.handleSelectSection}
+  const workspaceContent = (
+    <>
+      {!ctrl.isStandaloneSubView && (
+        <AccountsToolbar
+          isRecoveryView={ctrl.isRecoveryView}
+          isAppsView={ctrl.isAppsView}
+          isStandaloneSubView={ctrl.isStandaloneSubView}
+          isChartView={ctrl.isChartView}
+          deleted={queryState.deleted}
+          viewMode={ctrl.viewMode}
+          searchInputRef={ctrl.searchInputRef}
+          searchDraft={ctrl.searchDraft}
+          filtersOpen={ctrl.filtersOpen}
+          activeFilterCount={ctrl.activeFilterCount}
+          params={queryState.params}
+          columns={listState.columns}
+          onToggleColumn={listState.toggleColumn}
+          onSearchChange={ctrl.handleSearchInputChange}
+          onCommitSearch={ctrl.commitSearch}
+          onToggleFilters={() => ctrl.setFiltersOpen((open) => !open)}
+          onApplySavedView={ctrl.handleApplySavedView}
+          onSetViewMode={ctrl.handleSetViewMode}
+          onPreloadChartView={() => void loadAccountsChartView()}
+          onRefresh={() => void listState.refresh()}
+          onCreateNew={detailState.openNew}
+          onReturnToList={() => ctrl.handleSelectSection('all')}
         />
       )}
+
+      {!ctrl.isStandaloneSubView &&
+        !ctrl.isChartView &&
+        !ctrl.hideStatusStrip && (
+          <AccountStatusStrip
+            stats={ctrl.stats}
+            activeSection={ctrl.activeSection}
+            onSelectSection={ctrl.handleSelectSection}
+          />
+        )}
 
       {!ctrl.isStandaloneSubView && !ctrl.isChartView && (
         <AccountActiveFilters
@@ -228,42 +181,14 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
       )}
 
       {ctrl.filtersOpen && !ctrl.isStandaloneSubView && (
-        <div className="space-y-3">
-          <Filters
-            params={queryState.params}
-            change={queryState.change}
-            tags={listState.tags.data ?? []}
-            apps={listState.apps.data ?? []}
-            purposeSuggestions={ctrl.purposeSuggestions}
-            onOpenRecoveryUsage={ctrl.handleOpenRecoveryUsage}
-            onOpenAppsUsage={ctrl.handleOpenAppsUsage}
-          />
-          <ColumnToggle
-            columns={listState.columns}
-            onToggle={listState.toggleColumn}
-          />
-        </div>
-      )}
-
-      {!ctrl.isStandaloneSubView && ctrl.selectedCount > 0 && (
-        <BatchBar
-          key={queryState.search + ':' + listState.list.dataUpdatedAt}
-          selected={listState.selectedItems}
+        <Filters
+          params={queryState.params}
+          change={queryState.change}
           tags={listState.tags.data ?? []}
-          session={session}
-          deleted={queryState.deleted}
-          onSession={onSession}
-          complete={async (kind) => {
-            await listState.refresh();
-            detailState.setNotice(
-              kind === 'permanent-delete'
-                ? '整批账号已永久删除。'
-                : kind === 'restore'
-                  ? '整批账号已恢复。'
-                  : '整批操作已提交。',
-            );
-          }}
-          onFailure={ctrl.handleBatchFailure}
+          apps={listState.apps.data ?? []}
+          purposeSuggestions={ctrl.purposeSuggestions}
+          onOpenRecoveryUsage={ctrl.handleOpenRecoveryUsage}
+          onOpenAppsUsage={ctrl.handleOpenAppsUsage}
         />
       )}
 
@@ -273,6 +198,7 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
             <RecoveryPage
               params={queryState.params}
               change={queryState.change}
+              csrfToken={session.csrf_token}
               onFailure={detailState.fail}
               onCopy={(value) => void detailState.copy(value)}
               onOpenAccountsFilter={ctrl.handleOpenRecoveryAccounts}
@@ -284,6 +210,8 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
           <Suspense fallback={<LoadingState title="正在加载已注册应用统计…" />}>
             <AppsUsageView
               csrfToken={session.csrf_token}
+              session={session}
+              onSession={onSession}
               onFailure={detailState.fail}
               onOpenRegisteredAccounts={(appId) =>
                 ctrl.navigateWithAccountQuery({ app_id: appId })
@@ -308,6 +236,7 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
           <AccountsChartView
             stats={ctrl.stats}
             items={listState.items}
+            csrfToken={session.csrf_token}
             liveAnalytics
             timezone={ctrl.timezone}
             activeSection={ctrl.activeSection}
@@ -353,6 +282,38 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
         />
       )}
 
+      {!ctrl.isStandaloneSubView && ctrl.selectedCount > 0 && (
+        <div
+          data-slot="batch-floating-dock"
+          className="sticky bottom-4 z-30 mx-auto w-fit max-w-full"
+        >
+          <BatchBar
+            key={queryState.search + ':' + listState.list.dataUpdatedAt}
+            selected={listState.selectedItems}
+            tags={listState.tags.data ?? []}
+            session={session}
+            deleted={queryState.deleted}
+            onSession={onSession}
+            onClearSelection={() => listState.toggleAll(false)}
+            complete={async (kind) => {
+              await listState.refresh();
+              detailState.setNotice(
+                kind === 'permanent-delete'
+                  ? '整批账号已永久删除。'
+                  : kind === 'restore'
+                    ? '整批账号已恢复。'
+                    : kind === 'delete'
+                      ? '整批账号已移入回收站。'
+                      : kind === 'verify'
+                        ? '整批账号已标记为今天已验证。'
+                        : '整批操作已提交。',
+              );
+            }}
+            onFailure={ctrl.handleBatchFailure}
+          />
+        </div>
+      )}
+
       {ctrl.showStateShowcase && (
         <section
           aria-label="组件状态展示"
@@ -378,6 +339,16 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
             busy={detailState.busy}
             conflict={detailState.conflict}
             notice={detailState.notice}
+            positionLabel={ctrl.drawerPositionLabel}
+            onSelectPrev={ctrl.handleSelectPrevDrawerAccount}
+            onSelectNext={ctrl.handleSelectNextDrawerAccount}
+            onOpenFullPage={ctrl.handleOpenFullDetail}
+            onSelectAccountById={(targetId) => {
+              const found = ctrl.effectiveItems.find((i) => i.id === targetId);
+              void detailState.open(
+                found ?? ({ id: targetId } as (typeof ctrl.effectiveItems)[0]),
+              );
+            }}
             onClose={ctrl.handleCloseDetail}
             onRestoreFocus={detailState.restoreFocus}
             onSession={onSession}
@@ -462,6 +433,83 @@ function AccountsPageBody(props: AccountsPageProps & RouterSyncProps) {
           />
         </Suspense>
       )}
+    </>
+  );
+
+  if (inPersistentShell) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-5">
+        {workspaceContent}
+      </div>
+    );
+  }
+
+  return (
+    <AppWindowShell
+      navAlpha={ctrl.navAlpha}
+      flowingBackground={ctrl.displaySettings.flowingBackground}
+      animationsEnabled={ctrl.displaySettings.animationsEnabled}
+      compactMode={ctrl.displaySettings.compactMode}
+      toolbar={
+        <GlassToolbar
+          activeNav={ctrl.isChartView ? 'dashboard' : 'accounts'}
+          navAlpha={ctrl.navAlpha}
+          onNavAlphaChange={ctrl.handleNavAlphaChange}
+          displaySettings={ctrl.displaySettings}
+          onDisplaySettingsChange={ctrl.handleDisplaySettingsChange}
+          onSelectNav={ctrl.handleTopNav}
+          onOpenSecurity={() => {
+            ctrl.handleCloseDetail();
+            onSecurity();
+          }}
+          onOpenTransfer={() => ctrl.handleTopNav('transfer')}
+          onOpenRecoveryUsage={ctrl.handleOpenRecoveryUsage}
+          onToggleShowcase={
+            ctrl.allowDebugUiState
+              ? () => ctrl.setShowcaseToggle((prev) => !prev)
+              : undefined
+          }
+          showcaseActive={ctrl.showStateShowcase}
+          onLogout={() => {
+            ctrl.handleCloseDetail();
+            onLogout();
+          }}
+          session={session}
+          onSession={onSession}
+          notifications={detailState.notice ? [detailState.notice] : []}
+          onClearNotifications={() => detailState.setNotice('')}
+        />
+      }
+      sidebar={
+        <PrimarySidebar
+          activeSection={ctrl.isStandaloneSubView ? null : ctrl.activeSection}
+          activeTagId={queryState.params.get('tag')}
+          dashboardActive={ctrl.isChartView}
+          appsActive={ctrl.isAppsView}
+          recoveryActive={ctrl.isRecoveryView}
+          counts={ctrl.visibleCounts}
+          tags={ctrl.sidebarTags}
+          onSelectSection={ctrl.handleSelectSection}
+          onSelectTag={ctrl.handleSelectTag}
+          onAddTag={tagState.openDialog}
+          onOpenDashboard={() => ctrl.handleTopNav('dashboard')}
+          onOpenApps={ctrl.handleOpenAppsUsage}
+          onOpenRecoveryUsage={ctrl.handleOpenRecoveryUsage}
+          onOpenTransfer={() => ctrl.handleTopNav('transfer')}
+          onOpenAudit={() => ctrl.handleTopNav('audit')}
+          onOpenBackup={() => {
+            ctrl.handleCloseDetail();
+            if (onOperations) onOperations('status');
+            else onSecurity();
+          }}
+          onOpenSettings={() => {
+            ctrl.handleCloseDetail();
+            onSecurity();
+          }}
+        />
+      }
+    >
+      {workspaceContent}
     </AppWindowShell>
   );
 }

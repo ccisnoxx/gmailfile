@@ -9,12 +9,16 @@ import type {
 import { appsCreate, appsFetchIcon, dashboardSummary } from '@/api/generated';
 import { sectionToAccountQuery } from '@/app/navigation';
 import {
+  isEditableElement,
   persistDisplaySettings,
   persistNavAlpha,
   readDisplaySettings,
+  readSidebarLayoutState,
   readStoredNavAlpha,
+  SIDEBAR_LAYOUT_SYNC_EVENT,
   subscribeDisplaySettings,
   subscribeNavAlpha,
+  useAppShellContext,
   type DisplaySettingsState,
   type SidebarSectionKey,
   type SidebarTagItem,
@@ -251,16 +255,42 @@ export function useAccountsPageController({
     onCaptureFocus: detailState.captureFocus,
   });
 
-  // 支持通过 /accounts?modal=tags 从其他页面直达标签管理弹窗
+  const shell = useAppShellContext();
+  const inPersistentShell = Boolean(shell?.persistentShell);
+  const [sidebarLayout, setSidebarLayout] = useState(() =>
+    readSidebarLayoutState(),
+  );
+
   useEffect(() => {
-    if (queryState.params.get('modal') === 'tags') {
+    const sync = () => setSidebarLayout(readSidebarLayoutState());
+    window.addEventListener(SIDEBAR_LAYOUT_SYNC_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(SIDEBAR_LAYOUT_SYNC_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
+  // 支持通过 /accounts?modal=tags|create 或 ?inspect=<id> 从全局命令面板/其他页面直达
+  useEffect(() => {
+    const modal = queryState.params.get('modal');
+    const inspectId = queryState.params.get('inspect');
+    if (modal === 'tags') {
       tagState.openDialog();
       queryState.change({ modal: '' }, false, true);
+    } else if (modal === 'create') {
+      detailState.openNew();
+      queryState.change({ modal: '' }, false, true);
+    } else if (inspectId) {
+      const match = listState.items.find((item) => item.id === inspectId);
+      void detailState.open(match ?? ({ id: inspectId } as AccountSummary));
+      queryState.change({ inspect: '' }, false, true);
     }
-  }, [queryState, tagState]);
+  }, [detailState, listState.items, queryState, tagState]);
 
-  // ⌘K / Ctrl+K 聚焦搜索框（存在弹窗或位于辅助邮箱/应用统计视图时让位）
+  // 独立模式下监听 ⌘K 与 / 聚焦搜索框；持久壳层模式下由外层统一接管 ⌘K 命令面板与 / 搜索快捷键
   useEffect(() => {
+    if (inPersistentShell) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         if (
@@ -271,11 +301,24 @@ export function useAccountsPageController({
         }
         event.preventDefault();
         searchInputRef.current?.focus();
+        return;
+      }
+      if (
+        event.key === '/' &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !isStandaloneSubView &&
+        !isEditableElement(event.target) &&
+        !document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isStandaloneSubView]);
+  }, [inPersistentShell, isStandaloneSubView]);
 
   // URL /accounts/:accountId 自动同步打开对应详情抽屉
   const openedRouteIdRef = useRef<string | null>(null);
@@ -293,12 +336,16 @@ export function useAccountsPageController({
 
   const handleOpenAccount = useCallback(
     (account: AccountSummary, edit = false, action?: AccountAction) => {
-      if (!edit && !action && navigateToAccount) {
-        openedRouteIdRef.current = account.id;
-        navigateToAccount(account.id);
-        return;
-      }
       void detailState.open(account, edit, action);
+    },
+    [detailState],
+  );
+
+  const handleOpenFullDetail = useCallback(
+    (accountId: string) => {
+      if (!navigateToAccount) return;
+      detailState.close();
+      navigateToAccount(accountId);
     },
     [detailState, navigateToAccount],
   );
@@ -591,10 +638,43 @@ export function useAccountsPageController({
     'from',
     'to',
     'recovery_email',
+    'upstream_recovery_risk',
   ].filter((key) => queryState.params.has(key)).length;
 
   const selectedCount = listState.selectedItems.length;
   const isChartView = !isStandaloneSubView && viewMode === 'chart';
+  const hideStatusStrip =
+    !sidebarLayout.collapsed && sidebarLayout.accountsExpanded;
+
+  const currentDrawerIdx = useMemo(() => {
+    if (!detailState.drawer || !detailState.detail) return -1;
+    return effectiveItems.findIndex(
+      (item) => item.id === detailState.detail?.id,
+    );
+  }, [detailState.detail, detailState.drawer, effectiveItems]);
+
+  const drawerPositionLabel =
+    currentDrawerIdx >= 0
+      ? `${currentDrawerIdx + 1} / ${effectiveItems.length}`
+      : undefined;
+
+  const handleSelectPrevDrawerAccount = useMemo(() => {
+    if (currentDrawerIdx <= 0) return undefined;
+    return () => {
+      const target = effectiveItems[currentDrawerIdx - 1];
+      if (target) void detailState.open(target);
+    };
+  }, [currentDrawerIdx, detailState, effectiveItems]);
+
+  const handleSelectNextDrawerAccount = useMemo(() => {
+    if (currentDrawerIdx < 0 || currentDrawerIdx >= effectiveItems.length - 1) {
+      return undefined;
+    }
+    return () => {
+      const target = effectiveItems[currentDrawerIdx + 1];
+      if (target) void detailState.open(target);
+    };
+  }, [currentDrawerIdx, detailState, effectiveItems]);
 
   return {
     queryState,
@@ -606,6 +686,7 @@ export function useAccountsPageController({
     isAppsView,
     isStandaloneSubView,
     isChartView,
+    hideStatusStrip,
     viewMode,
     navAlpha,
     displaySettings,
@@ -634,6 +715,10 @@ export function useAccountsPageController({
     handleCreateApp,
     handleFetchAppIcon,
     handleOpenAccount,
+    handleOpenFullDetail: navigateToAccount ? handleOpenFullDetail : undefined,
+    drawerPositionLabel,
+    handleSelectPrevDrawerAccount,
+    handleSelectNextDrawerAccount,
     handleCloseDetail,
     handleApplySavedView,
     handleBatchFailure,

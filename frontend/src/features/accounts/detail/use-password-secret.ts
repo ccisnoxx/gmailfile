@@ -53,6 +53,7 @@ export function usePasswordSecret({
 }) {
   // 仅保存在局部组件状态，绝不写入 Query/Mutation 缓存或全局存储。
   const [password, setPassword] = useState<string | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const [pending, setPending] = useState(false);
   const [reauth, setReauth] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -61,12 +62,15 @@ export function usePasswordSecret({
   const generation = useRef(0);
   const mounted = useRef(true);
   const expiry = useRef<number | undefined>(undefined);
+  const tickRef = useRef<number | undefined>(undefined);
   const copied = useRef<Promise<string> | null>(null);
 
   const clear = useCallback(() => {
     generation.current++;
     window.clearTimeout(expiry.current);
+    window.clearInterval(tickRef.current);
     setPassword(null);
+    setRemainingSeconds(0);
     setPending(false);
     const previous = copied.current;
     copied.current = null;
@@ -143,8 +147,16 @@ export function usePasswordSecret({
         }
 
         setPassword(value);
+        setRemainingSeconds(20);
         window.clearTimeout(expiry.current);
+        window.clearInterval(tickRef.current);
+        const expiresAtMs = Date.now() + SECRET_TTL_MS;
         expiry.current = window.setTimeout(clear, SECRET_TTL_MS);
+        tickRef.current = window.setInterval(() => {
+          setRemainingSeconds(
+            Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)),
+          );
+        }, 1000);
 
         if (intent === 'copy') {
           copied.current = clipboardFingerprint(value);
@@ -319,6 +331,7 @@ export function usePasswordSecret({
 
   return {
     password,
+    remainingSeconds,
     pending,
     reauth,
     verifying,

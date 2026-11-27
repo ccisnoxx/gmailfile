@@ -293,6 +293,20 @@ export function AccountActiveFilters({
     });
   }
 
+  const upstreamRisk = params.get('upstream_recovery_risk');
+  if (upstreamRisk === 'true' || upstreamRisk === 'false') {
+    chips.push({
+      id: 'upstream_recovery_risk',
+      label:
+        upstreamRisk === 'true'
+          ? '连带风险：上游辅助账号异常'
+          : '连带风险：上游辅助账号正常',
+      removeLabel: '移除上游辅助账号风险条件',
+      tone: upstreamRisk === 'true' ? 'red' : 'green',
+      onRemove: () => change({ upstream_recovery_risk: '' }),
+    });
+  }
+
   const sort = params.get('sort');
   if (sort && sort !== '-account_no') {
     chips.push({

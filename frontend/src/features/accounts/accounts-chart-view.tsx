@@ -66,6 +66,7 @@ type AccountsChartViewProps = {
   stats: AccountStatsData;
   items: AccountSummary[];
   insights?: DashboardInsightsResponse;
+  csrfToken?: string;
   liveAnalytics?: boolean;
   timezone?: string;
   activeSection?: SidebarSectionKey | null;
@@ -162,6 +163,7 @@ function AccountsChartBody({
   stats,
   items,
   insights,
+  csrfToken,
   liveAnalytics = false,
   timezone = 'UTC',
   activeSection,
@@ -368,6 +370,7 @@ function AccountsChartBody({
         stats={stats}
         items={items}
         insights={insights}
+        csrfToken={csrfToken}
         recoveryBars={recoveryBars}
         liveAnalytics={liveAnalytics}
         onDrillDown={onDrillDown}

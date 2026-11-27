@@ -37,6 +37,7 @@ export function useSensitiveFields({
   const [revealed, setRevealed] = useState<SensitiveFieldsResponse | null>(
     null,
   );
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const [pending, setPending] = useState(false);
   const [reauth, setReauth] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -44,12 +45,15 @@ export function useSensitiveFields({
   const generation = useRef(0);
   const mounted = useRef(true);
   const expiry = useRef<number | undefined>(undefined);
+  const tickRef = useRef<number | undefined>(undefined);
   const copied = useRef<Promise<string | null> | null>(null);
 
   const clear = useCallback(() => {
     generation.current++;
     window.clearTimeout(expiry.current);
+    window.clearInterval(tickRef.current);
     setRevealed(null);
+    setRemainingSeconds(0);
     setPending(false);
     const previous = copied.current;
     copied.current = null;
@@ -111,9 +115,17 @@ export function useSensitiveFields({
           return;
         }
         setRevealed(data);
+        setRemainingSeconds(20);
         setReauth(false);
         window.clearTimeout(expiry.current);
+        window.clearInterval(tickRef.current);
+        const expiresAtMs = Date.now() + SENSITIVE_TTL_MS;
         expiry.current = window.setTimeout(clear, SENSITIVE_TTL_MS);
+        tickRef.current = window.setInterval(() => {
+          setRemainingSeconds(
+            Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)),
+          );
+        }, 1000);
 
         if (options?.copyPhone && data.phone) {
           copied.current = clipboardFingerprint(data.phone);
@@ -185,6 +197,7 @@ export function useSensitiveFields({
 
   return {
     revealed,
+    remainingSeconds,
     pending,
     reauth,
     statusMessage,

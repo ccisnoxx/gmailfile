@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
+  ArrowUpRight,
   CheckCircle2,
   Copy,
   Database,
@@ -11,8 +13,12 @@ import {
   Link2,
   ShieldCheck,
 } from 'lucide-react';
-import type { AccountDetail, SessionResponse } from '@/api/generated';
-import { GlassPanel } from '@/components/macos';
+import {
+  recoveryEmailAccounts,
+  type AccountDetail,
+  type SessionResponse,
+} from '@/api/generated';
+import { GlassPanel, StatusPill } from '@/components/macos';
 import { CredentialForm } from '@/features/auth/credential-form';
 import { StepUpVerifier } from '@/features/auth/step-up-verifier';
 import { cn } from '@/lib/utils';
@@ -110,6 +116,28 @@ export function SecurityCredentialsTabPanel({
               <span>复制</span>
             </button>
           </div>
+          {secret.password !== null && secret.remainingSeconds > 0 && (
+            <div className="mt-2.5 space-y-1">
+              <div className="flex items-center justify-between text-[11px] tabular-nums text-[var(--text-secondary)]">
+                <span>自动隐藏倒计时</span>
+                <span>{secret.remainingSeconds}s</span>
+              </div>
+              <div
+                role="progressbar"
+                data-slot="secret-countdown-bar"
+                aria-label="密码自动隐藏倒计时"
+                aria-valuemin={0}
+                aria-valuemax={20}
+                aria-valuenow={secret.remainingSeconds}
+                className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-control)]"
+              >
+                <div
+                  className="h-full rounded-full bg-[var(--accent)] transition-all duration-700 ease-linear"
+                  style={{ width: `${(secret.remainingSeconds / 20) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
           {secret.statusMessage && (
             <p
               role="status"
@@ -201,6 +229,7 @@ export function ContactsTabPanel({
   onSession,
   onFailure,
   onCopyField,
+  onSelectAccount,
 }: {
   account: AccountDetail;
   secretEpoch?: number;
@@ -208,6 +237,7 @@ export function ContactsTabPanel({
   onSession?: (value: SessionResponse) => void;
   onFailure?: (error: unknown) => void;
   onCopyField: (label: string, value: string) => void;
+  onSelectAccount?: (accountId: string) => void;
 }) {
   const [showPhone, setShowPhone] = useState(false);
   const hasPhone = Boolean(account.has_phone || account.phone);
@@ -220,6 +250,19 @@ export function ContactsTabPanel({
     session,
     onSession,
     onFailure,
+  });
+
+  const downstreamQuery = useQuery({
+    queryKey: ['detail-downstream-recovery', account.gmail_email],
+    enabled: Boolean(session && account.gmail_email),
+    queryFn: async ({ signal }) =>
+      (
+        await recoveryEmailAccounts({
+          query: { email: account.gmail_email, page: 1, page_size: 20 },
+          signal,
+          throwOnError: true,
+        })
+      ).data,
   });
 
   // 切换账号或隐藏标签页时必须立即重新遮蔽手机号，防止缓存详情复用导致明文串显。
@@ -271,25 +314,37 @@ export function ContactsTabPanel({
                 ? '（外部邮箱）'
                 : ''}
           </dt>
-          <dd className="mt-2 flex items-center justify-between gap-2 text-sm font-medium text-[var(--text-primary)]">
+          <dd className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-[var(--text-primary)]">
             <span className="truncate">
               {account.recovery_email || '未配置'}
             </span>
-            {account.recovery_email && (
-              <button
-                type="button"
-                aria-label="复制辅助邮箱"
-                onClick={() => {
-                  if (account.recovery_email) {
-                    onCopyField('辅助邮箱', account.recovery_email);
-                  }
-                }}
-                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
-              >
-                <Copy className="size-3.5" aria-hidden="true" />
-                <span>复制</span>
-              </button>
-            )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {account.recovery_email && (
+                <button
+                  type="button"
+                  aria-label="复制辅助邮箱"
+                  onClick={() => {
+                    if (account.recovery_email) {
+                      onCopyField('辅助邮箱', account.recovery_email);
+                    }
+                  }}
+                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-white/85 bg-white/75 px-2.5 text-xs hover:bg-white"
+                >
+                  <Copy className="size-3.5" aria-hidden="true" />
+                  <span>复制</span>
+                </button>
+              )}
+              {account.recovery_account_id && onSelectAccount && (
+                <button
+                  type="button"
+                  onClick={() => onSelectAccount(account.recovery_account_id!)}
+                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent-soft)] px-2.5 text-xs font-medium text-[var(--accent-text)] hover:brightness-95"
+                >
+                  <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                  <span>跳转上游账号</span>
+                </button>
+              )}
+            </div>
           </dd>
         </div>
 
@@ -343,6 +398,30 @@ export function ContactsTabPanel({
               </div>
             )}
           </dd>
+          {sensitive.revealed && sensitive.remainingSeconds > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] tabular-nums text-[var(--text-secondary)]">
+                <span>自动隐藏倒计时</span>
+                <span>{sensitive.remainingSeconds}s</span>
+              </div>
+              <div
+                role="progressbar"
+                data-slot="secret-countdown-bar"
+                aria-label="手机号自动隐藏倒计时"
+                aria-valuemin={0}
+                aria-valuemax={20}
+                aria-valuenow={sensitive.remainingSeconds}
+                className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-control)]"
+              >
+                <div
+                  className="h-full rounded-full bg-[var(--accent)] transition-all duration-700 ease-linear"
+                  style={{
+                    width: `${(sensitive.remainingSeconds / 20) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
           {sensitive.statusMessage && (
             <p role="status" className="text-xs text-[var(--text-secondary)]">
               {sensitive.statusMessage}
@@ -360,6 +439,85 @@ export function ContactsTabPanel({
           )}
         </div>
       </dl>
+
+      {/* 下游依赖子账号拓扑卡片 */}
+      {session && (
+        <div
+          data-slot="downstream-recovery-card"
+          className="space-y-3 rounded-2xl border border-white/80 bg-white/60 p-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-xs font-semibold text-[var(--text-primary)]">
+                下游依赖账号（将本账号设为辅助邮箱）
+              </h3>
+              <p className="mt-0.5 text-[11.5px] text-[var(--text-secondary)]">
+                若本账号失活或受限，以下关联账号将面临找回验证码无法接收的连带风险
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--surface-control)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[var(--text-primary)]">
+              {downstreamQuery.data?.total ?? 0} 个子账号
+            </span>
+          </div>
+
+          {['restricted', 'login_failed', 'disabled'].includes(
+            account.status,
+          ) &&
+            (downstreamQuery.data?.total ?? 0) > 0 && (
+              <div
+                role="alert"
+                className="flex items-center gap-2 rounded-xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-3 py-2 text-xs font-medium text-[var(--badge-orange-text)]"
+              >
+                <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  本账号当前状态异常，建议尽快为下方{' '}
+                  {downstreamQuery.data?.total} 个子账号更换健康辅助邮箱。
+                </span>
+              </div>
+            )}
+
+          {downstreamQuery.isPending ? (
+            <p className="text-xs text-[var(--text-secondary)]">
+              正在查询关联子账号…
+            </p>
+          ) : !Array.isArray(downstreamQuery.data?.items) ||
+            downstreamQuery.data.items.length === 0 ? (
+            <p className="text-xs text-[var(--text-secondary)]">
+              暂无其他账号将此 Gmail 设为辅助邮箱。
+            </p>
+          ) : (
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {downstreamQuery.data.items.map((child) => (
+                <li
+                  key={child.id}
+                  className="flex items-center justify-between gap-2 rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-3 py-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-[var(--text-primary)]">
+                      {child.gmail_email}
+                    </p>
+                    <p className="text-[11px] text-[var(--text-secondary)]">
+                      {child.account_no}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <StatusPill status={child.status} />
+                    {onSelectAccount && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectAccount(child.id)}
+                        className="inline-flex h-7 items-center rounded-lg border border-[var(--surface-control-border)] bg-white/75 px-2 text-[11px] font-medium text-[var(--accent-text)] hover:bg-white"
+                      >
+                        查看
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </GlassPanel>
   );
 }

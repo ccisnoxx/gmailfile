@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useContext, useMemo, useState } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -8,6 +9,7 @@ import {
   FileWarning,
   KeyRound,
   Link2,
+  Loader2,
   MailCheck,
   MailWarning,
   ShieldAlert,
@@ -15,9 +17,10 @@ import {
   Tag,
   UserX,
 } from 'lucide-react';
-import type {
-  AccountSummary,
-  DashboardInsightsResponse,
+import {
+  recoveryEmailsLinkInternal,
+  type AccountSummary,
+  type DashboardInsightsResponse,
 } from '@/api/generated';
 import { GlassPanel } from '@/components/macos';
 import { cn } from '@/lib/utils';
@@ -176,6 +179,7 @@ function computeLocalFallbackMetrics(
     password_stale_over_180_days: passwordStale180,
     no_recovery_email_count: noRecovery,
     app_risk_account_count: appRisk,
+    upstream_recovery_risk_count: 0,
     no_purpose_count: noPurpose,
     no_tags_count: noTags,
     inactive_with_active_apps_count: inactiveWithActiveApps,
@@ -190,6 +194,7 @@ export function OverviewInsightsPanel({
   stats,
   items,
   insights,
+  csrfToken,
   recoveryBars,
   liveAnalytics = false,
   onDrillDown,
@@ -200,6 +205,7 @@ export function OverviewInsightsPanel({
   stats: AccountStatsData;
   items: AccountSummary[];
   insights?: DashboardInsightsResponse;
+  csrfToken?: string;
   recoveryBars: RecoveryBarRow[];
   liveAnalytics?: boolean;
   onDrillDown?: (query: Record<string, string>) => void;
@@ -207,6 +213,38 @@ export function OverviewInsightsPanel({
   onOpenBackup?: () => void;
   onOpenAudit?: () => void;
 }) {
+  const queryClient = useContext(QueryClientContext);
+  const [linkingBusy, setLinkingBusy] = useState(false);
+  const [linkStatusMsg, setLinkStatusMsg] = useState('');
+
+  const handleLinkInternal = async (email?: string) => {
+    if (!csrfToken || linkingBusy) return;
+    setLinkingBusy(true);
+    setLinkStatusMsg('');
+    try {
+      const { data } = await recoveryEmailsLinkInternal({
+        body: email ? { email } : {},
+        headers: { 'X-CSRF-Token': csrfToken },
+        throwOnError: true,
+      });
+      setLinkStatusMsg(
+        data.linked_count > 0
+          ? `已成功将 ${data.linked_count} 个账号转为站内辅助账号强关联。`
+          : '没有需要转换的匹配记录。',
+      );
+      if (queryClient) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] }),
+          queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+          queryClient.invalidateQueries({ queryKey: ['recovery-usage'] }),
+        ]);
+      }
+    } catch {
+      setLinkStatusMsg('转换站内辅助账号失败，请刷新后重试。');
+    } finally {
+      setLinkingBusy(false);
+    }
+  };
   const localMetrics = useMemo(
     () => computeLocalFallbackMetrics(items, stats),
     [items, stats],
@@ -274,6 +312,15 @@ export function OverviewInsightsPanel({
       severity: m.app_risk_account_count > 0 ? 'danger' : 'ok',
       icon: ShieldAlert,
       query: { app_statuses: 'restricted,banned' },
+    },
+    {
+      id: 'upstream-recovery-risk',
+      title: '上游辅助号异常',
+      count: m.upstream_recovery_risk_count ?? 0,
+      hint: '站内辅助号受限/停用/已删',
+      severity: (m.upstream_recovery_risk_count ?? 0) > 0 ? 'danger' : 'ok',
+      icon: Link2,
+      query: { upstream_recovery_risk: 'true' },
     },
     {
       id: 'inactive-90d',
@@ -557,11 +604,29 @@ export function OverviewInsightsPanel({
             </div>
 
             {externalMatches.length > 0 ? (
-              <div className="rounded-xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-3 py-2.5 text-xs">
-                <p className="font-semibold text-[var(--badge-orange-text)]">
-                  外部辅助邮箱与站内账号重复（建议改为关联站内账号）
-                </p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <div className="space-y-2 rounded-xl border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-3 py-2.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-[var(--badge-orange-text)]">
+                    外部辅助邮箱与站内账号重复（建议改为关联站内账号）
+                  </p>
+                  {csrfToken && (
+                    <button
+                      type="button"
+                      disabled={linkingBusy}
+                      onClick={() => void handleLinkInternal()}
+                      className="inline-flex h-6 items-center gap-1 rounded-lg bg-[var(--accent)] px-2.5 text-[11px] font-semibold text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {linkingBusy && (
+                        <Loader2
+                          className="size-3 animate-spin"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>一键全部转为站内关联</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
                   {externalMatches.map((dup) => (
                     <button
                       key={dup.email}
@@ -579,7 +644,23 @@ export function OverviewInsightsPanel({
                     </button>
                   ))}
                 </div>
+                {linkStatusMsg && (
+                  <p role="status" className="text-[11px] font-medium">
+                    {linkStatusMsg}
+                  </p>
+                )}
               </div>
+            ) : linkStatusMsg ? (
+              <p
+                role="status"
+                className="flex items-center gap-1.5 text-xs text-[var(--success-text)]"
+              >
+                <CheckCircle2
+                  className="size-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{linkStatusMsg}</span>
+              </p>
             ) : (
               <p className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                 <CheckCircle2

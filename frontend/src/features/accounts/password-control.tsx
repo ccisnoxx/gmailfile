@@ -39,16 +39,20 @@ export function PasswordControl({
   onFailure: (error: unknown) => void;
 }) {
   const [password, setPassword] = useState<string | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
   const [reauth, setReauth] = useState(false);
   const [message, setMessage] = useState('');
   const generation = useRef(0);
   const mounted = useRef(true);
   const expiry = useRef<number | undefined>(undefined);
+  const tickRef = useRef<number | undefined>(undefined);
   const copied = useRef<Promise<string | null> | null>(null);
   const clear = useCallback(() => {
     generation.current++;
     window.clearTimeout(expiry.current);
+    window.clearInterval(tickRef.current);
     setPassword(null);
+    setRemainingSeconds(0);
     const previous = copied.current;
     copied.current = null;
     // 只保留指纹用于剪贴板比对，权限等待不能延长原密码的内存保留。
@@ -100,8 +104,18 @@ export function PasswordControl({
         )
           return;
         setPassword(value);
+        setRemainingSeconds(20);
         window.clearTimeout(expiry.current);
+        window.clearInterval(tickRef.current);
+        const expiresAtMs = Date.now() + 20_000;
         expiry.current = window.setTimeout(clear, 20000);
+        tickRef.current = window.setInterval(() => {
+          const left = Math.max(
+            0,
+            Math.ceil((expiresAtMs - Date.now()) / 1000),
+          );
+          setRemainingSeconds(left);
+        }, 1000);
         if (intent === 'copy') {
           copied.current = clipboardFingerprint(value);
           const writing = navigator.clipboard.writeText(value);
@@ -208,6 +222,28 @@ export function PasswordControl({
           </Button>
         )}
       </div>
+      {password !== null && remainingSeconds > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
+            <span>自动隐藏倒计时</span>
+            <span>{remainingSeconds}s</span>
+          </div>
+          <div
+            role="progressbar"
+            data-slot="secret-countdown-bar"
+            aria-label="密码自动隐藏倒计时"
+            aria-valuemin={0}
+            aria-valuemax={20}
+            aria-valuenow={remainingSeconds}
+            className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-control)]"
+          >
+            <div
+              className="h-full rounded-full bg-[var(--accent)] transition-all duration-700 ease-linear"
+              style={{ width: `${(remainingSeconds / 20) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
       {message && (
         <p role="status" className="text-sm text-muted-foreground">
           {message}

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   AppWindow,
+  ArrowUpToLine,
   Ban,
   CheckCircle2,
   Globe,
@@ -12,6 +13,7 @@ import {
   Search,
   Sparkles,
   Trash2,
+  UserPlus,
 } from 'lucide-react';
 import {
   appsCreate,
@@ -21,8 +23,10 @@ import {
   appsUsage,
   type ErrorResponse,
   type RegisteredAppUsage,
+  type SessionResponse,
 } from '@/api/generated';
 import { GlassPanel } from '@/components/macos';
+import { AppAllocationDrawer } from './app-allocation-drawer';
 import { AppBrandIcon, inferDefaultDomain } from './app-brand-icon';
 import {
   AlertDialog,
@@ -35,6 +39,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -47,12 +59,16 @@ import {
 
 export function AppsUsageView({
   csrfToken,
+  session,
+  onSession,
   onFailure,
   onOpenRegisteredAccounts,
   onOpenBannedAccounts,
   onOpenAvailableAccounts,
 }: {
   csrfToken: string;
+  session?: SessionResponse;
+  onSession?: (next: SessionResponse) => void;
   onFailure: (error: unknown) => void;
   onOpenRegisteredAccounts: (appId: string) => void;
   onOpenBannedAccounts: (appId: string) => void;
@@ -60,15 +76,21 @@ export function AppsUsageView({
 }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDomain, setNewDomain] = useState('');
   const [newIconData, setNewIconData] = useState<string | null>(null);
+  const [newSortOrder, setNewSortOrder] = useState('100');
   const [fetchingNewIcon, setFetchingNewIcon] = useState(false);
   const [editing, setEditing] = useState<RegisteredAppUsage | null>(null);
   const [editName, setEditName] = useState('');
   const [editDomain, setEditDomain] = useState('');
   const [editIconData, setEditIconData] = useState<string | null>(null);
+  const [editSortOrder, setEditSortOrder] = useState('100');
   const [fetchingEditIcon, setFetchingEditIcon] = useState(false);
+  const [allocatingApp, setAllocatingApp] = useState<RegisteredAppUsage | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = useState<RegisteredAppUsage | null>(
     null,
   );
@@ -153,11 +175,18 @@ export function AppsUsageView({
     setNotice('');
     try {
       const cleanedDomain = newDomain.trim() || inferDefaultDomain(cleaned);
+      const parsedOrder = Number(newSortOrder);
       await appsCreate({
         body: {
           name: cleaned,
           domain: cleanedDomain || null,
           icon_data: newIconData,
+          sort_order:
+            Number.isInteger(parsedOrder) &&
+            parsedOrder >= 0 &&
+            parsedOrder <= 9999
+              ? parsedOrder
+              : 100,
         },
         headers,
         throwOnError: true,
@@ -165,6 +194,8 @@ export function AppsUsageView({
       setNewName('');
       setNewDomain('');
       setNewIconData(null);
+      setNewSortOrder('100');
+      setCreateDialogOpen(false);
       setNotice(`已添加应用「${cleaned}」。`);
       await invalidateApps();
     } catch (error) {
@@ -182,12 +213,19 @@ export function AppsUsageView({
     setBusy(true);
     setNotice('');
     try {
+      const parsedOrder = Number(editSortOrder);
       await appsPatch({
         path: { app_id: editing.id },
         body: {
           name: editName.trim(),
           domain: editDomain.trim() || null,
           icon_data: editIconData,
+          sort_order:
+            Number.isInteger(parsedOrder) &&
+            parsedOrder >= 0 &&
+            parsedOrder <= 9999
+              ? parsedOrder
+              : editing.sort_order,
         },
         headers,
         throwOnError: true,
@@ -201,6 +239,36 @@ export function AppsUsageView({
     } catch (error) {
       const msg = (error as Partial<ErrorResponse>)?.error?.message;
       setNotice(msg || '更新应用失败，请重试。');
+      onFailure(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleTogglePin = async (row: RegisteredAppUsage) => {
+    if (busy) return;
+    setBusy(true);
+    setNotice('');
+    const nextOrder = row.sort_order < 100 ? 100 : 10;
+    try {
+      await appsPatch({
+        path: { app_id: row.id },
+        body: {
+          name: row.name,
+          sort_order: nextOrder,
+        },
+        headers,
+        throwOnError: true,
+      });
+      setNotice(
+        nextOrder < 100
+          ? `已置顶应用「${row.name}」。`
+          : `已取消置顶应用「${row.name}」。`,
+      );
+      await invalidateApps();
+    } catch (error) {
+      const msg = (error as Partial<ErrorResponse>)?.error?.message;
+      setNotice(msg || '调整应用排序失败，请重试。');
       onFailure(error);
     } finally {
       setBusy(false);
@@ -252,15 +320,13 @@ export function AppsUsageView({
 
   return (
     <section aria-label="已注册应用统计与管理" className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-[var(--text-primary)]">
+          <h1 className="text-[22px] leading-tight font-semibold tracking-tight text-[var(--text-primary)]">
             已注册应用与封禁统计
-          </h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            管理 Claude、ChatGPT
-            等第三方应用目录，直观查看各应用注册规模、封禁情况，并一键筛选「尚未注册该应用的可用
-            Gmail」。
+          </h1>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+            管理第三方应用目录，查看注册与封禁规模，支持一键置顶与「快速领号」一站式查密登记
           </p>
         </div>
 
@@ -277,68 +343,17 @@ export function AppsUsageView({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               maxLength={64}
-              className="h-9 w-48 rounded-xl border border-white/80 bg-white/65 pr-3 pl-8 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              className="h-9 w-52 rounded-xl border border-white/80 bg-white/65 pr-3 pl-8 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             />
           </div>
-          <form
-            onSubmit={(e) => void handleCreate(e)}
-            className="flex flex-wrap items-center gap-1.5"
+          <Button
+            type="button"
+            onClick={() => setCreateDialogOpen(true)}
+            className="h-9 rounded-xl"
           >
-            <AppBrandIcon
-              name={newName.trim() || 'App'}
-              domain={newDomain.trim() || inferDefaultDomain(newName)}
-              iconData={newIconData}
-              size="md"
-            />
-            <Input
-              aria-label="新增应用名称"
-              placeholder="输入新应用名…"
-              maxLength={64}
-              value={newName}
-              onChange={(e) => {
-                setNewName(e.target.value);
-                setNewIconData(null);
-              }}
-              className="h-9 w-36 rounded-xl text-[13px]"
-            />
-            <Input
-              aria-label="新增应用域名"
-              placeholder="官网域名（可选）"
-              maxLength={255}
-              value={newDomain}
-              onChange={(e) => {
-                setNewDomain(e.target.value);
-                setNewIconData(null);
-              }}
-              className="h-9 w-40 rounded-xl text-[13px]"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              disabled={
-                busy ||
-                fetchingNewIcon ||
-                !(newDomain.trim() || inferDefaultDomain(newName))
-              }
-              onClick={() => void handleFetchNewIcon()}
-              className="h-9 rounded-xl"
-            >
-              {fetchingNewIcon ? (
-                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <Globe className="size-3.5" aria-hidden="true" />
-              )}
-              <span>{fetchingNewIcon ? '获取中…' : '获取图标'}</span>
-            </Button>
-            <Button
-              type="submit"
-              disabled={busy || !newName.trim()}
-              className="h-9 rounded-xl"
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              <span>新增应用</span>
-            </Button>
-          </form>
+            <Plus className="size-4" aria-hidden="true" />
+            <span>新增应用</span>
+          </Button>
         </div>
       </div>
 
@@ -462,7 +477,16 @@ export function AppsUsageView({
                         maxLength={255}
                         value={editDomain}
                         onChange={(e) => setEditDomain(e.target.value)}
-                        className="h-8 w-36 text-xs"
+                        className="h-8 w-32 text-xs"
+                      />
+                      <Input
+                        type="number"
+                        aria-label={`排序权重 ${row.name}`}
+                        min={0}
+                        max={9999}
+                        value={editSortOrder}
+                        onChange={(e) => setEditSortOrder(e.target.value)}
+                        className="h-8 w-20 text-xs"
                       />
                       <Button
                         type="button"
@@ -525,7 +549,16 @@ export function AppsUsageView({
                         size="md"
                       />
                       <div className="min-w-0">
-                        <div className="truncate font-semibold">{row.name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate font-semibold">
+                            {row.name}
+                          </span>
+                          {row.sort_order < 100 && (
+                            <span className="rounded bg-[var(--accent-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent-text)]">
+                              置顶
+                            </span>
+                          )}
+                        </div>
                         {row.domain && (
                           <div className="truncate text-[11px] font-normal text-[var(--text-secondary)]">
                             {row.domain}
@@ -573,6 +606,12 @@ export function AppsUsageView({
                         仅看封禁
                       </Button>
                     )}
+                    {session && onSession && (
+                      <Button size="sm" onClick={() => setAllocatingApp(row)}>
+                        <UserPlus className="size-3.5" aria-hidden="true" />
+                        快速领号
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="secondary"
@@ -584,6 +623,27 @@ export function AppsUsageView({
                     <Button
                       size="icon-sm"
                       variant="ghost"
+                      aria-label={
+                        row.sort_order < 100
+                          ? `取消置顶 ${row.name}`
+                          : `置顶应用 ${row.name}`
+                      }
+                      title={row.sort_order < 100 ? '取消置顶' : '置顶该应用'}
+                      disabled={busy}
+                      onClick={() => void handleTogglePin(row)}
+                    >
+                      <ArrowUpToLine
+                        className={
+                          row.sort_order < 100
+                            ? 'size-3.5 text-[var(--accent)]'
+                            : 'size-3.5'
+                        }
+                        aria-hidden="true"
+                      />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
                       aria-label={`编辑应用 ${row.name}`}
                       disabled={busy}
                       onClick={() => {
@@ -591,6 +651,7 @@ export function AppsUsageView({
                         setEditName(row.name);
                         setEditDomain(row.domain ?? '');
                         setEditIconData(row.icon_data ?? null);
+                        setEditSortOrder(String(row.sort_order));
                       }}
                     >
                       <Pencil className="size-3.5" aria-hidden="true" />
@@ -623,6 +684,121 @@ export function AppsUsageView({
             )}
           </TableBody>
         </Table>
+      )}
+
+      {/* 新增应用弹窗 */}
+      <Dialog
+        open={createDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !busy) setCreateDialogOpen(false);
+        }}
+      >
+        <DialogContent className="macos-glass-modal rounded-[20px] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>新增第三方应用</DialogTitle>
+            <DialogDescription>
+              填写应用名称与可选官网域名，支持安全抓取官网品牌图标与设置排序权重（越小越靠前）。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(e) => void handleCreate(e)} className="space-y-3.5">
+            <div className="flex items-center gap-3">
+              <AppBrandIcon
+                name={newName.trim() || 'App'}
+                domain={newDomain.trim() || inferDefaultDomain(newName)}
+                iconData={newIconData}
+                size="md"
+              />
+              <Input
+                aria-label="新增应用名称"
+                placeholder="输入应用名称（如 Claude、Cursor）…"
+                required
+                maxLength={64}
+                value={newName}
+                onChange={(e) => {
+                  setNewName(e.target.value);
+                  setNewIconData(null);
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label="新增应用域名"
+                placeholder="官网域名（可选，如 claude.ai）"
+                maxLength={255}
+                value={newDomain}
+                onChange={(e) => {
+                  setNewDomain(e.target.value);
+                  setNewIconData(null);
+                }}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  busy ||
+                  fetchingNewIcon ||
+                  !(newDomain.trim() || inferDefaultDomain(newName))
+                }
+                onClick={() => void handleFetchNewIcon()}
+              >
+                {fetchingNewIcon ? (
+                  <Loader2
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Globe className="size-3.5" aria-hidden="true" />
+                )}
+                <span>{fetchingNewIcon ? '获取中…' : '获取图标'}</span>
+              </Button>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <label
+                htmlFor="new-app-sort-order"
+                className="text-[var(--text-secondary)]"
+              >
+                排序权重（默认 100，小于 100 自动置顶）
+              </label>
+              <Input
+                id="new-app-sort-order"
+                type="number"
+                min={0}
+                max={9999}
+                value={newSortOrder}
+                onChange={(e) => setNewSortOrder(e.target.value)}
+                className="h-8 w-24 text-xs"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setCreateDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={busy || !newName.trim()}>
+                保存应用
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 快速领号抽屉 */}
+      {session && onSession && (
+        <AppAllocationDrawer
+          app={allocatingApp}
+          open={Boolean(allocatingApp)}
+          session={session}
+          onSession={onSession}
+          onFailure={onFailure}
+          onOpenChange={(open) => {
+            if (!open) setAllocatingApp(null);
+          }}
+        />
       )}
 
       <AlertDialog

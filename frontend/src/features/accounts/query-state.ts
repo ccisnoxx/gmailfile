@@ -142,6 +142,9 @@ export function accountQuery(
     password_stale_over_days: parsePositiveDays('password_stale_over_days'),
     missing_metadata: missingMetadata,
     conflict_check: conflictCheck,
+    upstream_recovery_risk: params.has('upstream_recovery_risk')
+      ? params.get('upstream_recovery_risk') === 'true'
+      : undefined,
     sort: (params.get('sort') || '-account_no') as NonNullable<
       AccountsListData['query']
     >['sort'],

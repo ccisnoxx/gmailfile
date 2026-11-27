@@ -32,6 +32,7 @@ import {
 } from './account-apps-editor';
 import { factorLabels, localDate, statusLabels } from './constants';
 import { isMaskedPasswordPlaceholder } from './detail/use-password-secret';
+import { PasswordGeneratorPopover } from './password-generator-popover';
 
 export { factorLabels, localDate, statusLabels };
 
@@ -313,9 +314,20 @@ export function AccountForm({
               />
             </Field>
             <Field data-invalid={!!errors.password}>
-              <FieldLabel htmlFor="account-password">
-                Gmail 登录密码{account ? '（留空保留原值）' : ''}
-              </FieldLabel>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <FieldLabel htmlFor="account-password">
+                  Gmail 登录密码{account ? '（留空保留原值）' : ''}
+                </FieldLabel>
+                <PasswordGeneratorPopover
+                  disabled={busy}
+                  onApply={(pwd) =>
+                    setValue('password', pwd, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
+              </div>
               <Input
                 id="account-password"
                 type="password"

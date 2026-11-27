@@ -15,6 +15,7 @@ import {
 } from '@/api/generated';
 import {
   EmptyState,
+  isEditableElement,
   LoadingState,
   type SidebarCounts,
   type SidebarSectionKey,
@@ -42,6 +43,7 @@ import {
 } from '@/components/ui/dialog';
 import { AccountActionDialog } from '../account-action-dialog';
 import { AccountForm } from '../account-form';
+import { accountQuery, useAccountLocation } from '../query-state';
 import {
   AccountBasicInfoForm,
   createDraftFromAccount,
@@ -229,9 +231,23 @@ function AccountDetailLiveBody({
     if (incoming) setSelectedId(incoming);
   }, [accountIdOverride, accountIdParam]);
 
+  const locationState = useAccountLocation();
+  const inheritedQuery = useMemo(
+    () => accountQuery(locationState.params),
+    [locationState.params],
+  );
+  const hasInheritedFilter = useMemo(() => {
+    for (const [k, v] of locationState.params.entries()) {
+      if (k !== 'display_settings' && k !== 'page' && v) return true;
+    }
+    return false;
+  }, [locationState.params]);
+
   const listQueryParams = useMemo(() => {
+    const localSearch = debouncedSearchQuery.trim();
     return {
-      search: debouncedSearchQuery.trim() || undefined,
+      ...inheritedQuery,
+      search: localSearch || inheritedQuery.search || undefined,
       status:
         filterTab === 'normal'
           ? ('normal' as const)
@@ -239,13 +255,13 @@ function AccountDetailLiveBody({
             ? ('disabled' as const)
             : filterTab === 'archived'
               ? ('archived' as const)
-              : undefined,
-      archived: filterTab === 'archived' ? true : undefined,
-      deleted: false,
+              : inheritedQuery.status,
+      archived: filterTab === 'archived' ? true : inheritedQuery.archived,
+      deleted: inheritedQuery.deleted ?? false,
       page: 1,
       page_size: 50,
     };
-  }, [debouncedSearchQuery, filterTab]);
+  }, [debouncedSearchQuery, filterTab, inheritedQuery]);
 
   const accountsQuery = useQuery({
     queryKey: ['detail-accounts-list', listQueryParams],
@@ -469,6 +485,49 @@ function AccountDetailLiveBody({
     },
     [dirty, effectiveAccountId, switchAccountAndReset],
   );
+
+  const currentQueueIdx = useMemo(
+    () => listItems.findIndex((item) => item.id === effectiveAccountId),
+    [effectiveAccountId, listItems],
+  );
+  const positionLabel =
+    currentQueueIdx >= 0
+      ? `第 ${currentQueueIdx + 1} / ${listItems.length} 条`
+      : undefined;
+  const handleSelectPrev = useMemo(() => {
+    if (currentQueueIdx <= 0) return undefined;
+    return () => requestSwitchAccount(listItems[currentQueueIdx - 1].id);
+  }, [currentQueueIdx, listItems, requestSwitchAccount]);
+  const handleSelectNext = useMemo(() => {
+    if (currentQueueIdx < 0 || currentQueueIdx >= listItems.length - 1) {
+      return undefined;
+    }
+    return () => requestSwitchAccount(listItems[currentQueueIdx + 1].id);
+  }, [currentQueueIdx, listItems, requestSwitchAccount]);
+
+  useEffect(() => {
+    if (isEditing || (!handleSelectPrev && !handleSelectNext)) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        isEditableElement(event.target) ||
+        document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() === 'j' && handleSelectNext) {
+        event.preventDefault();
+        handleSelectNext();
+      } else if (event.key.toLowerCase() === 'k' && handleSelectPrev) {
+        event.preventDefault();
+        handleSelectPrev();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleSelectNext, handleSelectPrev, isEditing]);
 
   const requestCancelEdit = useCallback(() => {
     if (dirty) {
@@ -707,6 +766,9 @@ function AccountDetailLiveBody({
         }
         onLogout={onLogout}
         onNavigateAccountsList={() => onNavigateList?.()}
+        positionLabel={positionLabel}
+        onSelectPrev={handleSelectPrev}
+        onSelectNext={handleSelectNext}
         listPane={
           <AccountListPane
             accounts={listItems}
@@ -725,6 +787,8 @@ function AccountDetailLiveBody({
             isLoading={accountsQuery.isPending}
             isError={accountsQuery.isError}
             onRetry={() => void accountsQuery.refetch()}
+            hasInheritedFilter={hasInheritedFilter}
+            onClearInheritedFilter={() => locationState.change({}, true, true)}
           />
         }
         detailContent={
@@ -865,6 +929,7 @@ function AccountDetailLiveBody({
                     onSession={onSession}
                     onFailure={onFailure}
                     onCopyField={(label, val) => void copyField(label, val)}
+                    onSelectAccount={requestSwitchAccount}
                   />
                 )}
 

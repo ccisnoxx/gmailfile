@@ -1,16 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import {
   Archive,
+  ArrowUpRight,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Copy,
+  Maximize2,
   MoreHorizontal,
   Pencil,
   RotateCcw,
   Trash2,
 } from 'lucide-react';
-import type { AccountDetail, SessionResponse } from '@/api/generated';
+import {
+  recoveryEmailAccounts,
+  type AccountDetail,
+  type SessionResponse,
+} from '@/api/generated';
+import { isEditableElement, StatusPill } from '@/components/macos';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -58,6 +68,11 @@ export function AccountDetailDrawer({
   onAction,
   onEdit,
   onRequestConfirm,
+  positionLabel,
+  onSelectPrev,
+  onSelectNext,
+  onOpenFullPage,
+  onSelectAccountById,
 }: {
   open: boolean;
   detail: AccountDetail | null;
@@ -75,6 +90,11 @@ export function AccountDetailDrawer({
   onAction: (action: AccountAction) => void;
   onEdit: () => void;
   onRequestConfirm: (action: AccountAction) => void;
+  positionLabel?: string;
+  onSelectPrev?: () => void;
+  onSelectNext?: () => void;
+  onOpenFullPage?: (accountId: string) => void;
+  onSelectAccountById?: (accountId: string) => void;
 }) {
   const [activeTab, setActiveTab] = useState<DrawerTabKey>('overview');
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -82,6 +102,44 @@ export function AccountDetailDrawer({
   useEffect(() => {
     setActiveTab('overview');
   }, [detail?.id]);
+
+  // 支持 J / K 快捷键在抽屉内快速切换列表上下条账号
+  useEffect(() => {
+    if (!open || (!onSelectPrev && !onSelectNext)) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        isEditableElement(event.target) ||
+        document.querySelector('[role="alertdialog"], [role="menu"]')
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() === 'j' && onSelectNext) {
+        event.preventDefault();
+        onSelectNext();
+      } else if (event.key.toLowerCase() === 'k' && onSelectPrev) {
+        event.preventDefault();
+        onSelectPrev();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onSelectNext, onSelectPrev, open]);
+
+  const downstreamQuery = useQuery({
+    queryKey: ['drawer-downstream-recovery', detail?.gmail_email],
+    enabled: Boolean(open && activeTab === 'relations' && detail?.gmail_email),
+    queryFn: async ({ signal }) =>
+      (
+        await recoveryEmailAccounts({
+          query: { email: detail!.gmail_email, page: 1, page_size: 20 },
+          signal,
+          throwOnError: true,
+        })
+      ).data,
+  });
 
   const selectTabByIndex = (index: number) => {
     const target = DRAWER_TABS[index];
@@ -105,10 +163,60 @@ export function AccountDetailDrawer({
         className="macos-glass-modal flex w-full flex-col overflow-hidden border-l border-white/80 p-0 sm:max-w-xl"
       >
         <SheetHeader className="shrink-0 border-b border-[var(--table-divider)] px-6 pt-6 pb-4">
-          <SheetTitle>账号详情</SheetTitle>
-          <SheetDescription>
-            {detail?.account_no ?? '正在加载资料…'}
-          </SheetDescription>
+          <div className="flex flex-wrap items-center justify-between gap-2 pr-7">
+            <div>
+              <SheetTitle>账号详情</SheetTitle>
+              <SheetDescription>
+                {detail?.account_no ?? '正在加载资料…'}
+              </SheetDescription>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {positionLabel && (
+                <span className="rounded-lg bg-[var(--surface-control)] px-2 py-0.5 text-[11px] font-medium tabular-nums text-[var(--text-secondary)]">
+                  {positionLabel}
+                </span>
+              )}
+              {(onSelectPrev || onSelectNext) && (
+                <div
+                  role="group"
+                  aria-label="切换上下条账号（J/K）"
+                  className="inline-flex items-center rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] p-0.5"
+                >
+                  <button
+                    type="button"
+                    aria-label="上一条账号（K）"
+                    title="上一条账号（K）"
+                    disabled={!onSelectPrev || busy}
+                    onClick={onSelectPrev}
+                    className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-40"
+                  >
+                    <ChevronUp className="size-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="下一条账号（J）"
+                    title="下一条账号（J）"
+                    disabled={!onSelectNext || busy}
+                    onClick={onSelectNext}
+                    className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-40"
+                  >
+                    <ChevronDown className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+              {detail && onOpenFullPage && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenFullPage(detail.id)}
+                >
+                  <Maximize2 className="size-3.5" aria-hidden="true" />
+                  <span>完整详情</span>
+                </Button>
+              )}
+            </div>
+          </div>
           {detail && (
             <div className="pt-2">
               <h2 className="break-all text-lg font-semibold text-[var(--text-primary)]">
@@ -300,7 +408,7 @@ export function AccountDetailDrawer({
                   className="space-y-5"
                 >
                   <dl className="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-4 text-sm">
-                    <dt className="text-muted-foreground">辅助邮箱</dt>
+                    <dt className="text-muted-foreground">上游辅助邮箱</dt>
                     <dd className="min-w-0">
                       {detail.recovery_email ? (
                         <div className="flex flex-wrap items-center gap-2">
@@ -317,6 +425,24 @@ export function AccountDetailDrawer({
                           >
                             复制辅助邮箱
                           </Button>
+                          {detail.recovery_account_id &&
+                            onSelectAccountById && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  onSelectAccountById(
+                                    detail.recovery_account_id!,
+                                  )
+                                }
+                              >
+                                <ArrowUpRight
+                                  className="size-3.5"
+                                  aria-hidden="true"
+                                />
+                                查看关联主号
+                              </Button>
+                            )}
                         </div>
                       ) : (
                         '—'
@@ -335,6 +461,58 @@ export function AccountDetailDrawer({
                       )}
                     </dd>
                   </dl>
+
+                  {/* 下游依赖本账号的子账号列表 */}
+                  <div className="space-y-2 border-t border-[var(--table-divider)] pt-4">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-[var(--text-primary)]">
+                        下游依赖子账号（以本号为辅助邮箱）
+                      </span>
+                      <span className="tabular-nums text-[var(--text-secondary)]">
+                        {downstreamQuery.data?.total ?? 0} 个
+                      </span>
+                    </div>
+                    {downstreamQuery.isPending ? (
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        正在查询关联子账号…
+                      </p>
+                    ) : !Array.isArray(downstreamQuery.data?.items) ||
+                      downstreamQuery.data.items.length === 0 ? (
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        当前没有其他账号将此邮箱设为辅助邮箱。
+                      </p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {downstreamQuery.data.items.map((child) => (
+                          <li
+                            key={child.id}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-3 py-2 text-xs"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-[var(--text-primary)]">
+                                {child.gmail_email}
+                              </p>
+                              <p className="text-[11px] text-[var(--text-secondary)]">
+                                {child.account_no}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <StatusPill status={child.status} />
+                              {onSelectAccountById && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => onSelectAccountById(child.id)}
+                                >
+                                  查看
+                                </Button>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               )}
 

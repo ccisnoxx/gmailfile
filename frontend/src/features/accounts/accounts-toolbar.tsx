@@ -1,8 +1,9 @@
 import type { RefObject } from 'react';
 import { BarChart3, Filter, List, Plus, RefreshCw, Search } from 'lucide-react';
-import { IconTooltip } from '@/components/macos';
+import { IconTooltip, useAppShellContext } from '@/components/macos';
 import { cn } from '@/lib/utils';
 import { AccountSavedViews } from './account-saved-views';
+import { ColumnToggle } from './account-table';
 import type { AccountColumnKey } from './constants';
 import type { SavedAccountView } from './saved-views';
 
@@ -19,6 +20,7 @@ export function AccountsToolbar({
   activeFilterCount,
   params,
   columns,
+  onToggleColumn,
   onSearchChange,
   onCommitSearch,
   onToggleFilters,
@@ -41,6 +43,7 @@ export function AccountsToolbar({
   activeFilterCount: number;
   params: URLSearchParams;
   columns: Record<AccountColumnKey, boolean>;
+  onToggleColumn?: (key: AccountColumnKey, checked: boolean) => void;
   onSearchChange: (next: string) => void;
   onCommitSearch: (next: string) => void;
   onToggleFilters: () => void;
@@ -51,6 +54,8 @@ export function AccountsToolbar({
   onCreateNew: () => void;
   onReturnToList: () => void;
 }) {
+  const shell = useAppShellContext();
+  const inPersistentShell = Boolean(shell?.persistentShell);
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="min-w-0">
@@ -108,13 +113,17 @@ export function AccountsToolbar({
                 }
               }}
               maxLength={254}
-              className="h-9 w-60 rounded-xl border border-white/80 bg-white/65 pr-[76px] pl-9 text-[13px] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md transition-all duration-[180ms] ease-out placeholder:text-[var(--text-secondary)] focus:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-72"
+              className={cn(
+                'h-9 w-60 rounded-xl border border-white/80 bg-white/65 pl-9 text-[13px] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md transition-all duration-[180ms] ease-out placeholder:text-[var(--text-secondary)] focus:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-72',
+                inPersistentShell ? 'pr-10' : 'pr-[76px]',
+              )}
             />
             <kbd
               aria-hidden="true"
+              title="聚焦列表搜索框"
               className="pointer-events-none absolute right-2.5 rounded-md border border-[var(--border)] bg-white/80 px-1.5 py-0.5 text-[10.5px] font-medium whitespace-nowrap text-[var(--text-secondary)]"
             >
-              ⌘/Ctrl K
+              {inPersistentShell ? '/' : '⌘/Ctrl K'}
             </kbd>
           </div>
 
@@ -141,12 +150,16 @@ export function AccountsToolbar({
             </button>
           </IconTooltip>
 
-          {/* 保存视图菜单 */}
+          {/* 保存视图菜单与列显示设置 */}
           <AccountSavedViews
             params={params}
             columns={columns}
             onApplyView={onApplySavedView}
           />
+
+          {onToggleColumn && viewMode === 'list' && (
+            <ColumnToggle columns={columns} onToggle={onToggleColumn} />
+          )}
 
           {/* 列表 / 图表视图切换 */}
           <div

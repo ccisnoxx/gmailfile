@@ -103,6 +103,29 @@ export function SensitiveFieldsControl({
         </dd>
       </dl>
 
+      {sensitive.revealed && sensitive.remainingSeconds > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
+            <span>自动隐藏倒计时</span>
+            <span>{sensitive.remainingSeconds}s</span>
+          </div>
+          <div
+            role="progressbar"
+            data-slot="secret-countdown-bar"
+            aria-label="敏感资料自动隐藏倒计时"
+            aria-valuemin={0}
+            aria-valuemax={20}
+            aria-valuenow={sensitive.remainingSeconds}
+            className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-control)]"
+          >
+            <div
+              className="h-full rounded-full bg-[var(--accent)] transition-all duration-700 ease-linear"
+              style={{ width: `${(sensitive.remainingSeconds / 20) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {sensitive.statusMessage && (
         <p role="status" className="text-xs text-muted-foreground">
           {sensitive.statusMessage}
