@@ -462,8 +462,9 @@ def attach_audit_session_hooks(session: Session) -> None:
         if not buckets:
             return
         buckets.pop(id(previous_transaction), None)
-        if not previous_transaction.nested:
-            buckets.clear()
+        # flush() 内部子事务 nested 为 False 但 parent 非空；仅根事务回滚才清空全部待发桶。
+        if previous_transaction.parent is None:
+            sess.info.pop(_PENDING_KEY, None)
 
     @event.listens_for(session, "after_transaction_end")
     def _promote_nested(sess: Session, transaction) -> None:
@@ -476,10 +477,20 @@ def attach_audit_session_hooks(session: Session) -> None:
 
     @event.listens_for(session, "after_commit")
     def _publish(sess: Session) -> None:
+        # SAVEPOINT 释放时 SQLAlchemy 也会触发 after_commit；仅顶层事务提交后才真正外发。
+        if sess.in_nested_transaction():
+            return
         buckets: dict[int, list[dict[str, object]]] = sess.info.pop(_PENDING_KEY, {})
         records = [item for bucket in buckets.values() for item in bucket]
         emit_audit_records(records)
 
     @event.listens_for(session, "after_rollback")
     def _discard_all(sess: Session) -> None:
+        # SAVEPOINT 回滚时 after_rollback 早于 after_transaction_end 触发，仅清理当前保存点桶。
+        if sess.in_nested_transaction():
+            nested_tx = sess.get_nested_transaction()
+            buckets: dict[int, list[dict[str, object]]] | None = sess.info.get(_PENDING_KEY)
+            if buckets and nested_tx is not None:
+                buckets.pop(id(nested_tx), None)
+            return
         sess.info.pop(_PENDING_KEY, None)

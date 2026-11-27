@@ -425,3 +425,71 @@ def test_optional_recovery_allows_empty_and_rejects_dual_mode():
         )
     assert exc_dual.value.status == 422
     assert exc_dual.value.code == "RECOVERY_INVALID"
+
+
+def test_fetch_https_bytes_trickle_stream_and_hanging_dns_obey_hard_deadline(monkeypatch):
+    import time
+
+    clock = [200.0]
+    monkeypatch.setattr(app_icon.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(app_icon, "resolve_public_ips", lambda host, port=443: ["93.184.216.34"])
+
+    read_chunks = 0
+
+    class _FakeTrickleResponse:
+        status = 200
+
+        @staticmethod
+        def getheader(name: str):
+            return "image/png" if name.lower() == "content-type" else None
+
+        @staticmethod
+        def read1(_amt: int) -> bytes:
+            nonlocal read_chunks
+            read_chunks += 1
+            clock[0] += 0.4
+            return b"\x89PNG"
+
+        @staticmethod
+        def read(_amt: int) -> bytes:
+            raise AssertionError("应优先使用单次非阻塞缓冲 read1 逐包检查全局截止时间")
+
+    class _FakeConn:
+        def __init__(self, *args, **kwargs):
+            self.sock = MagicMock()
+
+        def request(self, *_args, **_kwargs):
+            return None
+
+        @staticmethod
+        def getresponse():
+            return _FakeTrickleResponse()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(app_icon, "_PinnedHTTPSConnection", _FakeConn)
+    deadline = clock[0] + 1.0
+    assert (
+        app_icon._fetch_https_bytes(
+            "https://example.com/icon.png", max_bytes=65536, deadline=deadline
+        )
+        is None
+    )
+    assert read_chunks == 3
+
+    # 恢复真实 monotonic，验证阻塞式 DNS 解析也会在硬截止预算处立即超时返回
+    monkeypatch.undo()
+
+    def hanging_dns(_host: str, _port: int = 443):
+        time.sleep(2.0)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(app_icon, "resolve_public_ips", hanging_dns)
+    started = time.monotonic()
+    with pytest.raises(AccountError) as exc_dns:
+        app_icon.fetch_domain_icon("example.com", budget_seconds=0.12)
+    elapsed = time.monotonic() - started
+    assert elapsed < 0.8
+    assert exc_dns.value.code == "APP_ICON_FETCH_FAILED"
+    assert "超时" in exc_dns.value.message

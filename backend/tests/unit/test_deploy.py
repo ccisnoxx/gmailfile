@@ -267,6 +267,120 @@ def test_provenance_tampering_and_label_mismatch_stop_before_deploy(release, mon
         deploy.deploy(["compose"], release)
 
 
+def test_missing_or_tampered_manifest_files_and_unlisted_tree_files_are_rejected(
+    release, monkeypatch
+):
+    calls = commands(monkeypatch, release)
+    original_manifest = json.loads((release / "release.json").read_text())
+
+    # 1. 篡改源码并删除 files（保留原始合法签名），必须因缺少文件清单直接拒绝
+    (release / "README.md").write_text("tampered while omitting files\n")
+    no_files_manifest = dict(original_manifest)
+    no_files_manifest.pop("files", None)
+    (release / "release.json").write_text(json.dumps(no_files_manifest))
+    with pytest.raises(ValueError, match="发布文件清单缺失或为空"):
+        deploy.deploy(["compose"], release)
+
+    # 2. files 为 null 或空数组同样拒绝
+    for bad_files in (None, [], ["../escape.txt"], ["README.md", "README.md"], ["release.json"]):
+        bad_manifest = {**original_manifest, "files": bad_files}
+        (release / "release.json").write_text(json.dumps(bad_manifest))
+        with pytest.raises(ValueError):
+            deploy.deploy(["compose"], release)
+
+    # 3. 恢复原始合法清单与源码后，向发布目录额外注入未列举文件必须被拒绝
+    (release / "README.md").write_text("synthetic source\n")
+    (release / "release.json").write_text(json.dumps(original_manifest))
+    rogue = release / "backend" / "rogue.py"
+    rogue.parent.mkdir(parents=True, exist_ok=True)
+    rogue.write_text("print('unlisted file')\n")
+    with pytest.raises(ValueError, match="发布目录实际文件集合与发布清单不一致"):
+        deploy.deploy(["compose"], release)
+
+    # 4. 将新文件写入 files 但未用受信私钥重新签发 release.attestation.json，必须被签名校验拦截
+    altered_files_manifest = {
+        **original_manifest,
+        "files": ["README.md", "backend/rogue.py"],
+        "source_archive_sha256": canonical_source_archive_sha256(
+            release, ["README.md", "backend/rogue.py"]
+        ),
+    }
+    (release / "release.json").write_text(json.dumps(altered_files_manifest))
+    with pytest.raises(ValueError, match="不一致"):
+        deploy.deploy(["compose"], release)
+    assert not any("up" in c or "stop" in c for c in calls)
+
+
+def test_executing_deploy_script_inside_unpacked_release_does_not_emit_pycache(tmp_path):
+    """直接运行 $R/scripts/deploy.py 时，不得因 __pycache__ 字节码自触发完整性失败。"""
+    import os
+    import shutil
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[3]
+    unpacked = tmp_path / "releases" / "in-place-release"
+    (unpacked / "scripts").mkdir(parents=True)
+    (unpacked / "backend" / "app" / "core").mkdir(parents=True)
+    shutil.copy2(repo_root / "scripts/deploy.py", unpacked / "scripts/deploy.py")
+    for rel in (
+        "backend/app/__init__.py",
+        "backend/app/core/__init__.py",
+        "backend/app/core/release_meta.py",
+        "backend/app/core/release_attestation.py",
+    ):
+        src = repo_root / rel
+        if src.is_file():
+            shutil.copy2(src, unpacked / rel)
+
+    declared_files = sorted(
+        p.relative_to(unpacked).as_posix() for p in unpacked.rglob("*") if p.is_file()
+    )
+    sbom_path = unpacked / "sbom.cdx.json"
+    sbom_path.write_text('{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}\n')
+    sbom_sha = hashlib.sha256(sbom_path.read_bytes()).hexdigest()
+    source_sha = canonical_source_archive_sha256(unpacked, declared_files)
+    manifest = {
+        "release_id": unpacked.name,
+        "app_version": APP_VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "git_commit": "a" * 40,
+        "git_tree": "b" * 40,
+        "working_tree_clean": True,
+        "source_archive_sha256": source_sha,
+        "sbom_sha256": sbom_sha,
+        "files": declared_files,
+    }
+    (unpacked / "release.json").write_text(json.dumps(manifest))
+    priv_pem, pub_pem = generate_ed25519_keypair_pem()
+    pub_file = tmp_path / "pub.pem"
+    pub_file.write_bytes(pub_pem)
+    att = sign_attestation(
+        SOURCE_ATTESTATION_KIND,
+        build_source_attestation_payload(manifest, build_tools={"python": "3.12.14"}),
+        priv_pem,
+    )
+    (unpacked / "release.attestation.json").write_text(json.dumps(att))
+
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
+    help_proc = subprocess.run(
+        [sys.executable, str(unpacked / "scripts/deploy.py"), "--help"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert help_proc.returncode == 0, help_proc.stderr
+    code = (
+        "import json, runpy; from pathlib import Path; "
+        f"r = Path({str(unpacked)!r}); "
+        "ns = runpy.run_path(str(r / 'scripts/deploy.py'), run_name='gm_deploy_cli'); "
+        "manifest = json.loads((r / 'release.json').read_text()); "
+        f"ns['verify_release_provenance'](r, manifest, signing_public_key=Path({str(pub_file)!r}))"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert not list(unpacked.rglob("__pycache__"))
+
+
 @pytest.mark.parametrize(
     "source,expected,scheme",
     [

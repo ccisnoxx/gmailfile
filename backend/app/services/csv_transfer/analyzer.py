@@ -16,7 +16,14 @@ from app.schemas.accounts import (
 )
 from app.schemas.operations import CsvColumn, CsvRow
 from app.services.accounts import AccountError, AccountService
-from app.services.csv_transfer.parser import FIELDS, issue, parse_csv
+from app.services.csv_transfer.parser import (
+    ENCRYPTED_EXPORT_FIELDS,
+    EXPORT_FIELDS,
+    FIELDS,
+    decode_csv_tags,
+    issue,
+    parse_csv,
+)
 
 
 class CsvImportAnalyzer:
@@ -27,8 +34,15 @@ class CsvImportAnalyzer:
     def _resolve_mapping(
         self, headers: list[str], requested: dict[str, int] | None
     ) -> tuple[list[CsvColumn], dict[str, int]]:
+        stripped_headers = tuple(h.strip() for h in headers)
+        is_system_export = stripped_headers in {EXPORT_FIELDS, ENCRYPTED_EXPORT_FIELDS}
         columns = [
-            CsvColumn(index=i, suggested_field=h.strip() if h.strip() in FIELDS else None)
+            CsvColumn(
+                index=i,
+                suggested_field=None
+                if (is_system_export and h.strip() == "account_no")
+                else (h.strip() if h.strip() in FIELDS else None),
+            )
             for i, h in enumerate(headers)
         ]
         mapping = requested
@@ -126,7 +140,7 @@ class CsvImportAnalyzer:
     def _parse_tags(
         line: int, raw: str, row_errors: list, valid_tags: set[str] | None = None
     ) -> list[str]:
-        tag_names = list(dict.fromkeys(n.strip() for n in raw.split("|") if n.strip()))
+        tag_names = decode_csv_tags(raw)
         try:
             if len(tag_names) > 100:
                 raise ValueError

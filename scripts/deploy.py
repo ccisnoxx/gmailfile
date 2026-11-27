@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# 直接运行 $R/scripts/deploy.py 时禁止向 $R/backend 写 __pycache__，避免自触发完整性拒绝。
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 from app.core.release_attestation import (  # noqa: E402
@@ -30,6 +32,7 @@ from app.core.release_meta import (  # noqa: E402
     PROVENANCE_LABEL_KEYS,
     SCHEMA_VERSION,
     canonical_source_archive_sha256,
+    verify_release_tree_files,
 )
 
 ROOT = Path("/opt/example/gmail-manager")
@@ -126,13 +129,11 @@ def verify_release_provenance(
         "发布目录缺少 sbom.cdx.json",
     )
     require(file_sha256(sbom_file) == manifest["sbom_sha256"], "SBOM 摘要校验失败")
-    files = manifest.get("files")
-    if files is not None:
-        require(isinstance(files, list) and bool(files), "发布文件清单为空")
-        require(
-            canonical_source_archive_sha256(release, files) == manifest["source_archive_sha256"],
-            "源码归档摘要校验失败，发布目录内容与清单不一致",
-        )
+    files = verify_release_tree_files(release, manifest.get("files"))
+    require(
+        canonical_source_archive_sha256(release, files) == manifest["source_archive_sha256"],
+        "源码归档摘要校验失败，发布目录内容与清单不一致",
+    )
     attestation_file = release / "release.attestation.json"
     require(
         attestation_file.is_file() and not attestation_file.is_symlink(),

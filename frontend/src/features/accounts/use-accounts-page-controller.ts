@@ -51,6 +51,8 @@ export interface AccountsPageProps {
 
 export interface RouterSyncProps {
   accountIdParam?: string;
+  routerSearch?: string;
+  onRouterSearchChange?: (nextSearch: string, replace: boolean) => void;
   navigateToAccount?: (id: string) => void;
   navigateBackToList?: () => void;
   navigateToRecovery?: () => void;
@@ -66,6 +68,8 @@ export function useAccountsPageController({
   onSecurity,
   onOperations,
   accountIdParam,
+  routerSearch,
+  onRouterSearchChange,
   navigateToAccount,
   navigateBackToList,
   navigateToRecovery,
@@ -73,7 +77,10 @@ export function useAccountsPageController({
   navigateToAccountsWithQuery,
 }: AccountsPageProps & RouterSyncProps) {
   const queryClient = useQueryClient();
-  const queryState = useAccountQueryState();
+  const queryState = useAccountQueryState({
+    routerSearch,
+    onRouterSearchChange,
+  });
   const isRecoveryView = initialRecoveryView || queryState.recoveryView;
   const isAppsView =
     !isRecoveryView && (initialAppsView || queryState.appsView);
@@ -180,14 +187,14 @@ export function useAccountsPageController({
 
   const detailState = useAccountDetail({
     session,
-    search: queryState.search,
+    search: queryState.listSearchKey,
     onFailure,
     onRefresh: stableRefresh,
   });
 
   const listState = useAccountsList({
     query: queryState.query,
-    search: queryState.search,
+    search: queryState.listSearchKey,
     recoveryView: isRecoveryView,
     appsView: isAppsView,
     onFailure: detailState.fail,
@@ -272,19 +279,29 @@ export function useAccountsPageController({
   }, []);
 
   // 支持通过 /accounts?modal=tags|create 或 ?inspect=<id> 从全局命令面板/其他页面直达
+  const consumedActionRef = useRef<string | null>(null);
   useEffect(() => {
     const modal = queryState.params.get('modal');
     const inspectId = queryState.params.get('inspect');
+    if (!modal && !inspectId) {
+      consumedActionRef.current = null;
+      return;
+    }
+    const token = `${modal ?? ''}|${inspectId ?? ''}`;
+    if (consumedActionRef.current === token) {
+      return;
+    }
+    consumedActionRef.current = token;
     if (modal === 'tags') {
       tagState.openDialog();
-      queryState.change({ modal: '' }, false, true);
+      queryState.consumeParams(['modal']);
     } else if (modal === 'create') {
       detailState.openNew();
-      queryState.change({ modal: '' }, false, true);
+      queryState.consumeParams(['modal']);
     } else if (inspectId) {
       const match = listState.items.find((item) => item.id === inspectId);
       void detailState.open(match ?? ({ id: inspectId } as AccountSummary));
-      queryState.change({ inspect: '' }, false, true);
+      queryState.consumeParams(['inspect']);
     }
   }, [detailState, listState.items, queryState, tagState]);
 
@@ -358,11 +375,19 @@ export function useAccountsPageController({
     }
   }, [accountIdParam, detailState, navigateBackToList]);
 
+  const initialMountSearchRef = useRef(queryState.search);
   const defaultViewAppliedRef = useRef(false);
   useEffect(() => {
     if (defaultViewAppliedRef.current) return;
     defaultViewAppliedRef.current = true;
-    if (isStandaloneSubView || accountIdParam || window.location.search) return;
+    if (
+      isStandaloneSubView ||
+      accountIdParam ||
+      initialMountSearchRef.current ||
+      window.location.search
+    ) {
+      return;
+    }
     const savedStore = readSavedViewsStore();
     if (!savedStore.defaultViewId) return;
     const target = [...BUILTIN_ACCOUNT_VIEWS, ...savedStore.views].find(

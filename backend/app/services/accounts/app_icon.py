@@ -342,6 +342,37 @@ def resolve_public_ips(host: str, port: int = 443) -> list[str]:
     return ips
 
 
+class _DeadlineExceeded(Exception):
+    """内部全局时间预算耗尽信号。"""
+
+
+def _call_with_deadline(deadline: float | None, fn, *args):
+    """在受全局截止时间约束下执行可能阻塞的系统调用（如 getaddrinfo），超时立即中断等待。"""
+    if deadline is None:
+        return fn(*args)
+    rem = _remaining_timeout(deadline)
+    if rem <= 0:
+        raise _DeadlineExceeded
+    outcome: dict[str, object] = {}
+    done = threading.Event()
+
+    def _runner() -> None:
+        try:
+            outcome["value"] = fn(*args)
+        except BaseException as exc:  # noqa: BLE001
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    worker = threading.Thread(target=_runner, name="gm-icon-dns", daemon=True)
+    worker.start()
+    if not done.wait(timeout=rem):
+        raise _DeadlineExceeded
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome.get("value")
+
+
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     """直接连接已校验的公网 IP 并保留原域名 SNI/证书校验，防止 DNS Rebinding。"""
 
@@ -352,13 +383,31 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         port: int,
         timeout: float,
         context: ssl.SSLContext,
+        *,
+        deadline: float | None = None,
     ):
         super().__init__(host=host, port=port, timeout=timeout, context=context)
         self._pinned_ip = pinned_ip
+        self._deadline = deadline
 
     def connect(self) -> None:
-        sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
-        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        connect_timeout = (
+            _remaining_timeout(self._deadline) if self._deadline is not None else self.timeout
+        )
+        if connect_timeout <= 0:
+            raise TimeoutError("icon fetch deadline exceeded before connect")
+        sock = socket.create_connection((self._pinned_ip, self.port), connect_timeout)
+        try:
+            tls_timeout = (
+                _remaining_timeout(self._deadline) if self._deadline is not None else self.timeout
+            )
+            if tls_timeout <= 0:
+                raise TimeoutError("icon fetch deadline exceeded before TLS handshake")
+            sock.settimeout(tls_timeout)
+            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        except BaseException:
+            sock.close()
+            raise
 
 
 def _fetch_https_bytes(
@@ -367,6 +416,7 @@ def _fetch_https_bytes(
     """安全抓取单个公开 HTTPS URL；逐跳校验重定向、公网 IP 与全局剩余预算，并限制最大读取字节数。"""
     current = url
     ssl_context = ssl.create_default_context()
+    resolved_cache: dict[str, list[str]] = {}
     for _ in range(MAX_REDIRECTS + 1):
         if _remaining_timeout(deadline) <= 0:
             return None
@@ -378,7 +428,14 @@ def _fetch_https_bytes(
         host = normalize_domain(parsed.hostname)
         if not host:
             return None
-        ips = resolve_public_ips(host, 443)
+        try:
+            if host in resolved_cache:
+                ips = resolved_cache[host]
+            else:
+                ips = _call_with_deadline(deadline, resolve_public_ips, host, 443)
+                resolved_cache[host] = ips
+        except (_DeadlineExceeded, AccountError):
+            return None
         timeout = _remaining_timeout(deadline)
         if timeout <= 0:
             return None
@@ -391,6 +448,7 @@ def _fetch_https_bytes(
             port=443,
             timeout=timeout,
             context=ssl_context,
+            deadline=deadline,
         )
         try:
             conn.request(
@@ -414,7 +472,6 @@ def _fetch_https_bytes(
             resp = conn.getresponse()
             if resp.status in {301, 302, 303, 307, 308}:
                 location = resp.getheader("Location")
-                resp.read(1024)
                 if not location:
                     return None
                 next_url = urljoin(current, location.strip())
@@ -427,6 +484,7 @@ def _fetch_https_bytes(
             content_type = (resp.getheader("Content-Type") or "").lower()
             chunks: list[bytes] = []
             total = 0
+            reader = getattr(resp, "read1", None) or resp.read
             while total < max_bytes + 1:
                 if deadline is not None:
                     rem = _remaining_timeout(deadline)
@@ -434,11 +492,13 @@ def _fetch_https_bytes(
                         return None
                     if conn.sock is not None:
                         conn.sock.settimeout(rem)
-                chunk = resp.read(min(8192, max_bytes + 1 - total))
+                chunk = reader(min(8192, max_bytes + 1 - total))
                 if not chunk:
                     break
                 chunks.append(chunk)
                 total += len(chunk)
+            if deadline is not None and _remaining_timeout(deadline) <= 0:
+                return None
             if total == 0 or total > max_bytes:
                 return None
             return content_type, b"".join(chunks)
@@ -520,8 +580,13 @@ def fetch_domain_icon(
     if not domain:
         raise AccountError(422, "APP_DOMAIN_INVALID", "请输入有效的应用域名（如 claude.ai）")
     deadline = time.monotonic() + max(0.01, budget_seconds)
-    # 提前校验主域名公网解析，避免非法/内网目标进入候选抓取循环
-    resolve_public_ips(domain, 443)
+    # 提前校验主域名公网解析，避免非法/内网目标进入候选抓取循环，且将 DNS 解析纳入硬截止预算
+    try:
+        _call_with_deadline(deadline, resolve_public_ips, domain, 443)
+    except _DeadlineExceeded as exc:
+        raise AccountError(
+            422, "APP_ICON_FETCH_FAILED", "获取应用图标超时，请检查域名可达性或稍后重试"
+        ) from exc
     if _remaining_timeout(deadline) <= 0:
         raise AccountError(
             422, "APP_ICON_FETCH_FAILED", "获取应用图标超时，请检查域名可达性或稍后重试"

@@ -18,12 +18,13 @@ from pathlib import Path
 
 ROOT = Path("/srv/example/gmail-manager-backups")
 MAGIC = "gmail-account-manager-backup-v1"
+COUNTS_VERSION = 2
 PROTOCOL = "gmail-backup"
 DB_FILE = "database.dump.age"
 CONFIG_FILE = "deployment.tar.gz.age"
 # Manifest first bounds and validates metadata before accepting ciphertext.
 FILES = ("manifest.json", DB_FILE, CONFIG_FILE)
-TABLES = (
+LEGACY_TABLES = (
     "admin_users",
     "admin_recovery_codes",
     "user_sessions",
@@ -34,6 +35,13 @@ TABLES = (
     "gmail_account_tags",
     "audit_events",
     "csv_receipts",
+)
+TABLES = (
+    *LEGACY_TABLES,
+    "admin_webauthn_credentials",
+    "webauthn_challenges",
+    "registered_apps",
+    "gmail_account_apps",
 )
 MANIFEST_LIMIT = 16384
 # Shared system disk: one request cannot consume arbitrary space with an untrusted tar size.
@@ -65,22 +73,25 @@ def regular(path):
 
 
 def manifest_value(data):
+    required_keys = {
+        "format",
+        "complete",
+        "created_at",
+        "app_version",
+        "schema_version",
+        "tools",
+        "counts",
+        "compression",
+        "sha256",
+    }
     require(
         isinstance(data, dict)
-        and set(data)
-        == {
-            "format",
-            "complete",
-            "created_at",
-            "app_version",
-            "schema_version",
-            "tools",
-            "counts",
-            "compression",
-            "sha256",
-        },
+        and required_keys <= set(data)
+        and set(data) <= (required_keys | {"counts_version"}),
         "MANIFEST_FIELDS_INVALID",
     )
+    counts_version = data.get("counts_version", 1)
+    require(type(counts_version) is int and counts_version in {1, 2}, "MANIFEST_FIELDS_INVALID")
     require(data["format"] == MAGIC and data["complete"] is True, "MANIFEST_INCOMPLETE")
     require(isinstance(data["created_at"], str), "MANIFEST_TIME_INVALID")
     try:
@@ -113,9 +124,12 @@ def manifest_value(data):
             "MANIFEST_TOOLS_INVALID",
         )
     counts = data["counts"]
+    allowed_table_sets = (
+        (set(TABLES),) if counts_version >= 2 else (set(TABLES), set(LEGACY_TABLES))
+    )
     require(
         isinstance(counts, dict)
-        and set(counts) == set(TABLES)
+        and set(counts) in allowed_table_sets
         and all(type(n) is int and n >= 0 for n in counts.values()),
         "MANIFEST_COUNTS_INVALID",
     )

@@ -16,20 +16,40 @@ export type AccountLocationChange = (
   replace?: boolean,
 ) => void;
 
-export function useAccountLocation() {
-  const search = useSyncExternalStore(subscribe, () => window.location.search);
+export type AccountLocationSync = {
+  routerSearch?: string;
+  onRouterSearchChange?: (nextSearch: string, replace: boolean) => void;
+};
+
+const TRANSIENT_ACTION_PARAMS = ['modal', 'inspect'] as const;
+
+export function stripTransientAccountParams(rawSearch: string): string {
+  const clean = new URLSearchParams(rawSearch);
+  for (const key of TRANSIENT_ACTION_PARAMS) {
+    clean.delete(key);
+  }
+  clean.sort();
+  return clean.toString();
+}
+
+export function useAccountLocation(sync?: AccountLocationSync) {
+  const windowSearch = useSyncExternalStore(
+    subscribe,
+    () => window.location.search,
+  );
+  const routerSearch = sync?.routerSearch;
+  const onRouterSearchChange = sync?.onRouterSearchChange;
+  const search = routerSearch !== undefined ? routerSearch : windowSearch;
   const params = useMemo(() => new URLSearchParams(search), [search]);
-  const change = useCallback<AccountLocationChange>(
-    (values, reset = false, replace = false) => {
-      const next = reset
-        ? new URLSearchParams()
-        : new URLSearchParams(window.location.search);
-      for (const [key, value] of Object.entries(values)) {
-        if (value) next.set(key, value);
-        else next.delete(key);
+
+  const applyNextSearch = useCallback(
+    (next: URLSearchParams, replace: boolean) => {
+      const nextSearch = next.size ? `?${next.toString()}` : '';
+      if (onRouterSearchChange) {
+        onRouterSearchChange(nextSearch, replace);
+        return;
       }
-      if (!('page' in values)) next.delete('page');
-      const nextUrl = `${window.location.pathname}${next.size ? '?' + next : ''}`;
+      const nextUrl = `${window.location.pathname}${nextSearch}`;
       if (replace) {
         window.history.replaceState(null, '', nextUrl);
       } else {
@@ -37,9 +57,45 @@ export function useAccountLocation() {
       }
       window.dispatchEvent(new Event('accounts-query'));
     },
-    [],
+    [onRouterSearchChange],
   );
-  return { params, change, search };
+
+  const change = useCallback<AccountLocationChange>(
+    (values, reset = false, replace = false) => {
+      const currentRaw =
+        routerSearch !== undefined ? routerSearch : window.location.search;
+      const next = reset
+        ? new URLSearchParams()
+        : new URLSearchParams(currentRaw);
+      for (const [key, value] of Object.entries(values)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      if (!('page' in values)) next.delete('page');
+      applyNextSearch(next, replace);
+    },
+    [applyNextSearch, routerSearch],
+  );
+
+  const consumeParams = useCallback(
+    (keys: readonly string[]) => {
+      const currentRaw =
+        routerSearch !== undefined ? routerSearch : window.location.search;
+      const next = new URLSearchParams(currentRaw);
+      let mutated = false;
+      for (const key of keys) {
+        if (next.has(key)) {
+          next.delete(key);
+          mutated = true;
+        }
+      }
+      if (!mutated) return;
+      applyNextSearch(next, true);
+    },
+    [applyNextSearch, routerSearch],
+  );
+
+  return { params, change, consumeParams, search };
 }
 
 // 按本地日历求零点，跨夏令时不加固定 24 小时；结束边界不包含。
@@ -153,8 +209,12 @@ export function accountQuery(
   };
 }
 
-export function useAccountQueryState() {
-  const { params, change, search } = useAccountLocation();
+export function useAccountQueryState(sync?: AccountLocationSync) {
+  const { params, change, consumeParams, search } = useAccountLocation(sync);
+  const listSearchKey = useMemo(
+    () => stripTransientAccountParams(search),
+    [search],
+  );
   const query = useMemo(() => accountQuery(params), [params]);
   const deleted = query.deleted === true;
   const recoveryView = params.get('view') === 'recovery';
@@ -182,7 +242,9 @@ export function useAccountQueryState() {
   return {
     params,
     change,
+    consumeParams,
     search,
+    listSearchKey,
     query,
     deleted,
     recoveryView,

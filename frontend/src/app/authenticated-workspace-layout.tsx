@@ -297,11 +297,35 @@ export function AuthenticatedWorkspaceLayout({
     [location.pathname, location.search, navigate],
   );
 
+  const navigateAccountsTransientAction = useCallback(
+    (actionParams: Record<string, string>) => {
+      const onMainAccountsList =
+        (location.pathname === '/' || location.pathname === '/accounts') &&
+        !['recovery', 'apps', 'chart'].includes(
+          new URLSearchParams(location.search).get('view') ?? '',
+        );
+      if (onMainAccountsList) {
+        const next = new URLSearchParams(location.search);
+        next.delete('modal');
+        next.delete('inspect');
+        for (const [k, v] of Object.entries(actionParams)) {
+          next.set(k, v);
+        }
+        const searchStr = next.toString();
+        void navigate({
+          pathname: resolveAppHref({ kind: 'accounts' }),
+          search: searchStr ? `?${searchStr}` : '',
+        });
+        return;
+      }
+      void navigate(resolveAppHref({ kind: 'accounts', query: actionParams }));
+    },
+    [location.pathname, location.search, navigate],
+  );
+
   const handleAddTag = useCallback(() => {
-    void navigate(
-      resolveAppHref({ kind: 'accounts', query: { modal: 'tags' } }),
-    );
-  }, [navigate]);
+    navigateAccountsTransientAction({ modal: 'tags' });
+  }, [navigateAccountsTransientAction]);
 
   const handleTopNav = useCallback(
     (key: TopNavKey) => {
@@ -387,17 +411,10 @@ export function AuthenticatedWorkspaceLayout({
         open={commandOpen}
         onOpenChange={setCommandOpen}
         onOpenAccount={(account) => {
-          void navigate(
-            resolveAppHref({
-              kind: 'accounts',
-              query: { inspect: account.id },
-            }),
-          );
+          navigateAccountsTransientAction({ inspect: account.id });
         }}
         onCreateAccount={() => {
-          void navigate(
-            resolveAppHref({ kind: 'accounts', query: { modal: 'create' } }),
-          );
+          navigateAccountsTransientAction({ modal: 'create' });
         }}
         onOpenTagManager={handleAddTag}
         onApplyViewQuery={(query) => {

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type {
   AccountCreateWritable,
@@ -6,6 +6,7 @@ import type {
   AccountPatchWritable,
   ErrorResponse,
   RegisteredAppResponse,
+  SessionResponse,
   TagResponse,
 } from '@/api/generated';
 import {
@@ -23,6 +24,7 @@ import {
   appsFetchIcon,
   tagsCreate,
 } from '@/api/generated';
+import { resolveDetailRecoverySelection } from '../account-validation';
 import type { AccountAction, AppStatus } from '../constants';
 import {
   createDraftFromAccount,
@@ -32,6 +34,7 @@ import { summarizeChangedFields } from './detail-helpers';
 
 type UseAccountDetailMutationsParams = {
   account: AccountDetail | null;
+  session?: SessionResponse | null;
   headers: Record<string, string>;
   queryClient: QueryClient;
   onFailure: (error: unknown) => void;
@@ -48,6 +51,7 @@ type UseAccountDetailMutationsParams = {
 
 export function useAccountDetailMutations({
   account,
+  session,
   headers,
   queryClient,
   onFailure,
@@ -61,6 +65,59 @@ export function useAccountDetailMutations({
   prependLocalTimeline,
   showToast,
 }: UseAccountDetailMutationsParams) {
+  const mountedRef = useRef(true);
+  const guardEpochRef = useRef(0);
+  const activeAccountIdRef = useRef<string | null>(account?.id ?? null);
+  const prevAccountIdRef = useRef<string | null | undefined>(account?.id);
+  const prevAuthStateRef = useRef<SessionResponse['state'] | null | undefined>(
+    session?.state,
+  );
+
+  activeAccountIdRef.current = account?.id ?? null;
+  if (prevAccountIdRef.current !== account?.id) {
+    if (prevAccountIdRef.current !== undefined) {
+      guardEpochRef.current += 1;
+    }
+    prevAccountIdRef.current = account?.id;
+  }
+
+  if (prevAuthStateRef.current !== session?.state) {
+    if (
+      prevAuthStateRef.current === 'authenticated' &&
+      session?.state !== 'authenticated'
+    ) {
+      guardEpochRef.current += 1;
+    }
+    prevAuthStateRef.current = session?.state;
+  }
+
+  useEffect(() => {
+    mountedRef.current = true;
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'removed' &&
+        queryClient.getQueryCache().getAll().length === 0
+      ) {
+        guardEpochRef.current += 1;
+      }
+    });
+    return () => {
+      mountedRef.current = false;
+      guardEpochRef.current += 1;
+      unsubscribe();
+    };
+  }, [queryClient]);
+
+  const isStale = useCallback(
+    (ticket: number, originAccountId?: string) =>
+      !mountedRef.current ||
+      ticket !== guardEpochRef.current ||
+      (originAccountId !== undefined &&
+        activeAccountIdRef.current !== originAccountId) ||
+      session === null ||
+      (session !== undefined && session.state !== 'authenticated'),
+    [session],
+  );
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [conflictMessage, setConflictMessage] = useState('');
@@ -78,15 +135,16 @@ export function useAccountDetailMutations({
   const handleSaveBasicInfo = useCallback(
     async (nextDraft: AccountBasicInfoDraft) => {
       if (!account || busy) return;
+      const ticket = guardEpochRef.current;
       setBusy(true);
       setConflict(false);
       setConflictMessage('');
 
       try {
-        const trimmedRecovery = nextDraft.recovery_email_external.trim();
-        const keepLinkedRecovery =
-          Boolean(account.recovery_account_id && trimmedRecovery) &&
-          trimmedRecovery === (account.recovery_email ?? '');
+        const recoverySelection = resolveDetailRecoverySelection(
+          account,
+          nextDraft.recovery_email_external,
+        );
         const encryptedPhoneHidden = Boolean(
           account.has_phone && !account.phone,
         );
@@ -96,12 +154,8 @@ export function useAccountDetailMutations({
         const patch: AccountPatchWritable = {
           row_version: account.row_version,
           gmail_email: nextDraft.gmail_email,
-          recovery_account_id: keepLinkedRecovery
-            ? account.recovery_account_id
-            : null,
-          recovery_email_external: keepLinkedRecovery
-            ? null
-            : trimmedRecovery || null,
+          recovery_account_id: recoverySelection.recovery_account_id,
+          recovery_email_external: recoverySelection.recovery_email_external,
           status: nextDraft.status,
           two_factor_status: nextDraft.two_factor_status,
           purpose: nextDraft.purpose || null,
@@ -133,6 +187,7 @@ export function useAccountDetailMutations({
           throwOnError: true,
         });
 
+        if (isStale(ticket)) return;
         queryClient.setQueryData(['account-detail', data.id], data);
         setDraft(createDraftFromAccount(data));
         setIsEditing(false);
@@ -151,6 +206,7 @@ export function useAccountDetailMutations({
           queryClient.invalidateQueries({ queryKey: ['apps-usage'] }),
         ]);
       } catch (error) {
+        if (isStale(ticket)) return;
         const err = error as Partial<ErrorResponse>;
         const code = err?.error?.code;
         if (code === 'ROW_VERSION_CONFLICT') {
@@ -174,13 +230,14 @@ export function useAccountDetailMutations({
           }
         }
       } finally {
-        setBusy(false);
+        if (mountedRef.current) setBusy(false);
       }
     },
     [
       account,
       busy,
       headers,
+      isStale,
       onFailure,
       prependLocalTimeline,
       queryClient,
@@ -192,27 +249,30 @@ export function useAccountDetailMutations({
 
   const handleReloadLatest = useCallback(async () => {
     if (!account) return;
+    const ticket = guardEpochRef.current;
     setBusy(true);
     try {
       const { data } = await accountsDetail({
         path: { account_id: account.id },
         throwOnError: true,
       });
+      if (isStale(ticket)) return;
       queryClient.setQueryData(['account-detail', data.id], data);
       setDraft(createDraftFromAccount(data));
       setConflict(false);
       setConflictMessage('');
       showToast(`已重新加载最新版本 v${data.row_version}`);
     } catch (error) {
-      onFailure(error);
+      if (!isStale(ticket)) onFailure(error);
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
-  }, [account, onFailure, queryClient, setDraft, showToast]);
+  }, [account, isStale, onFailure, queryClient, setDraft, showToast]);
 
   const handleLifecycleAction = useCallback(
     async (action: AccountAction) => {
       if (!account || busy) return;
+      const ticket = guardEpochRef.current;
       setBusy(true);
       setConflict(false);
       try {
@@ -224,6 +284,7 @@ export function useAccountDetailMutations({
             headers,
             throwOnError: true,
           });
+          if (isStale(ticket)) return;
           setConfirmAction(null);
           setIsEditing(false);
           bumpSecretEpoch();
@@ -238,6 +299,7 @@ export function useAccountDetailMutations({
             queryClient.invalidateQueries({ queryKey: ['accounts'] }),
             queryClient.invalidateQueries({ queryKey: ['summary'] }),
           ]);
+          if (isStale(ticket)) return;
           if (onNavigateList) {
             onNavigateList();
           } else {
@@ -259,6 +321,7 @@ export function useAccountDetailMutations({
           headers,
           throwOnError: true,
         });
+        if (isStale(ticket)) return;
         queryClient.setQueryData(['account-detail', data.id], data);
         setDraft(createDraftFromAccount(data));
         setConfirmAction(null);
@@ -286,6 +349,7 @@ export function useAccountDetailMutations({
           queryClient.invalidateQueries({ queryKey: ['summary'] }),
         ]);
       } catch (error) {
+        if (isStale(ticket)) return;
         const err = error as Partial<ErrorResponse>;
         const code = err?.error?.code;
         if (code === 'ROW_VERSION_CONFLICT') {
@@ -307,7 +371,7 @@ export function useAccountDetailMutations({
           }
         }
       } finally {
-        setBusy(false);
+        if (mountedRef.current) setBusy(false);
       }
     },
     [
@@ -315,6 +379,7 @@ export function useAccountDetailMutations({
       bumpSecretEpoch,
       busy,
       headers,
+      isStale,
       onFailure,
       onNavigateList,
       prependLocalTimeline,
@@ -329,6 +394,7 @@ export function useAccountDetailMutations({
   const attachTag = useCallback(
     async (tag: TagResponse) => {
       if (!account || busy) return;
+      const ticket = guardEpochRef.current;
       const nextTagIds = Array.from(
         new Set([...account.tags.map((t) => t.id), tag.id]),
       );
@@ -340,6 +406,7 @@ export function useAccountDetailMutations({
           headers,
           throwOnError: true,
         });
+        if (isStale(ticket)) return;
         queryClient.setQueryData(['account-detail', data.id], data);
         prependLocalTimeline(data.id, `添加标签（${tag.name}）`);
         showToast(`已添加标签“${tag.name}”`);
@@ -347,18 +414,28 @@ export function useAccountDetailMutations({
           queryKey: ['detail-accounts-list'],
         });
       } catch (error) {
+        if (isStale(ticket)) return;
         const err = error as Partial<ErrorResponse>;
         showToast(err?.error?.message ?? '添加标签失败');
       } finally {
-        setBusy(false);
+        if (mountedRef.current) setBusy(false);
       }
     },
-    [account, busy, headers, prependLocalTimeline, queryClient, showToast],
+    [
+      account,
+      busy,
+      headers,
+      isStale,
+      prependLocalTimeline,
+      queryClient,
+      showToast,
+    ],
   );
 
   const createAndAttachTag = useCallback(
     async (name: string) => {
       if (!account || busy) return;
+      const ticket = guardEpochRef.current;
       setBusy(true);
       try {
         const { data: created } = await tagsCreate({
@@ -366,6 +443,7 @@ export function useAccountDetailMutations({
           headers,
           throwOnError: true,
         });
+        if (isStale(ticket)) return;
         await queryClient.invalidateQueries({ queryKey: ['tags'] });
         const nextTagIds = Array.from(
           new Set([...account.tags.map((t) => t.id), created.id]),
@@ -376,6 +454,7 @@ export function useAccountDetailMutations({
           headers,
           throwOnError: true,
         });
+        if (isStale(ticket)) return;
         queryClient.setQueryData(['account-detail', data.id], data);
         prependLocalTimeline(data.id, `新增并绑定标签（${created.name}）`);
         showToast(`已添加标签“${created.name}”`);
@@ -383,17 +462,27 @@ export function useAccountDetailMutations({
           queryKey: ['detail-accounts-list'],
         });
       } catch (error) {
+        if (isStale(ticket)) return;
         const err = error as Partial<ErrorResponse>;
         showToast(err?.error?.message ?? '新建标签失败');
       } finally {
-        setBusy(false);
+        if (mountedRef.current) setBusy(false);
       }
     },
-    [account, busy, headers, prependLocalTimeline, queryClient, showToast],
+    [
+      account,
+      busy,
+      headers,
+      isStale,
+      prependLocalTimeline,
+      queryClient,
+      showToast,
+    ],
   );
 
   const handleCreateAccount = useCallback(
     async (body: AccountCreateWritable) => {
+      const ticket = guardEpochRef.current;
       setBusy(true);
       try {
         const { data } = await accountsCreate({
@@ -401,24 +490,28 @@ export function useAccountDetailMutations({
           headers,
           throwOnError: true,
         });
+        if (isStale(ticket)) return;
         setCreateDialogOpen(false);
         showToast(`已新建账号 ${data.gmail_email}`);
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['detail-accounts-list'] }),
           queryClient.invalidateQueries({ queryKey: ['summary'] }),
         ]);
+        if (isStale(ticket)) return;
         commitSwitchAccount(data.id);
       } catch (error) {
+        if (isStale(ticket)) return;
         const err = error as Partial<ErrorResponse>;
         showToast(err?.error?.message ?? '创建账号失败');
         onFailure(error);
       } finally {
-        setBusy(false);
+        if (mountedRef.current) setBusy(false);
       }
     },
     [
       commitSwitchAccount,
       headers,
+      isStale,
       onFailure,
       queryClient,
       setCreateDialogOpen,
@@ -431,6 +524,7 @@ export function useAccountDetailMutations({
       name: string,
       options?: { domain?: string | null; icon_data?: string | null },
     ): Promise<RegisteredAppResponse | null> => {
+      const ticket = guardEpochRef.current;
       const { data } = await appsCreate({
         body: {
           name,
@@ -442,30 +536,34 @@ export function useAccountDetailMutations({
         headers,
         throwOnError: true,
       });
+      if (isStale(ticket)) return null;
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['apps'] }),
         queryClient.invalidateQueries({ queryKey: ['apps-usage'] }),
       ]);
       return data;
     },
-    [headers, queryClient],
+    [headers, isStale, queryClient],
   );
 
   const handleFetchAppIcon = useCallback(
     async (domain: string) => {
+      const ticket = guardEpochRef.current;
       const { data } = await appsFetchIcon({
         body: { domain },
         headers,
         throwOnError: true,
       });
+      if (isStale(ticket)) return null;
       return data;
     },
-    [headers],
+    [headers, isStale],
   );
 
   const handleQuickToggleAppStatus = useCallback(
     async (appId: string, nextStatus: AppStatus) => {
       if (!account || busy) return;
+      const ticket = guardEpochRef.current;
       setBusy(true);
       setConflict(false);
       setConflictMessage('');
@@ -481,6 +579,7 @@ export function useAccountDetailMutations({
           headers,
           throwOnError: true,
         });
+        if (isStale(ticket)) return;
         queryClient.setQueryData(['account-detail', data.id], data);
         setDraft(createDraftFromAccount(data));
         const appName =
@@ -502,6 +601,7 @@ export function useAccountDetailMutations({
           }),
         ]);
       } catch (error) {
+        if (isStale(ticket)) return;
         const err = error as Partial<ErrorResponse>;
         if (err?.error?.code === 'ROW_VERSION_CONFLICT') {
           setConflict(true);
@@ -519,13 +619,14 @@ export function useAccountDetailMutations({
           }
         }
       } finally {
-        setBusy(false);
+        if (mountedRef.current) setBusy(false);
       }
     },
     [
       account,
       busy,
       headers,
+      isStale,
       onFailure,
       prependLocalTimeline,
       queryClient,

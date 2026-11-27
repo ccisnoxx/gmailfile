@@ -501,6 +501,14 @@ function SettingsPageBody({
     data.adminSecurity.stepUpTotpRequired && data.totpSecurity.enabled;
   const canUsePasskey =
     data.webauthnCredentials.length > 0 && isWebAuthnSupported();
+  const isTotpSetupRecentlyVerified =
+    !data.totpSecurity.enabled && data.webauthnCredentials.length > 0
+      ? Boolean(
+          data.adminSecurity.mfaReverifiedUntil &&
+          new Date(data.adminSecurity.mfaReverifiedUntil).getTime() >
+            Date.now(),
+        )
+      : data.isRecentlyVerified;
 
   const sensitiveDialogConfig = useMemo(
     () =>
@@ -672,7 +680,7 @@ function SettingsPageBody({
             open={totpSetupModalOpen}
             onOpenChange={setTotpSetupModalOpen}
             isRebind={data.totpSecurity.enabled}
-            isRecentlyVerified={data.isRecentlyVerified}
+            isRecentlyVerified={isTotpSetupRecentlyVerified}
             canUsePasskey={canUsePasskey}
             onPasskeyVerify={data.handlers.passkeyReverify}
             onStartSetup={data.handlers.startTotpSetup}

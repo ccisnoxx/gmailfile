@@ -22,6 +22,7 @@ from app.services.accounts import AccountService
 from app.services.csv_transfer.parser import (
     ENCRYPTED_EXPORT_FIELDS,
     EXPORT_FIELDS,
+    encode_csv_tags,
     spreadsheet_safe,
 )
 
@@ -99,7 +100,7 @@ def _format_row(row: GmailAccount, recovery_email: str | None, tag_names: list[s
         "last_verified_at": _format_timestamp(row.last_verified_at),
         "password_changed_at": _format_timestamp(row.password_changed_at),
         "purpose": row.purpose,
-        "tags": "|".join(tag_names),
+        "tags": encode_csv_tags(tag_names),
         "archived_at": _format_timestamp(row.archived_at),
         "deleted_at": _format_timestamp(row.deleted_at),
         "created_at": _format_timestamp(row.created_at),
@@ -231,7 +232,7 @@ def _format_encrypted_row(
         "last_verified_at": _format_timestamp(row.last_verified_at),
         "password_changed_at": _format_timestamp(row.password_changed_at),
         "purpose": row.purpose,
-        "tags": "|".join(tag_names),
+        "tags": encode_csv_tags(tag_names),
         "notes": notes,
         "archived_at": _format_timestamp(row.archived_at),
         "deleted_at": _format_timestamp(row.deleted_at),

@@ -73,8 +73,18 @@ class TotpManager:
             self.sessions.require_recent(row)
             if not self.ctx.check_password(admin, password):
                 self.ctx.fail("totp_setup")
-            if admin.totp_enabled and not self.verify_factor(admin, code, recovery):
-                self.ctx.fail("totp_setup", mfa=True)
+            if admin.totp_enabled:
+                if not self.verify_factor(admin, code, recovery):
+                    self.ctx.fail("totp_setup", mfa=True)
+                if row.mfa_reauthenticated_at is None or (
+                    row.reauthenticated_at is not None
+                    and row.mfa_reauthenticated_at < row.reauthenticated_at
+                ):
+                    row.mfa_reauthenticated_at = row.reauthenticated_at
+            elif self.ctx.has_any_mfa(admin):
+                # 仅启用通行密钥时，完整认证会话新增 TOTP 必须具备最近既有 MFA 验证；
+                # 一次性恢复码重绑仅允许通过登录进入 mfa_pending 受限会话完成。
+                self.sessions.require_recent(row, require_mfa=True)
             self.ctx.clear_failures()
         secret = pyotp.random_base32()
         encrypted = self.ctx.encryption.encrypt(secret, "user_session", row.id, "pending_totp")
@@ -97,7 +107,7 @@ class TotpManager:
     def confirm(self, code: str) -> RecoveryResponse:
         row = self.sessions.require_session(full=False)
         if row.auth_level == "authenticated":
-            self.sessions.require_recent(row)
+            self.sessions.require_recent(row, require_mfa=True)
         self.ctx.check_throttle("totp_confirm")
         if row.pending_totp_expires_at is None or row.pending_totp_expires_at <= self.ctx.now:
             raise SecurityError(403, "SETUP_REQUIRED", "绑定已过期，请重新开始绑定")

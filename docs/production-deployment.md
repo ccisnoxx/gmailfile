@@ -27,8 +27,9 @@ Docker 仅内部网络时可能没有宿主机端口发布，故示例仅让 API
 
 ```sh
 (cd frontend && pnpm install --frozen-lockfile && pnpm build)
-# 先在私有发布机导出全量门禁结果，再使用独立 Ed25519 发布私钥（与审计检查点密钥分离）签发发布包：
+# 导出静态契约、文档、Compose、Nginx、构建物扫描与依赖在线漏洞审计门禁结果：
 (cd backend && uv run --locked python ../scripts/check-release-gates.py all --online --json > ../.local/gates.json)
+# 正式发布前应同时在发布/验收环境执行单元、PG18 集成与浏览器 E2E（见 Makefile: make check / make test-db / make test-e2e-live）
 python3 scripts/package-release.py --release-id example-release-1 \
   --directory "$PWD/.local/releases" \
   --signing-key /secure/offline/release-signing.priv.pem \
@@ -37,7 +38,8 @@ python3 scripts/package-release.py --release-id example-release-1 \
 ```
 
 `example-release-1` 是示例 ID，不代表实际发布。白名单包不含 `.env`、`.local`、Secret、备份、node_modules 或虚拟环境。
-打包脚本自动读取真实 Git `HEAD`（`git_commit`、`git_tree`、`git_tag`、`git_tag_verified`、`working_tree_clean`），默认要求工作区干净，生成 CycloneDX SBOM（`sbom.cdx.json`）、确定性源码归档摘要（`source_archive_sha256`）与独立 Ed25519 签名证明（`release.attestation.json` 及外部 `.tar.gz.attestation.json`，覆盖 `release_id`、`git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256`、归档摘要、门禁结果与构建工具版本）。
+注意：`check-release-gates.py all --online` 覆盖静态与供应链门禁（`check-openapi`、`check-docs`、`compose-all`、`nginx`、`scan-dist`、`audit-deps-online-strict`），**不包含** `pytest`、前端 `vitest` 或真实浏览器 E2E；正式发布验收记录应明确留存对应 `git_commit`、实际执行的门禁与测试套件、未执行/跳过项、PostgreSQL 与浏览器实际运行版本，以及是否使用了测试替身。
+打包脚本自动读取真实 Git `HEAD`（`git_commit`、`git_tree`、`git_tag`、`git_tag_verified`、`working_tree_clean`），默认要求工作区干净，生成 CycloneDX SBOM（`sbom.cdx.json`）、受完整文件清单（`files`）约束的确定性源码归档摘要（`source_archive_sha256`）与独立 Ed25519 签名证明（`release.attestation.json` 及外部 `.tar.gz.attestation.json`，覆盖 `release_id`、`git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256`、`files_sha256`/`file_count`、归档摘要、门禁结果与构建工具版本）。
 实例版配置由私有流程单独提供；不要将它放回公开源码目录后重新公开打包。
 源/静态发布与实例配置的最终组合必须通过私有发布器的 `plan`、独立公钥验签（`RELEASE_SIGNING_PUBLIC_KEY_FILE` 或 `--signing-public-key`）、溯源摘要核验和精确 Compose 校验（含基础镜像 `@sha256:<digest>` 与 `STEP_UP_TOTP_REQUIRED=true`）。
 构建阶段自动将 `git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256` 写入镜像 OCI 标签，并通过 `--signing-key` 或独立 `sign-images` 子命令生成镜像签名证明 `images.attestation.json`（覆盖最终镜像 ID 与 `repo_digests`）；部署前强制核验源码与镜像两份 Ed25519 签名证明及本地镜像 ID/溯源标签。

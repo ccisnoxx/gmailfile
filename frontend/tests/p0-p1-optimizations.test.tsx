@@ -14,6 +14,7 @@ import { Providers } from '@/app/providers';
 import { buildRoutes } from '@/app/router';
 import { GlassToolbar } from '@/components/macos';
 import { AccountDetailDrawer } from '@/features/accounts/account-detail-drawer';
+import { AppAllocationDrawer } from '@/features/accounts/app-allocation-drawer';
 import { BatchBar } from '@/features/accounts/account-batch-bar';
 import { AppsUsageView } from '@/features/accounts/apps-usage-view';
 import { OverviewInsightsPanel } from '@/features/accounts/overview-insights-panel';
@@ -681,5 +682,132 @@ describe('P0 + P1 交互与功能回归测试', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /完整详情/ }));
     expect(onOpenFullPage).toHaveBeenCalledWith(detail.id);
+  });
+
+  it('命令面板执行「新建 Gmail 账号」与「打开账号」后弹窗/抽屉保持打开，消费参数不丢失分页且快速领号备注不引导填手机号', async () => {
+    const auth = makeSession();
+    const acct = makeAccount(42, {
+      gmail_email: 'deep.inspect@gmail.com',
+      purpose: '命令面板直达核验',
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (req: Request) => {
+        const url = new URL(req.url, 'http://localhost');
+        if (url.pathname === '/api/v1/auth/session') return json(auth);
+        if (url.pathname === `/api/v1/accounts/${acct.id}`) return json(acct);
+        if (url.pathname === '/api/v1/accounts') {
+          return json({
+            items: [acct],
+            total: 45,
+            page: Number(url.searchParams.get('page') || 1),
+            page_size: 30,
+          });
+        }
+        if (url.pathname === '/api/v1/tags') return json([]);
+        if (url.pathname === '/api/v1/apps') return json([]);
+        if (url.pathname === '/api/v1/dashboard/summary') {
+          return json({
+            total: 45,
+            normal: 45,
+            pending_verification: 0,
+            abnormal: 0,
+            risk: 0,
+            disabled: 0,
+            archived: 0,
+            deleted_count: 0,
+            tag_counts: {},
+            added_this_month: 2,
+            unverified_over_30_days: 0,
+          });
+        }
+        return json({});
+      }),
+    );
+
+    const memoryRouter = createMemoryRouter(buildRoutes(false), {
+      initialEntries: ['/accounts?page=2'],
+    });
+    render(
+      <Providers>
+        <RouterProvider router={memoryRouter} />
+      </Providers>,
+    );
+
+    await screen.findByRole('heading', { name: '账号管理' });
+
+    // 1. 命令面板触发「新建 Gmail 账号」：消费 modal 参数后新增弹窗仍持续打开且保留 page=2
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    await userEvent.click(await screen.findByText('新建 Gmail 账号'));
+
+    await screen.findByRole('heading', { name: '新建账号' });
+    await waitFor(() => {
+      expect(memoryRouter.state.location.search).not.toContain('modal=create');
+      expect(memoryRouter.state.location.search).toContain('page=2');
+    });
+    expect(
+      screen.getByRole('heading', { name: '新建账号' }),
+    ).toBeInTheDocument();
+
+    // 关闭新增弹窗
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('heading', { name: '新建账号' }),
+      ).not.toBeInTheDocument();
+    });
+
+    // 2. 命令面板搜索并打开具体账号：消费 inspect 参数后详情抽屉持续展示且迟到响应不被误丢弃
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    const paletteInput = await screen.findByLabelText('搜索账号或快捷命令');
+    const paletteDialog = screen.getByRole('dialog');
+    await userEvent.type(paletteInput, 'deep.inspect@gmail.com');
+    const paletteAccountItem = await waitFor(() => {
+      const el = Array.from(paletteDialog.querySelectorAll('button')).find(
+        (btn) => btn.textContent?.includes('deep.inspect@gmail.com'),
+      );
+      expect(el).toBeDefined();
+      return el!;
+    });
+    await userEvent.click(paletteAccountItem);
+
+    await waitFor(() => {
+      expect(memoryRouter.state.location.search).not.toContain('inspect=');
+      expect(memoryRouter.state.location.search).toContain('page=2');
+    });
+    const fullDetailBtn = await screen.findByRole('button', {
+      name: /完整详情/,
+    });
+    expect(fullDetailBtn).toBeInTheDocument();
+    expect(screen.getAllByText('命令面板直达核验').length).toBeGreaterThan(0);
+
+    // 3. 快速领号抽屉的备注占位提示不再引导填写绑定手机号
+    const targetApp: RegisteredAppUsage = {
+      id: 'app-claude',
+      name: 'Claude',
+      domain: 'claude.ai',
+      icon_data: null,
+      sort_order: 1,
+      created_at: '2026-11-01T00:00:00Z',
+      total_count: 0,
+      active_count: 0,
+      restricted_count: 0,
+      banned_count: 0,
+    };
+    mountWithQuery(
+      <AppAllocationDrawer
+        open
+        app={targetApp}
+        session={auth}
+        onOpenChange={vi.fn()}
+        onSession={vi.fn()}
+        onFailure={vi.fn()}
+      />,
+    );
+    const noteInput = await screen.findByLabelText(
+      `${acct.gmail_email} 注册备注`,
+    );
+    expect(noteInput.getAttribute('placeholder') ?? '').not.toContain('手机号');
   });
 });

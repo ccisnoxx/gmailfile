@@ -1,5 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect } from 'react';
-import { useInRouterContext, useNavigate, useParams } from 'react-router-dom';
+import {
+  useInRouterContext,
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
 import { resolveAppHref } from '@/app/navigation';
 import {
   AppWindowShell,
@@ -61,6 +66,7 @@ export function AccountsPage(props: AccountsPageProps) {
 
 function RoutedAccountsPage(props: AccountsPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ accountId?: string }>();
   const navigateToAccount = useCallback(
     (id: string) => {
@@ -68,18 +74,18 @@ function RoutedAccountsPage(props: AccountsPageProps) {
         resolveAppHref({
           kind: 'account-detail',
           accountId: id,
-          search: window.location.search,
+          search: location.search,
         }),
       );
     },
-    [navigate],
+    [location.search, navigate],
   );
   const navigateBackToList = useCallback(() => {
     void navigate({
       pathname: resolveAppHref({ kind: 'accounts' }),
-      search: window.location.search,
+      search: location.search,
     });
-  }, [navigate]);
+  }, [location.search, navigate]);
   const navigateToRecovery = useCallback(() => {
     void navigate(resolveAppHref({ kind: 'recovery-emails' }));
   }, [navigate]);
@@ -95,10 +101,24 @@ function RoutedAccountsPage(props: AccountsPageProps) {
     },
     [navigate],
   );
+  const handleRouterSearchChange = useCallback(
+    (nextSearch: string, replace: boolean) => {
+      void navigate(
+        {
+          pathname: location.pathname,
+          search: nextSearch,
+        },
+        { replace },
+      );
+    },
+    [location.pathname, navigate],
+  );
   return (
     <AccountsPageBody
       {...props}
       accountIdParam={params.accountId}
+      routerSearch={location.search}
+      onRouterSearchChange={handleRouterSearchChange}
       navigateToAccount={navigateToAccount}
       navigateBackToList={navigateBackToList}
       navigateToRecovery={navigateToRecovery}

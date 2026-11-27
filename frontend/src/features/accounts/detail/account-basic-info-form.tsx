@@ -26,6 +26,11 @@ import {
   type CreateAppHandler,
   type FetchAppIconHandler,
 } from '@/features/accounts/account-apps-editor';
+import {
+  resolveDetailRecoverySelection,
+  validatePhoneNumberInput,
+  validateRecoveryConfiguration,
+} from '@/features/accounts/account-validation';
 import type { AppStatus } from '@/features/accounts/constants';
 import { CredentialForm } from '@/features/auth/credential-form';
 import { StepUpVerifier } from '@/features/auth/step-up-verifier';
@@ -126,17 +131,6 @@ const detailStatusOptions: readonly {
   { value: 'disabled', label: '停用', dotClass: 'bg-[#98a2b3]' },
   { value: 'archived', label: '已归档', dotClass: 'bg-[#8492a6]' },
 ];
-
-function normalizeEmail(email: string): string {
-  const parts = email.trim().toLowerCase().split('@');
-  if (parts.length !== 2) return email.trim().toLowerCase();
-  let [local, domain] = parts;
-  if (domain === 'gmail.com' || domain === 'googlemail.com') {
-    local = local.split('+')[0].replaceAll('.', '');
-    domain = 'gmail.com';
-  }
-  return `${local}@${domain}`;
-}
 
 export function AccountBasicInfoForm({
   account,
@@ -253,24 +247,25 @@ export function AccountBasicInfoForm({
       return;
     }
 
-    if (draft.phone.trim()) {
-      const digits = draft.phone.replace(/\D/g, '');
-      if (digits.length < 6 || digits.length > 20) {
-        setValidationError('绑定手机号需包含 6 至 20 位数字。');
-        return;
-      }
-    }
-
-    if (!draft.recovery_email_external.trim()) {
-      setValidationError('辅助邮箱不能为空。');
+    const phoneError = validatePhoneNumberInput(draft.phone);
+    if (phoneError) {
+      setValidationError(phoneError);
       return;
     }
 
-    if (
-      normalizeEmail(draft.gmail_email) ===
-      normalizeEmail(draft.recovery_email_external)
-    ) {
-      setValidationError('辅助邮箱不能与主邮箱相同。');
+    const recoverySelection = resolveDetailRecoverySelection(
+      account,
+      draft.recovery_email_external,
+    );
+    const recoveryError = validateRecoveryConfiguration({
+      gmailEmail: draft.gmail_email,
+      mode: recoverySelection.mode,
+      recoveryEmailExternal: draft.recovery_email_external,
+      recoveryAccountId: recoverySelection.recovery_account_id,
+      linkedRecoveryEmail: recoverySelection.linkedRecoveryEmail,
+    });
+    if (recoveryError) {
+      setValidationError(recoveryError);
       return;
     }
 
@@ -655,7 +650,9 @@ export function AccountBasicInfoForm({
               readOnly={!isEditing}
               maxLength={254}
               autoComplete="off"
-              placeholder="未填写辅助邮箱"
+              placeholder={
+                isEditing ? '可选：留空表示暂不设置辅助邮箱' : '未填写辅助邮箱'
+              }
               value={draft.recovery_email_external}
               onChange={(e) =>
                 onDraftChange({

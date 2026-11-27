@@ -793,4 +793,158 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
     expect(unarchiveCalls[0]).toBe(`/api/v1/accounts/${archived.id}/unarchive`);
     expect(restoreCalls).toHaveLength(0);
   });
+
+  it('完整详情页支持辅助邮箱四种状态（初始为空、保留站内关联、切换外部邮箱、主动清空）并拦截主辅同名', async () => {
+    const user = userEvent.setup();
+    const patchPayloads: Array<Record<string, unknown>> = [];
+    let serverAccount = makeLiveAccount({
+      recovery_account_id: null,
+      recovery_email_external: null,
+      recovery_email: null,
+    });
+
+    renderLiveDetail(serverAccount, {
+      onPatch: async (req) => {
+        const body = (await req.json()) as Record<string, unknown>;
+        patchPayloads.push(body);
+        const linkedId =
+          (body.recovery_account_id as string | null | undefined) ?? null;
+        const extEmail =
+          (body.recovery_email_external as string | null | undefined) ?? null;
+        serverAccount = {
+          ...serverAccount,
+          ...body,
+          recovery_account_id: linkedId,
+          recovery_email_external: extEmail,
+          recovery_email: linkedId ? 'linked.backup@gmail.com' : extEmail,
+          row_version: serverAccount.row_version + 1,
+        };
+        return json(serverAccount);
+      },
+    });
+
+    await screen.findByRole('heading', { name: serverAccount.gmail_email });
+
+    // 1. 初始为空：仅修改用途即可成功保存，不再报错「辅助邮箱不能为空」
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    const purposeInput = screen.getByLabelText('用途');
+    await user.clear(purposeInput);
+    await user.type(purposeInput, '空辅助邮箱仅改用途');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => expect(patchPayloads).toHaveLength(1));
+    expect(patchPayloads[0]).toMatchObject({
+      purpose: '空辅助邮箱仅改用途',
+      recovery_account_id: null,
+      recovery_email_external: null,
+    });
+
+    // 2. 切换为外部地址与主辅同名拦截
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    const recoveryInput = screen.getByLabelText('辅助邮箱');
+    await user.type(recoveryInput, 'exampleaccount+alias@googlemail.com');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(
+      await screen.findByText('辅助邮箱不能与主邮箱相同'),
+    ).toBeInTheDocument();
+    expect(patchPayloads).toHaveLength(1);
+
+    await user.clear(recoveryInput);
+    await user.type(recoveryInput, 'ext.recovery@proton.me');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+    await waitFor(() => expect(patchPayloads).toHaveLength(2));
+    expect(patchPayloads[1]).toMatchObject({
+      recovery_account_id: null,
+      recovery_email_external: 'ext.recovery@proton.me',
+    });
+  });
+
+  it('完整详情站内关联保留与主动清空，以及退出清缓存/卸载后迟到写响应不再回填缓存', async () => {
+    const user = userEvent.setup();
+    const patchPayloads: Array<Record<string, unknown>> = [];
+    let deferredResolve: ((resp: Response) => void) | null = null;
+    let holdNextPatch = false;
+
+    const linkedAccount = makeLiveAccount({
+      recovery_account_id: 'acc_linked_target',
+      recovery_email_external: null,
+      recovery_email: 'linked.backup@gmail.com',
+    });
+
+    const { client, unmount } = renderLiveDetail(linkedAccount, {
+      onPatch: async (req) => {
+        const body = (await req.json()) as Record<string, unknown>;
+        patchPayloads.push(body);
+        if (holdNextPatch) {
+          return await new Promise<Response>((resolve) => {
+            deferredResolve = resolve;
+          });
+        }
+        const nextLinked =
+          (body.recovery_account_id as string | null | undefined) ?? null;
+        const nextExt =
+          (body.recovery_email_external as string | null | undefined) ?? null;
+        return json({
+          ...linkedAccount,
+          ...body,
+          recovery_account_id: nextLinked,
+          recovery_email_external: nextExt,
+          recovery_email: nextLinked ? 'linked.backup@gmail.com' : nextExt,
+          row_version: linkedAccount.row_version + patchPayloads.length,
+        });
+      },
+    });
+
+    await screen.findByRole('heading', { name: linkedAccount.gmail_email });
+
+    // 1. 保留站内关联：仅改用途，保持 recovery_account_id
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    const purposeInput = screen.getByLabelText('用途');
+    await user.clear(purposeInput);
+    await user.type(purposeInput, '保留站内关联');
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+    await waitFor(() => expect(patchPayloads).toHaveLength(1));
+    expect(patchPayloads[0]).toMatchObject({
+      recovery_account_id: 'acc_linked_target',
+      recovery_email_external: null,
+    });
+
+    // 2. 主动清空辅助邮箱：发送双 null，且模拟在途响应返回前触发退出清缓存 + 卸载
+    holdNextPatch = true;
+    await user.click(screen.getByRole('button', { name: '编辑' }));
+    const recoveryInput = screen.getByLabelText('辅助邮箱');
+    await user.clear(recoveryInput);
+    await user.click(screen.getByRole('button', { name: '保存修改' }));
+    await waitFor(() => expect(patchPayloads).toHaveLength(2));
+    expect(patchPayloads[1]).toMatchObject({
+      recovery_account_id: null,
+      recovery_email_external: null,
+    });
+
+    // 模拟退出登录清理 QueryClient 缓存并卸载页面
+    client.clear();
+    unmount();
+    expect(client.getQueryData(['account-detail', linkedAccount.id])).toBe(
+      undefined,
+    );
+
+    // 迟到的成功写响应抵达后，绝不能重新写回已清空的缓存
+    await act(async () => {
+      deferredResolve?.(
+        json({
+          ...linkedAccount,
+          purpose: '迟到响应不应回填',
+          recovery_account_id: null,
+          recovery_email_external: null,
+          recovery_email: null,
+          row_version: linkedAccount.row_version + 5,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(client.getQueryData(['account-detail', linkedAccount.id])).toBe(
+      undefined,
+    );
+  });
 });

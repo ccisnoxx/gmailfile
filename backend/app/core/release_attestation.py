@@ -19,6 +19,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+from app.core.release_meta import release_files_sha256
+
 ATTESTATION_VERSION = 1
 SOURCE_ATTESTATION_KIND = "release-source-attestation"
 ARCHIVE_ATTESTATION_KIND = "release-archive-attestation"
@@ -221,6 +223,7 @@ def build_source_attestation_payload(
     gate_results: list[dict[str, object]] | None = None,
     build_tools: dict[str, str] | None = None,
 ) -> dict[str, object]:
+    files_sha256, file_count = release_files_sha256(manifest.get("files"))
     return {
         "release_id": manifest["release_id"],
         "app_version": manifest["app_version"],
@@ -232,6 +235,8 @@ def build_source_attestation_payload(
         "working_tree_clean": bool(manifest.get("working_tree_clean", False)),
         "source_archive_sha256": manifest["source_archive_sha256"],
         "sbom_sha256": manifest["sbom_sha256"],
+        "files_sha256": files_sha256,
+        "file_count": file_count,
         "locks": manifest.get("locks") or {},
         "base_images": manifest.get("base_images") or {},
         "gate_results": list(gate_results) if gate_results is not None else [],
@@ -242,6 +247,7 @@ def build_source_attestation_payload(
 def build_archive_attestation_payload(
     manifest: dict[str, object], *, archive_name: str, archive_sha256: str
 ) -> dict[str, object]:
+    files_sha256, file_count = release_files_sha256(manifest.get("files"))
     return {
         "release_id": manifest["release_id"],
         "app_version": manifest["app_version"],
@@ -250,6 +256,8 @@ def build_archive_attestation_payload(
         "git_tree": manifest["git_tree"],
         "source_archive_sha256": manifest["source_archive_sha256"],
         "sbom_sha256": manifest["sbom_sha256"],
+        "files_sha256": files_sha256,
+        "file_count": file_count,
         "archive_name": archive_name,
         "archive_sha256": archive_sha256,
     }
@@ -299,6 +307,7 @@ def verify_release_source_attestation(
         public_key_pem,
         audit_key_pem=audit_key_pem,
     )
+    expected_files_sha256, expected_file_count = release_files_sha256(manifest.get("files"))
     required_equal = (
         "release_id",
         "app_version",
@@ -311,6 +320,11 @@ def verify_release_source_attestation(
     for field in required_equal:
         if payload.get(field) != manifest.get(field):
             raise ValueError(f"发布签名证明字段与清单不一致：{field}")
+    if (
+        payload.get("files_sha256") != expected_files_sha256
+        or payload.get("file_count") != expected_file_count
+    ):
+        raise ValueError("发布签名证明中的文件清单摘要与清单不一致")
     if payload.get("working_tree_clean") is not True:
         raise ValueError("发布签名证明显示工作区不洁净，拒绝部署")
     if "locks" in manifest and payload.get("locks") != manifest.get("locks"):

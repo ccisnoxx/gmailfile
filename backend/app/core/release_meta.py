@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import re
 import tarfile
 import tomllib
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 APP_VERSION = "0.1.0"
 SCHEMA_VERSION = "0008"
@@ -143,15 +144,95 @@ class _HashStream(io.RawIOBase):
         return len(data)
 
 
+RELEASE_METADATA_FILES: frozenset[str] = frozenset(
+    {
+        "release.json",
+        "sbom.cdx.json",
+        "release.attestation.json",
+        "images.json",
+        "images.attestation.json",
+    }
+)
+
+
+def normalize_release_file_list(declared_files: object) -> list[str]:
+    """校验并规范化发布清单中的相对文件路径集合，拒绝缺失、空集合、重复、越界与元数据同名项。"""
+    if not isinstance(declared_files, list) or not declared_files:
+        raise ValueError("发布文件清单缺失或为空")
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for item in declared_files:
+        if not isinstance(item, str) or not item or item != item.strip():
+            raise ValueError("发布文件清单包含非法文件名")
+        if "\x00" in item or "\\" in item or item.startswith("/"):
+            raise ValueError(f"发布文件清单包含非法路径：{item}")
+        parts = PurePosixPath(item).parts
+        if not parts or any(part in {"", ".", ".."} for part in parts):
+            raise ValueError(f"发布文件清单包含越界或非规范路径：{item}")
+        canonical = "/".join(parts)
+        if canonical != item:
+            raise ValueError(f"发布文件清单路径未规范化：{item}")
+        if canonical in RELEASE_METADATA_FILES:
+            raise ValueError(f"发布文件清单不得包含部署元数据文件：{canonical}")
+        if canonical in seen:
+            raise ValueError(f"发布文件清单包含重复路径：{canonical}")
+        seen.add(canonical)
+        normalized.append(canonical)
+    return sorted(normalized)
+
+
+def release_files_sha256(declared_files: object) -> tuple[str, int]:
+    """计算规范化文件清单自身的 SHA-256 摘要与条目数，供发布签名证明绑定。"""
+    normalized = normalize_release_file_list(declared_files)
+    digest = hashlib.sha256("\n".join(normalized).encode("utf-8")).hexdigest()
+    return digest, len(normalized)
+
+
+def verify_release_tree_files(root: Path, declared_files: object) -> list[str]:
+    """核对发布目录中的实际普通文件全集与清单声明严格一致，阻断缺失清单、未列举文件注入或符号链接。"""
+    expected = normalize_release_file_list(declared_files)
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("发布目录不存在或为符号链接")
+    actual: list[str] = []
+    for current_dir, dirnames, filenames in os.walk(root, followlinks=False):
+        current_path = Path(current_dir)
+        for dirname in dirnames:
+            if (current_path / dirname).is_symlink():
+                raise ValueError(f"发布目录包含非法目录符号链接：{dirname}")
+        for filename in filenames:
+            candidate = current_path / filename
+            if candidate.is_symlink() or not candidate.is_file():
+                raise ValueError(f"发布目录包含非常规文件或符号链接：{filename}")
+            rel = candidate.relative_to(root).as_posix()
+            if rel in RELEASE_METADATA_FILES:
+                continue
+            actual.append(rel)
+    actual_sorted = sorted(actual)
+    if actual_sorted != expected:
+        raise ValueError("发布目录实际文件集合与发布清单不一致")
+    return expected
+
+
 def canonical_source_archive_sha256(root: Path, relative_files: Iterable[str]) -> str:
     """对白名单源码文件流式构建确定性 USTAR 归档并返回 SHA-256（不落盘临时文件）。"""
+    normalized = normalize_release_file_list(list(relative_files))
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("发布源码根目录不存在或为符号链接")
+    resolved_root = root.resolve()
     hasher = hashlib.sha256()
     sink = _HashStream(hasher)
     with tarfile.open(fileobj=sink, mode="w|", format=tarfile.USTAR_FORMAT) as archive:
-        for rel in sorted(relative_files):
+        for rel in normalized:
+            cursor = root
+            for part in PurePosixPath(rel).parts[:-1]:
+                cursor = cursor / part
+                if cursor.is_symlink():
+                    raise ValueError(f"源码路径包含符号链接目录：{rel}")
             path = root / rel
             if path.is_symlink() or not path.is_file():
                 raise ValueError(f"源码白名单文件缺失或非法：{rel}")
+            if not path.resolve().is_relative_to(resolved_root):
+                raise ValueError(f"源码文件路径越界：{rel}")
             info = archive.gettarinfo(str(path), arcname=rel)
             normalize_tar_member(info, deterministic_mtime=True)
             with path.open("rb") as source:

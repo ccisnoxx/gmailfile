@@ -30,6 +30,10 @@ import {
   type CreateAppHandler,
   type FetchAppIconHandler,
 } from './account-apps-editor';
+import {
+  validatePhoneNumberInput,
+  validateRecoveryConfiguration,
+} from './account-validation';
 import { factorLabels, localDate, statusLabels } from './constants';
 import { isMaskedPasswordPlaceholder } from './detail/use-password-secret';
 import { PasswordGeneratorPopover } from './password-generator-popover';
@@ -204,14 +208,6 @@ export function AccountForm({
     <form
       className="flex min-h-0 flex-1 flex-col"
       onSubmit={handleSubmit(async (values) => {
-        const normalize = (email: string) => {
-          let [local, domain] = email.trim().toLowerCase().split('@');
-          if (domain === 'gmail.com' || domain === 'googlemail.com') {
-            local = local.split('+')[0].replaceAll('.', '');
-            domain = 'gmail.com';
-          }
-          return `${local}@${domain}`;
-        };
         if (values.password && isMaskedPasswordPlaceholder(values.password)) {
           setError('password', {
             message: '请填写真实密码，不要填写星号或圆点掩码占位符。',
@@ -221,23 +217,21 @@ export function AccountForm({
         const shouldValidatePhone =
           !encryptedPhoneHidden || phoneAction === 'replace';
         if (shouldValidatePhone && values.phone) {
-          const digits = values.phone.replace(/\D/g, '');
-          if (digits.length < 6 || digits.length > 20) {
-            setError('phone', {
-              message: '绑定手机号需包含 6 至 20 位数字。',
-            });
+          const phoneError = validatePhoneNumberInput(values.phone);
+          if (phoneError) {
+            setError('phone', { message: phoneError });
             return;
           }
         }
         const trimmedRecoveryExternal = values.recovery_email_external.trim();
-        if (
-          mode === 'external' &&
-          trimmedRecoveryExternal &&
-          normalize(values.gmail_email) === normalize(trimmedRecoveryExternal)
-        ) {
-          setError('recovery_email_external', {
-            message: '辅助邮箱不能与主邮箱相同',
-          });
+        const recoveryError = validateRecoveryConfiguration({
+          gmailEmail: values.gmail_email,
+          mode,
+          recoveryEmailExternal: trimmedRecoveryExternal,
+          recoveryAccountId: values.recovery_account_id,
+        });
+        if (recoveryError) {
+          setError('recovery_email_external', { message: recoveryError });
           return;
         }
         const body: AccountCreateWritable = {

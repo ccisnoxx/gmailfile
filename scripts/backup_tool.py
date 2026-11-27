@@ -30,8 +30,10 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 from infra.backup.receiver import (  # noqa: E402
     CONFIG_FILE,
+    COUNTS_VERSION,
     DB_FILE,
     FILES,
+    LEGACY_TABLES,
     MAGIC,
     MANIFEST_LIMIT,
     TABLES,
@@ -149,9 +151,9 @@ def connect(database, **kwargs):
     return psycopg.connect(dbname=database, **kwargs)
 
 
-def counts(connection):
+def counts(connection, tables=TABLES):
     result = {}
-    for table in TABLES:
+    for table in tables:
         result[table] = connection.execute(
             sql.SQL("SELECT count(*) FROM public.{}").format(sql.Identifier(table))
         ).fetchone()[0]
@@ -275,7 +277,15 @@ def read_manifest(directory):
         manifest.get("format") == MAGIC and manifest.get("complete") is True,
         "备份格式或完成标记无效",
     )
-    require(set(manifest["counts"]) == set(TABLES), "备份表清单不完整")
+    counts_version = manifest.get("counts_version", 1)
+    require(type(counts_version) is int and counts_version in {1, 2}, "备份清单版本无效")
+    allowed_table_sets = (
+        (set(TABLES),) if counts_version >= 2 else (set(TABLES), set(LEGACY_TABLES))
+    )
+    require(
+        isinstance(manifest.get("counts"), dict) and set(manifest["counts"]) in allowed_table_sets,
+        "备份表清单不完整",
+    )
     for filename in (DB_FILE, CONFIG_FILE):
         require(
             file_digest(directory / filename) == manifest["sha256"][filename],
@@ -484,6 +494,7 @@ def backup(args):
             stamp = now()
             manifest = {
                 "format": MAGIC,
+                "counts_version": COUNTS_VERSION,
                 "complete": True,
                 "created_at": stamp.isoformat(),
                 "app_version": APP_VERSION,
@@ -560,7 +571,11 @@ def verify_restored(database, manifest, *, connection=None):
     from app.ops.verify_restore import verify
 
     with contextlib.nullcontext(connection) if connection else connect(database) as connection:
-        require(counts(connection) == manifest["counts"], "恢复行数与快照清单不一致")
+        expected_tables = tuple(t for t in TABLES if t in manifest["counts"])
+        require(
+            counts(connection, expected_tables) == manifest["counts"],
+            "恢复行数与快照清单不一致",
+        )
         require(
             connection.execute("SELECT version_num FROM public.alembic_version").fetchone()[0]
             == manifest["schema_version"],
@@ -697,12 +712,16 @@ def verify_admin_step_up(connection, keys: Path, *, read_password=getpass.getpas
             (step, admin_id),
         )
     else:
-        # 当管理员已绑定 WebAuthn 且停用 TOTP 时，CLI 切换使用一次性恢复码作为离线二步验证兜底。
-        has_webauthn = connection.execute(
-            "SELECT count(*) FROM public.admin_webauthn_credentials "
-            "WHERE admin_user_id=%s AND revoked_at IS NULL",
-            (admin_id,),
-        ).fetchone()[0]
+        # 当管理员已绑定 WebAuthn 且停用 TOTP 时，CLI 切换使用一次性恢复码作为离线二步验证兜底；
+        # 兼容 < 0005 的早期历史备份恢复库（尚未包含 admin_webauthn_credentials 表）。
+        try:
+            has_webauthn = connection.execute(
+                "SELECT count(*) FROM public.admin_webauthn_credentials "
+                "WHERE admin_user_id=%s AND revoked_at IS NULL",
+                (admin_id,),
+            ).fetchone()[0]
+        except psycopg.errors.UndefinedTable:
+            has_webauthn = 0
         if has_webauthn > 0:
             from app.core.security import token_hash
 
@@ -798,7 +817,8 @@ def switch(args):
                     "pending_totp_ciphertext=NULL, pending_totp_nonce=NULL, "
                     "pending_totp_key_version=NULL, pending_totp_expires_at=NULL"
                 )
-                target.execute("DELETE FROM public.webauthn_challenges")
+                if str(manifest.get("schema_version", SCHEMA_VERSION)) >= "0005":
+                    target.execute("DELETE FROM public.webauthn_challenges")
                 target.execute("DELETE FROM public.pre_auth_sessions")
                 target.execute("DELETE FROM public.csv_receipts")
                 target.execute(

@@ -526,11 +526,14 @@ export function useSettingsAuthActions({
       try {
         if (isLive && session) {
           let freshCsrf = latestCsrfRef.current ?? session.csrf_token;
-          const recentUntil = session.step_up_totp_required
+          const requiresExistingMfa =
+            session.step_up_totp_required ||
+            (!session.totp_enabled && session.webauthn_enabled);
+          const recentUntil = requiresExistingMfa
             ? session.mfa_reauthenticated_until
             : session.reauthenticated_until;
           if (!isReauthActive(recentUntil)) {
-            if (session.step_up_totp_required) {
+            if (requiresExistingMfa) {
               return {
                 ok: false,
                 requireReauth: true,

@@ -275,3 +275,151 @@ def test_spool_cross_process_append_and_flush_loses_zero_records(settings, tmp_p
             settings.audit_syslog_address = ""
             settings.audit_syslog_spool_file = None
             configure_audit_sink(settings)
+
+
+def test_nested_savepoint_commit_defers_audit_emission_until_outer_commit(monkeypatch):
+    """验证 begin_nested() 保存点释放不会提前外发审计，外层回滚零外发，外层提交仅外发已提交记录。"""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from sqlalchemy import create_engine, event, text
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+
+    from app.core.audit_sink import attach_audit_session_hooks
+    from app.models import AuditEvent
+
+    emitted: list[dict[str, object]] = []
+    monkeypatch.setattr(audit_sink, "emit_audit_records", lambda records: emitted.extend(records))
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_savepoints(dbapi_connection, _connection_record):
+        dbapi_connection.isolation_level = None
+
+    @event.listens_for(engine, "begin")
+    def _begin_sqlite_tx(conn):
+        conn.exec_driver_sql("BEGIN")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE audit_events (
+                    id VARCHAR(36) PRIMARY KEY,
+                    seq INTEGER,
+                    created_at TIMESTAMP NOT NULL,
+                    event_type VARCHAR(64) NOT NULL,
+                    account_id VARCHAR(36),
+                    session_id VARCHAR(36),
+                    ip_address VARCHAR(64),
+                    user_agent TEXT,
+                    metadata JSON NOT NULL,
+                    prev_hash BLOB,
+                    event_hash BLOB
+                )
+                """
+            )
+        )
+
+    now = datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
+
+    # 场景 1：保存点成功提交，但外层事务回滚 -> 数据库与外部通道均为 0 条
+    with Session(engine) as session:
+        attach_audit_session_hooks(session)
+        with session.begin_nested():
+            session.add(
+                AuditEvent(
+                    id=uuid4(),
+                    seq=1,
+                    created_at=now,
+                    event_type="csv_imported",
+                    event_metadata={"operation": "csv"},
+                    event_hash=b"\x01" * 32,
+                )
+            )
+            session.flush()
+        # 保存点已释放但外层未提交：此时绝不能提前外发
+        assert emitted == []
+        session.rollback()
+
+    assert emitted == []
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM audit_events")).scalar_one() == 0
+
+    # 场景 2：保存点 1 成功、保存点 2 回滚、外层提交 -> 仅保存点 1 与外层记录在顶层提交后一次性外发
+    with Session(engine) as session:
+        attach_audit_session_hooks(session)
+        with session.begin_nested():
+            session.add(
+                AuditEvent(
+                    id=uuid4(),
+                    seq=2,
+                    created_at=now,
+                    event_type="csv_imported",
+                    event_metadata={"operation": "csv"},
+                    event_hash=b"\x02" * 32,
+                )
+            )
+            session.flush()
+        try:
+            with session.begin_nested():
+                session.add(
+                    AuditEvent(
+                        id=uuid4(),
+                        seq=3,
+                        created_at=now,
+                        event_type="account_created",
+                        event_metadata={},
+                        event_hash=b"\x03" * 32,
+                    )
+                )
+                session.flush()
+                raise RuntimeError("abort nested savepoint")
+        except RuntimeError:
+            pass
+        assert emitted == []
+        session.commit()
+
+    assert [item["seq"] for item in emitted] == [2]
+
+    # 场景 3：内层保存点 flush() 触发唯一约束异常（子事务回滚）后外层提交，不得误删外层待发审计
+    emitted.clear()
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    with Session(engine) as session:
+        attach_audit_session_hooks(session)
+        dup_id = uuid4()
+        session.add(
+            AuditEvent(
+                id=dup_id,
+                seq=200,
+                created_at=now,
+                event_type="login_success",
+                event_metadata={},
+                event_hash=b"\x04" * 32,
+            )
+        )
+        session.flush()
+        with pytest.raises(IntegrityError), session.begin_nested():
+            session.add(
+                AuditEvent(
+                    id=dup_id,
+                    seq=201,
+                    created_at=now,
+                    event_type="account_created",
+                    event_metadata={},
+                    event_hash=b"\x05" * 32,
+                )
+            )
+            session.flush()
+        assert emitted == []
+        session.commit()
+
+    assert [item["seq"] for item in emitted] == [200]

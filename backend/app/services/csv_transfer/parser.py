@@ -2,6 +2,7 @@
 
 import csv
 import io
+from collections.abc import Iterable
 from typing import get_args
 
 from app.schemas.operations import CsvField, CsvIssue
@@ -50,6 +51,37 @@ ENCRYPTED_EXPORT_FIELDS = (
 
 def issue(row: int, field: str, reason: str) -> CsvIssue:
     return CsvIssue(row=row, field=field, reason=reason)
+
+
+def encode_csv_tags(tag_names: Iterable[str]) -> str:
+    """将标签列表无损编码为单列字符串：对反斜杠与竖线分隔符做反斜杠转义。"""
+    return "|".join(name.replace("\\", "\\\\").replace("|", "\\|") for name in tag_names)
+
+
+def decode_csv_tags(raw: str) -> list[str]:
+    """解析单列标签字符串，还原 \\| 与 \\\\ 转义，同时兼容手写 CSV 中未转义的普通反斜杠。"""
+    tokens: list[str] = []
+    buf: list[str] = []
+    escaped = False
+    for ch in raw:
+        if escaped:
+            if ch in {"\\", "|"}:
+                buf.append(ch)
+            else:
+                buf.append("\\")
+                buf.append(ch)
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == "|":
+            tokens.append("".join(buf))
+            buf.clear()
+        else:
+            buf.append(ch)
+    if escaped:
+        buf.append("\\")
+    tokens.append("".join(buf))
+    return list(dict.fromkeys(name.strip() for name in tokens if name.strip()))
 
 
 def parse_csv(content: bytes) -> tuple[list[str], list[list[str]]]:

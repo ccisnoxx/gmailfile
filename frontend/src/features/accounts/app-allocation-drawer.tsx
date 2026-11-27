@@ -251,7 +251,7 @@ export function AppAllocationDrawer({
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         <Input
                           aria-label={`${item.gmail_email} 注册备注`}
-                          placeholder="可选：填写业务用途或绑定手机号备注…"
+                          placeholder="可选：填写非敏感业务用途或套餐说明…"
                           maxLength={200}
                           value={notesById[item.id] ?? ''}
                           onChange={(e) =>

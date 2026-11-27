@@ -429,6 +429,7 @@ function AccountDetailLiveBody({
 
   const mutations = useAccountDetailMutations({
     account,
+    session,
     headers,
     queryClient,
     onFailure,

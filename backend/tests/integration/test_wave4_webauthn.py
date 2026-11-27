@@ -534,3 +534,37 @@ def test_webauthn_error_branches_and_recovery_code_login_when_totp_disabled(env)
     )
     assert with_recovery.status_code == 200
     assert with_recovery.json()["state"] == "mfa_pending"
+
+    # 4. 已登录 Passkey-only 会话仅用密码 reverify 时禁止绑定新 TOTP；
+    # 完成 Passkey Step-Up 后方可绑定。
+    advance(env, seconds=360)
+    pwd_reverify = post(c1, "reverify", state, {"password": env["password"]})
+    assert pwd_reverify.status_code == 200
+    state = pwd_reverify.json()
+    assert state["reauthenticated_until"] is not None
+    assert state["mfa_reauthenticated_until"] is None
+
+    blocked_setup = post(c1, "totp/setup", state, {"password": env["password"]})
+    assert blocked_setup.status_code == 403
+    assert blocked_setup.json()["error"]["code"] == "REAUTH_REQUIRED"
+
+    su_opt2 = post(c1, "webauthn/step-up/options", state)
+    assert su_opt2.status_code == 200
+    su_ver2 = post(
+        c1,
+        "webauthn/step-up/verify",
+        state,
+        {
+            "challenge_id": su_opt2.json()["challenge_id"],
+            "credential": auth1.make_assertion(su_opt2.json()["options"]["challenge"], uv=True),
+        },
+    )
+    assert su_ver2.status_code == 200
+    state = su_ver2.json()
+
+    allowed_setup = post(c1, "totp/setup", state, {"password": env["password"]})
+    assert allowed_setup.status_code == 200
+    rebound_code = pyotp.TOTP(allowed_setup.json()["secret"]).at(env["clock"][0])
+    rebound_confirm = post(c1, "totp/confirm", state, {"code": rebound_code})
+    assert rebound_confirm.status_code == 200
+    assert rebound_confirm.json()["session"]["totp_enabled"] is True
