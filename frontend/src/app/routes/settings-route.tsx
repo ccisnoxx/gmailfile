@@ -1,6 +1,12 @@
 import { useNavigate } from 'react-router-dom';
+import {
+  resolveAccountFilterToken,
+  resolveAppHref,
+  resolveOperationsDestination,
+} from '@/app/navigation';
 import { useWorkspaceContext } from '@/features/auth/workspace-context';
-import { SettingsPage, type SettingsSectionKey } from '@/features/settings';
+import { SettingsPage } from '@/features/settings/settings-page';
+import type { SettingsSectionKey } from '@/features/settings/types';
 
 export default function SettingsRoute({
   initialSection = 'security',
@@ -21,45 +27,18 @@ export default function SettingsRoute({
       onRefreshSession={workspace.onRefreshSession}
       onSignedOut={workspace.onSignedOut}
       onNavigateAccounts={(filter) => {
-        if (filter === 'dashboard') {
-          void navigate('/accounts?view=chart');
-        } else if (filter === 'apps') {
-          void navigate('/apps');
-        } else if (filter === 'normal') {
-          void navigate('/accounts?status=normal');
-        } else if (filter === 'pending') {
-          void navigate('/accounts?status=pending_verification');
-        } else if (filter === 'risk') {
-          void navigate('/accounts?statuses=restricted,login_failed');
-        } else if (filter === 'disabled') {
-          void navigate('/accounts?status=disabled');
-        } else if (filter === 'archived') {
-          void navigate('/accounts?archived=true');
-        } else if (filter === 'trash') {
-          void navigate('/accounts?deleted=true');
-        } else if (filter === 'tags') {
-          void navigate('/accounts?modal=tags');
-        } else if (filter?.startsWith('tag:')) {
-          const tagId = filter.slice(4);
-          void navigate(
-            `/accounts?${new URLSearchParams({ tag: tagId }).toString()}`,
-          );
-        } else {
+        if (!filter) {
           workspace.onNavigate('accounts');
+          return;
         }
+        void navigate(resolveAppHref(resolveAccountFilterToken(filter)));
       }}
       onNavigateOperations={(tab) => {
-        if (tab === 'import') {
-          void navigate('/transfers/csv');
-        } else if (tab === 'export') {
-          void navigate('/transfers/csv?tab=export');
-        } else if (tab === 'audit') {
-          void navigate('/settings/audit');
-        } else {
-          void navigate('/settings/backup');
-        }
+        void navigate(resolveAppHref(resolveOperationsDestination(tab)));
       }}
-      onNavigateRecoveryUsage={() => void navigate('/recovery-emails')}
+      onNavigateRecoveryUsage={() =>
+        void navigate(resolveAppHref({ kind: 'recovery-emails' }))
+      }
       onLogout={() => workspace.onLogout(true)}
     />
   );

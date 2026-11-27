@@ -1,6 +1,6 @@
 import type { ErrorResponse } from '@/api/generated';
 import { useWorkspaceContext } from '@/features/auth/workspace-context';
-import { CsvImportPage } from '@/features/transfers';
+import { CsvImportPage } from '@/features/transfers/csv-import-page';
 
 export default function CsvImportRoute() {
   const workspace = useWorkspaceContext();

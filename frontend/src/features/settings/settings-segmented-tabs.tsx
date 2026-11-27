@@ -5,10 +5,12 @@ import { SETTINGS_SECTIONS, type SettingsSectionKey } from './types';
 export function SettingsSegmentedTabs({
   activeSection,
   onChange,
+  onPreloadSection,
   className,
 }: {
   activeSection: SettingsSectionKey;
   onChange: (section: SettingsSectionKey) => void;
+  onPreloadSection?: (section: SettingsSectionKey) => void;
   className?: string;
 }) {
   const buttonRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -69,6 +71,8 @@ export function SettingsSegmentedTabs({
               aria-controls={`settings-tabpanel-${section.key}`}
               tabIndex={active ? 0 : -1}
               onClick={() => onChange(section.key)}
+              onMouseEnter={() => onPreloadSection?.(section.key)}
+              onFocus={() => onPreloadSection?.(section.key)}
               onKeyDown={(e) => handleKeyDown(e, index)}
               className={cn(
                 'inline-flex h-[34px] items-center justify-center rounded-[10px] px-3 text-[12.5px] whitespace-nowrap transition-all duration-[180ms] ease-out focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] sm:px-4 sm:text-[13px]',
