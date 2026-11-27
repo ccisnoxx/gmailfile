@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowUpDown,
   Bell,
   ChevronDown,
   FileText,
+  Lock,
   LogOut,
   Mail,
   Menu,
+  Search,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
   Tag,
   User,
 } from 'lucide-react';
+import { authActivity, type SessionResponse } from '@/api/generated';
 import { cn } from '@/lib/utils';
 import { useAppShellContext } from './app-window-shell';
 import {
@@ -90,6 +94,10 @@ export function GlassToolbar({
   onToggleShowcase,
   showcaseActive = false,
   onLogout,
+  onLockSession,
+  onOpenCommandPalette,
+  session,
+  onSession,
   notificationCount,
   notifications = [],
   onClearNotifications,
@@ -108,6 +116,10 @@ export function GlassToolbar({
   onToggleShowcase?: () => void;
   showcaseActive?: boolean;
   onLogout: () => void;
+  onLockSession?: () => void;
+  onOpenCommandPalette?: () => void;
+  session?: SessionResponse;
+  onSession?: (next: SessionResponse) => void;
   notificationCount?: number;
   notifications?: readonly string[];
   onClearNotifications?: () => void;
@@ -119,6 +131,96 @@ export function GlassToolbar({
   const [dismissedDigest, setDismissedDigest] = useState<string>('');
   const [internalDisplaySettings, setInternalDisplaySettings] =
     useState<DisplaySettingsState>(() => readDisplaySettings());
+  const [renewBusy, setRenewBusy] = useState(false);
+  const [clockAnchor, setClockAnchor] = useState(() => ({
+    serverMs:
+      session && Number.isFinite(Date.parse(session.server_time))
+        ? Date.parse(session.server_time)
+        : Date.now(),
+    localMs: Date.now(),
+  }));
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const localMs = Date.now();
+    const parsedServer =
+      session && Number.isFinite(Date.parse(session.server_time))
+        ? Date.parse(session.server_time)
+        : localMs;
+    setClockAnchor({ serverMs: parsedServer, localMs });
+    setNowMs(localMs);
+  }, [
+    session?.server_time,
+    session?.idle_expires_at,
+    session?.expires_at,
+    session?.reauthenticated_until,
+    session?.mfa_reauthenticated_until,
+    session,
+  ]);
+
+  const estimatedServerMs =
+    clockAnchor.serverMs + Math.max(0, nowMs - clockAnchor.localMs);
+
+  const stepUpRemainSec = (() => {
+    if (!session || session.state !== 'authenticated') return 0;
+    const hasMfa = Boolean(session.totp_enabled || session.webauthn_enabled);
+    const targetIso = hasMfa
+      ? session.mfa_reauthenticated_until
+      : session.reauthenticated_until;
+    if (!targetIso) return 0;
+    const targetMs = Date.parse(targetIso);
+    if (!Number.isFinite(targetMs) || targetMs <= estimatedServerMs) return 0;
+    return Math.ceil((targetMs - estimatedServerMs) / 1000);
+  })();
+
+  const expiryWarning = (() => {
+    if (!session || session.state !== 'authenticated') return null;
+    const idleMs = Date.parse(session.idle_expires_at);
+    const absMs = Date.parse(session.expires_at);
+    const effectiveMs = Math.min(
+      Number.isFinite(idleMs) ? idleMs : Infinity,
+      Number.isFinite(absMs) ? absMs : Infinity,
+    );
+    if (!Number.isFinite(effectiveMs)) return null;
+    const remainSec = Math.ceil((effectiveMs - estimatedServerMs) / 1000);
+    if (remainSec <= 0 || remainSec > 60) return null;
+    const canRenew =
+      Number.isFinite(absMs) && absMs - estimatedServerMs > 65_000;
+    return { remainSec, canRenew };
+  })();
+
+  const needFastTick = stepUpRemainSec > 0 || expiryWarning !== null;
+  useEffect(() => {
+    if (!session || session.state !== 'authenticated') return;
+    const interval = needFastTick ? 1000 : 5000;
+    const timer = window.setInterval(() => setNowMs(Date.now()), interval);
+    return () => window.clearInterval(timer);
+  }, [needFastTick, session]);
+
+  const formatMmSs = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const handleRenewIdle = async () => {
+    if (!session || renewBusy) return;
+    setRenewBusy(true);
+    try {
+      const { data } = await authActivity({
+        headers: { 'X-CSRF-Token': session.csrf_token },
+        throwOnError: true,
+      });
+      onSession?.(data);
+    } catch {
+      /* 若已过期将由全局会话锁处理 */
+    } finally {
+      setRenewBusy(false);
+    }
+  };
+
+  const triggerCommandPalette =
+    onOpenCommandPalette ?? shell?.openCommandPalette;
 
   const menuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -213,8 +315,79 @@ export function GlassToolbar({
         </button>
       </div>
 
-      {/* 右侧：全站统一的全局工具区（外观/显示设置 + 通知 + 管理员菜单） */}
+      {/* 右侧：全站统一的全局工具区（命令面板 + 按需安全状态胶囊 + 一键锁定 + 外观 + 通知 + 管理员菜单） */}
       <div className="flex shrink-0 items-center gap-2">
+        {expiryWarning && (
+          <div
+            role="status"
+            aria-live="polite"
+            data-slot="session-expiry-warning"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--badge-orange-border)] bg-[var(--badge-orange-bg)] px-2.5 text-[11.5px] font-medium tabular-nums text-[var(--badge-orange-text)]"
+          >
+            <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              {expiryWarning.canRenew
+                ? `即将锁定 ${formatMmSs(expiryWarning.remainSec)}`
+                : `会话上限 ${formatMmSs(expiryWarning.remainSec)}（请先保存）`}
+            </span>
+            {expiryWarning.canRenew && (
+              <button
+                type="button"
+                disabled={renewBusy}
+                onClick={() => void handleRenewIdle()}
+                className="ml-0.5 rounded-full bg-[var(--accent)] px-2 py-0.5 text-[11px] font-semibold text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                续期
+              </button>
+            )}
+          </div>
+        )}
+
+        {stepUpRemainSec > 0 && (
+          <span
+            data-slot="step-up-countdown-badge"
+            title="当前处于管理员二次验证有效期内，敏感操作免重复验证"
+            className="hidden h-8 items-center gap-1.5 rounded-full border border-[var(--badge-green-border)] bg-[var(--badge-green-bg)] px-2.5 text-[11.5px] font-medium tabular-nums text-[var(--badge-green-text)] sm:inline-flex"
+          >
+            <ShieldCheck className="size-3.5 shrink-0" aria-hidden="true" />
+            <span>已验证 {formatMmSs(stepUpRemainSec)}</span>
+          </span>
+        )}
+
+        {triggerCommandPalette && (
+          <IconTooltip label="搜索与快捷命令（⌘/Ctrl + K）">
+            <button
+              type="button"
+              data-slot="command-palette-trigger"
+              aria-label="打开全局命令面板"
+              onClick={triggerCommandPalette}
+              className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-2.5 text-xs font-medium text-[var(--text-secondary)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
+            >
+              <Search className="size-3.5" aria-hidden="true" />
+              <span className="hidden md:inline">快捷命令</span>
+              <kbd
+                aria-hidden="true"
+                className="hidden rounded border border-[var(--border)] bg-white/70 px-1 py-0.5 text-[10px] font-semibold sm:inline"
+              >
+                ⌘K
+              </kbd>
+            </button>
+          </IconTooltip>
+        )}
+
+        {onLockSession && (
+          <IconTooltip label="立即锁定会话">
+            <button
+              type="button"
+              data-slot="quick-lock-button"
+              aria-label="立即锁定会话"
+              onClick={onLockSession}
+              className="inline-flex size-9 items-center justify-center rounded-full border border-[var(--surface-control-border)] bg-[var(--surface-control)] text-[var(--text-primary)] transition-all duration-[180ms] ease-out hover:-translate-y-[1px] hover:bg-[var(--surface-control-hover)]"
+            >
+              <Lock className="size-4" aria-hidden="true" />
+            </button>
+          </IconTooltip>
+        )}
         <div className="relative">
           <IconTooltip label="界面与显示设置" disabled={displayOpen}>
             <button

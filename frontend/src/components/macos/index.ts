@@ -18,6 +18,11 @@ export {
   MobilePrimaryNavMenu,
   type TopNavKey,
 } from './glass-toolbar';
+export {
+  GlobalCommandPalette,
+  isEditableElement,
+  type CommandPaletteAction,
+} from './global-command-palette';
 export { GmailMark } from './gmail-mark';
 export { IconTooltip } from './icon-tooltip';
 export { LoadingState } from './loading-state';
@@ -38,7 +43,11 @@ export {
   subscribeNavAlpha,
 } from './navigation-opacity-slider';
 export {
+  ACCOUNTS_EXPANDED_KEY,
   PrimarySidebar,
+  readSidebarLayoutState,
+  SIDEBAR_COLLAPSED_KEY,
+  SIDEBAR_LAYOUT_SYNC_EVENT,
   type PrimarySidebarProps,
   type SidebarAccountStatusKey,
   type SidebarCounts,

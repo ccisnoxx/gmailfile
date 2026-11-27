@@ -2,6 +2,7 @@ import {
   AppWindowShell,
   GlassToolbar,
   PrimarySidebar,
+  useAppShellContext,
   type DisplaySettingsState,
   type SidebarCounts as PrimarySidebarCounts,
   type SidebarSectionKey,
@@ -108,6 +109,11 @@ export function CsvWorkspaceShell({
       notifications={notifications}
     />
   );
+
+  const shell = useAppShellContext();
+  if (shell?.persistentShell) {
+    return <div className="flex min-w-0 flex-1 flex-col gap-4">{children}</div>;
+  }
 
   return (
     <AppWindowShell

@@ -11,12 +11,15 @@ import {
   FileText,
   Mail,
   MailCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings,
   Tag as TagIcon,
   Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAppShellContext } from './app-window-shell';
 import { IconTooltip } from './icon-tooltip';
 
 export type SidebarSectionKey =
@@ -65,8 +68,10 @@ export type SidebarSystemStatus = {
   version?: string;
 };
 
-const ACCOUNTS_EXPANDED_KEY = 'gm_sidebar_accounts_expanded';
-const TAGS_EXPANDED_KEY = 'gm_sidebar_tags_expanded';
+export const ACCOUNTS_EXPANDED_KEY = 'gm_sidebar_accounts_expanded';
+export const TAGS_EXPANDED_KEY = 'gm_sidebar_tags_expanded';
+export const SIDEBAR_COLLAPSED_KEY = 'gm_sidebar_collapsed_v1';
+export const SIDEBAR_LAYOUT_SYNC_EVENT = 'gm:sidebar-layout-sync';
 
 const SUB_STATUS_KEYS = new Set<SidebarSectionKey>([
   'normal',
@@ -92,9 +97,20 @@ function writeBoolPref(key: string, value: boolean): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(key, String(value));
+    window.dispatchEvent(new Event(SIDEBAR_LAYOUT_SYNC_EVENT));
   } catch {
     /* 隐私模式忽略 */
   }
+}
+
+export function readSidebarLayoutState(): {
+  collapsed: boolean;
+  accountsExpanded: boolean;
+} {
+  return {
+    collapsed: readBoolPref(SIDEBAR_COLLAPSED_KEY, false),
+    accountsExpanded: readBoolPref(ACCOUNTS_EXPANDED_KEY, false),
+  };
 }
 
 const tagIconColors = [
@@ -272,6 +288,7 @@ function normalizeProps(props: PrimarySidebarProps): NormalizedSidebarModel {
 }
 
 export function PrimarySidebar(props: PrimarySidebarProps) {
+  const shell = useAppShellContext();
   const model = normalizeProps(props);
 
   const hasActiveSubStatus = Boolean(
@@ -280,12 +297,25 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
     !model.activeTagId,
   );
 
+  const [collapsed, setCollapsed] = useState<boolean>(() =>
+    readBoolPref(SIDEBAR_COLLAPSED_KEY, false),
+  );
   const [accountsExpanded, setAccountsExpanded] = useState<boolean>(() =>
     hasActiveSubStatus ? true : readBoolPref(ACCOUNTS_EXPANDED_KEY, false),
   );
   const [tagsExpanded, setTagsExpanded] = useState<boolean>(() =>
     readBoolPref(TAGS_EXPANDED_KEY, true),
   );
+
+  const effectiveCollapsed = collapsed && !shell?.mobileSidebarOpen;
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      writeBoolPref(SIDEBAR_COLLAPSED_KEY, next);
+      return next;
+    });
+  };
 
   // 当通过筛选或统计卡片选中某个账号子状态时，自动展开「全部账号」以展示当前定位
   useEffect(() => {
@@ -386,9 +416,211 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
     model.systemStatus?.headline ??
     (healthy ? '系统运行正常' : '备份或服务需排查');
 
+  if (effectiveCollapsed) {
+    const railItemClass = (active: boolean) =>
+      cn(
+        'relative mx-auto inline-flex size-10 items-center justify-center rounded-xl transition-all duration-[180ms] ease-out',
+        active
+          ? 'border border-[var(--accent)]/28 bg-[var(--accent-soft)] text-[var(--accent-text)]'
+          : 'text-[var(--text-secondary)] hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]',
+      );
+
+    return (
+      <aside
+        data-slot="primary-sidebar"
+        data-collapsed="true"
+        aria-label="侧边导航栏"
+        className={cn(
+          'macos-nav-surface flex w-full shrink-0 flex-col items-center justify-between gap-3 border-b border-[var(--nav-divider)] px-2 py-3 lg:w-[60px] lg:border-r lg:border-b-0',
+          model.className,
+        )}
+      >
+        <nav
+          aria-label="核心资产导航"
+          className="flex flex-col items-center gap-1.5"
+        >
+          {model.onSelectDashboard && (
+            <IconTooltip label="数据概览">
+              <button
+                type="button"
+                aria-label="数据概览"
+                aria-current={isDashboardActive ? 'page' : undefined}
+                onClick={model.onSelectDashboard}
+                className={railItemClass(isDashboardActive)}
+              >
+                <BarChart3 className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          <IconTooltip
+            label={`全部账号${model.counts !== undefined ? `（${model.counts.all}）` : ''}`}
+          >
+            <button
+              type="button"
+              aria-label="全部账号"
+              aria-pressed={isAllAccountsActive || hasActiveSubStatus}
+              onClick={() => model.onSelectSection('all')}
+              className={railItemClass(
+                isAllAccountsActive || hasActiveSubStatus,
+              )}
+            >
+              <Mail className="size-4" aria-hidden="true" />
+            </button>
+          </IconTooltip>
+          <IconTooltip
+            label={`回收站${model.trashCount > 0 ? `（${model.trashCount}）` : ''}`}
+          >
+            <button
+              type="button"
+              aria-label="回收站"
+              aria-pressed={isTrashActive}
+              onClick={() => model.onSelectSection('trash')}
+              className={railItemClass(isTrashActive)}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+              {model.trashCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[var(--accent)]"
+                />
+              )}
+            </button>
+          </IconTooltip>
+          {model.onSelectApps && (
+            <IconTooltip label="已注册应用">
+              <button
+                type="button"
+                aria-label="已注册应用"
+                aria-current={isAppsActive ? 'page' : undefined}
+                onClick={model.onSelectApps}
+                className={railItemClass(isAppsActive)}
+              >
+                <AppWindow className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          {model.onSelectRecovery && (
+            <IconTooltip label="辅助邮箱统计">
+              <button
+                type="button"
+                aria-label="辅助邮箱统计"
+                aria-current={isRecoveryActive ? 'page' : undefined}
+                onClick={model.onSelectRecovery}
+                className={railItemClass(isRecoveryActive)}
+              >
+                <MailCheck className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          {model.onAddTag && (
+            <IconTooltip label="标签管理">
+              <button
+                type="button"
+                aria-label="标签管理"
+                onClick={model.onAddTag}
+                className={railItemClass(Boolean(model.activeTagId))}
+              >
+                <TagIcon className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          {model.onSelectTransfer && (
+            <IconTooltip label="导入 / 导出（CSV）">
+              <button
+                type="button"
+                aria-label="导入 / 导出（CSV）"
+                aria-current={
+                  model.activeNav === 'transfer' ? 'page' : undefined
+                }
+                onClick={model.onSelectTransfer}
+                className={railItemClass(model.activeNav === 'transfer')}
+              >
+                <ArrowUpDown className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          {model.onSelectAudit && (
+            <IconTooltip label="审计日志">
+              <button
+                type="button"
+                aria-label="审计日志"
+                aria-current={model.activeNav === 'audit' ? 'page' : undefined}
+                onClick={model.onSelectAudit}
+                className={railItemClass(model.activeNav === 'audit')}
+              >
+                <FileText className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          {model.onSelectBackup && (
+            <IconTooltip label="备份与恢复">
+              <button
+                type="button"
+                aria-label="备份与恢复"
+                aria-current={model.activeNav === 'backup' ? 'page' : undefined}
+                onClick={model.onSelectBackup}
+                className={railItemClass(model.activeNav === 'backup')}
+              >
+                <Database className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+          {model.onSelectSettings && (
+            <IconTooltip label="系统设置">
+              <button
+                type="button"
+                aria-label="系统设置"
+                aria-current={
+                  model.activeNav === 'settings' ? 'page' : undefined
+                }
+                onClick={model.onSelectSettings}
+                className={railItemClass(model.activeNav === 'settings')}
+              >
+                <Settings className="size-4" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          )}
+        </nav>
+
+        <div className="flex flex-col items-center gap-2">
+          {model.systemStatus && (
+            <IconTooltip label={headline}>
+              <button
+                type="button"
+                aria-label={`系统运行状态：${headline}`}
+                onClick={model.onSelectBackup ?? model.onSelectSettings}
+                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] transition-colors hover:bg-[var(--surface-control-hover)]"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'size-2.5 rounded-full',
+                    healthy ? 'bg-[var(--success)]' : 'bg-[var(--warning)]',
+                  )}
+                />
+              </button>
+            </IconTooltip>
+          )}
+          <IconTooltip label="展开侧边栏">
+            <button
+              type="button"
+              data-slot="sidebar-collapse-toggle"
+              aria-label="展开侧边栏"
+              onClick={toggleCollapsed}
+              className="hidden size-9 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)] lg:inline-flex"
+            >
+              <PanelLeftOpen className="size-4" aria-hidden="true" />
+            </button>
+          </IconTooltip>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside
       data-slot="primary-sidebar"
+      data-collapsed="false"
       aria-label="侧边导航栏"
       className={cn(
         'macos-nav-surface flex w-full shrink-0 flex-col justify-between gap-4 border-b border-[var(--nav-divider)] px-3 py-3.5 lg:w-[224px] lg:border-r lg:border-b-0',
@@ -398,9 +630,22 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
       <div className="flex flex-col gap-3.5">
         {/* 1. 概览与账号 */}
         <section aria-label="概览与账号">
-          <p className="mb-1.5 px-2.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
-            概览与账号
-          </p>
+          <div className="mb-1.5 flex items-center justify-between px-2.5">
+            <p className="text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
+              概览与账号
+            </p>
+            <IconTooltip label="收起为窄图标栏" align="end">
+              <button
+                type="button"
+                data-slot="sidebar-collapse-toggle"
+                aria-label="收起侧边栏"
+                onClick={toggleCollapsed}
+                className="hidden size-6 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)] lg:inline-flex"
+              >
+                <PanelLeftClose className="size-3.5" aria-hidden="true" />
+              </button>
+            </IconTooltip>
+          </div>
           <nav aria-label="核心资产导航" className="flex flex-col gap-1">
             {model.onSelectDashboard && (
               <button

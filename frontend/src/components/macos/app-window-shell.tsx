@@ -9,12 +9,23 @@ import {
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
+import type { SidebarSystemStatus } from './primary-sidebar';
+
+export type PersistentSidebarMeta = {
+  trashCount?: number;
+  systemStatus?: SidebarSystemStatus;
+};
+
 type AppShellContextValue = {
   hasSidebar: boolean;
+  persistentShell: boolean;
   mobileSidebarOpen: boolean;
   setMobileSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
   toggleMobileSidebar: () => void;
   closeMobileSidebar: () => void;
+  pushNotification?: (message: string) => void;
+  openCommandPalette?: () => void;
+  syncSidebarMeta?: (meta: PersistentSidebarMeta) => void;
 };
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -35,6 +46,10 @@ export function AppWindowShell({
   flowingBackground = true,
   animationsEnabled = true,
   compactMode = false,
+  persistentShell = false,
+  onPushNotification,
+  onOpenCommandPalette,
+  onSyncSidebarMeta,
 }: {
   navAlpha: number;
   menuBar?: React.ReactNode;
@@ -48,6 +63,10 @@ export function AppWindowShell({
   flowingBackground?: boolean;
   animationsEnabled?: boolean;
   compactMode?: boolean;
+  persistentShell?: boolean;
+  onPushNotification?: (message: string) => void;
+  onOpenCommandPalette?: () => void;
+  onSyncSidebarMeta?: (meta: PersistentSidebarMeta) => void;
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -56,12 +75,23 @@ export function AppWindowShell({
   const shellContext = useMemo<AppShellContextValue>(
     () => ({
       hasSidebar,
+      persistentShell,
       mobileSidebarOpen,
       setMobileSidebarOpen,
       toggleMobileSidebar: () => setMobileSidebarOpen((open) => !open),
       closeMobileSidebar: () => setMobileSidebarOpen(false),
+      pushNotification: onPushNotification,
+      openCommandPalette: onOpenCommandPalette,
+      syncSidebarMeta: onSyncSidebarMeta,
     }),
-    [hasSidebar, mobileSidebarOpen],
+    [
+      hasSidebar,
+      mobileSidebarOpen,
+      onOpenCommandPalette,
+      onPushNotification,
+      onSyncSidebarMeta,
+      persistentShell,
+    ],
   );
 
   const windowStyle = {

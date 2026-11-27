@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
 import { KeyRound } from 'lucide-react';
-import { Outlet, useInRouterContext, useNavigate } from 'react-router-dom';
+import { useInRouterContext, useNavigate } from 'react-router-dom';
+import { AuthenticatedWorkspaceLayout } from '@/app/authenticated-workspace-layout';
 import { resolveAppHref, resolveOperationsDestination } from '@/app/navigation';
 import type { ChangePasswordInput, Credentials } from '@/api/generated';
 import { Button } from '@/components/ui/button';
@@ -119,9 +120,7 @@ function AuthWorkspace({
     if (inRouter) {
       return (
         <WorkspaceContext.Provider value={context}>
-          <Suspense fallback={<WorkspaceFallback />}>
-            <Outlet />
-          </Suspense>
+          <AuthenticatedWorkspaceLayout workspace={context} />
         </WorkspaceContext.Provider>
       );
     }

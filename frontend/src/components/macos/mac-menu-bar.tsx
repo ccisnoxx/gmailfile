@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { ShieldCheck, Wifi } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const MENU_ITEMS = ['文件', '编辑', '查看', '窗口', '帮助'] as const;
-
 function formatMenuBarClock(now: Date): string {
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const wd = weekdays[now.getDay()];
@@ -54,16 +52,6 @@ export function MacMenuBar({
         <span className="truncate font-semibold tracking-tight text-[var(--text-primary)]">
           {appName}
         </span>
-        <div className="hidden items-center gap-3 sm:flex">
-          {MENU_ITEMS.map((item) => (
-            <span
-              key={item}
-              className="rounded px-1 py-0.5 text-[11.5px] font-medium text-[var(--text-primary)]/85 transition-colors hover:bg-white/55"
-            >
-              {item}
-            </span>
-          ))}
-        </div>
       </div>
 
       {/* 右侧：Wi-Fi、系统状态与时间 */}

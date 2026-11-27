@@ -4,7 +4,9 @@ import { AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
 import {
   AppWindowShell,
   GlassToolbar,
+  isEditableElement,
   PrimarySidebar,
+  useAppShellContext,
   type DisplaySettingsState,
   type SidebarCounts,
   type SidebarSectionKey,
@@ -75,10 +77,13 @@ export function SettingsLayout({
   onDismissToast?: () => void;
   children: React.ReactNode;
 }) {
+  const shell = useAppShellContext();
+  const inPersistentShell = Boolean(shell?.persistentShell);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // ⌘K / Ctrl+K 聚焦设置搜索框（不劫持浏览器原生 ⌘F，且弹窗打开时避让）
+  // 独立模式下保留 ⌘K / Ctrl+K 聚焦设置搜索框；持久壳层模式下由外层响应 ⌘K 命令面板与「/」聚焦搜索框
   useEffect(() => {
+    if (inPersistentShell) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         if (document.querySelector('[role="dialog"], [role="alertdialog"]')) {
@@ -87,11 +92,24 @@ export function SettingsLayout({
         event.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
+        return;
+      }
+      if (
+        event.key === '/' &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        !isEditableElement(event.target) &&
+        !document.querySelector('[role="dialog"], [role="alertdialog"]')
+      ) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [inPersistentShell]);
 
   const sidebarStatus: SidebarSystemStatus = {
     healthy: runtime.healthy,
@@ -102,6 +120,31 @@ export function SettingsLayout({
     lastBackupLabel: lastBackupLabel ?? '尚未运行',
     version: runtime.appVersion,
   };
+
+  useEffect(() => {
+    if (!inPersistentShell || !shell?.syncSidebarMeta) return;
+    shell.syncSidebarMeta({
+      trashCount: runtime.trashCount,
+      systemStatus: {
+        healthy: runtime.healthy,
+        headline: runtime.statusText,
+        csrfEnabled: true,
+        encryptionLabel: '字段加密 AES-256-GCM',
+        totpEnabled,
+        lastBackupLabel: lastBackupLabel ?? '尚未运行',
+        version: runtime.appVersion,
+      },
+    });
+  }, [
+    inPersistentShell,
+    lastBackupLabel,
+    runtime.appVersion,
+    runtime.healthy,
+    runtime.statusText,
+    runtime.trashCount,
+    shell,
+    totpEnabled,
+  ]);
 
   const activeTopNav: TopNavKey =
     activeSection === 'audit' ? 'audit' : 'settings';
@@ -137,34 +180,8 @@ export function SettingsLayout({
     />
   );
 
-  return (
-    <AppWindowShell
-      navAlpha={navAlpha}
-      flowingBackground={displaySettings.flowingBackground}
-      animationsEnabled={displaySettings.animationsEnabled}
-      compactMode={displaySettings.compactMode}
-      toolbar={toolbar}
-      sidebar={
-        <PrimarySidebar
-          mode="workspace"
-          activeNav={
-            activeSection === 'audit'
-              ? 'audit'
-              : activeSection === 'backup'
-                ? 'backup'
-                : 'settings'
-          }
-          counts={sidebarCounts}
-          tags={sidebarTags}
-          trashCount={runtime.trashCount}
-          systemStatus={sidebarStatus}
-          onSelectNav={onSelectWorkspaceNav}
-          onSelectSection={onSelectAccountSection}
-          onSelectTag={onSelectTag}
-        />
-      }
-      mainClassName="flex-col gap-4 p-4 sm:p-5 lg:p-6"
-    >
+  const bodyContent = (
+    <>
       {/* 主区域顶部标题、搜索与操作 */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
@@ -208,7 +225,11 @@ export function SettingsLayout({
               ref={searchInputRef}
               type="search"
               aria-label="搜索设置"
-              placeholder="搜索设置（⌘/Ctrl K）"
+              placeholder={
+                inPersistentShell
+                  ? '搜索设置（按 / 聚焦）'
+                  : '搜索设置（⌘/Ctrl K）'
+              }
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
               maxLength={120}
@@ -282,6 +303,44 @@ export function SettingsLayout({
           </div>,
           document.body,
         )}
+    </>
+  );
+
+  if (inPersistentShell) {
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-4">{bodyContent}</div>
+    );
+  }
+
+  return (
+    <AppWindowShell
+      navAlpha={navAlpha}
+      flowingBackground={displaySettings.flowingBackground}
+      animationsEnabled={displaySettings.animationsEnabled}
+      compactMode={displaySettings.compactMode}
+      toolbar={toolbar}
+      sidebar={
+        <PrimarySidebar
+          mode="workspace"
+          activeNav={
+            activeSection === 'audit'
+              ? 'audit'
+              : activeSection === 'backup'
+                ? 'backup'
+                : 'settings'
+          }
+          counts={sidebarCounts}
+          tags={sidebarTags}
+          trashCount={runtime.trashCount}
+          systemStatus={sidebarStatus}
+          onSelectNav={onSelectWorkspaceNav}
+          onSelectSection={onSelectAccountSection}
+          onSelectTag={onSelectTag}
+        />
+      }
+      mainClassName="flex-col gap-4 p-4 sm:p-5 lg:p-6"
+    >
+      {bodyContent}
     </AppWindowShell>
   );
 }
