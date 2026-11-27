@@ -15,6 +15,7 @@ from app.models import (
     gmail_account_tags,
 )
 from app.schemas.accounts import (
+    AccountAppAssignInput,
     AccountAppInput,
     AccountCreate,
     AccountDetail,
@@ -24,8 +25,12 @@ from app.schemas.accounts import (
     BatchResult,
     BatchStatus,
     BatchTags,
+    BatchVerifyInput,
+    LinkInternalRecoveryInput,
+    LinkInternalRecoveryResult,
     PasswordResponse,
     SensitiveFieldsResponse,
+    email_value,
     normalize_email,
 )
 from app.services.accounts.errors import AccountError, flush_unique
@@ -281,6 +286,11 @@ class AccountDetailService:
 
     def batch(self, body: BatchStatus | BatchTags) -> BatchResult:
         # 每条 CAS 与审计共用请求事务；任一失败回滚整批。
+        if isinstance(body, BatchTags) and body.tag_ids:
+            wanted = set(body.tag_ids)
+            found = set(self.db.scalars(select(Tag.id).where(Tag.id.in_(wanted))))
+            if wanted != found:
+                raise AccountError(422, "TAG_INVALID", "所选标签已不存在，请刷新后重试")
         for item in sorted(body.accounts, key=lambda item: item.id):
             try:
                 row = self.record(item.id)
@@ -291,13 +301,25 @@ class AccountDetailService:
                     self.audit("account_updated", row.id, operation="batch-status")
                 else:
                     self.cas(row, item.row_version, {})
-                    existing = self.db.scalars(
-                        select(gmail_account_tags.c.tag_id).where(
-                            gmail_account_tags.c.account_id == row.id
-                        )
-                    ).all()
-                    self.set_tags(row.id, list(set(existing) | set(body.tag_ids)))
-                    self.audit("account_updated", row.id, operation="batch-tags")
+                    existing = list(
+                        self.db.scalars(
+                            select(gmail_account_tags.c.tag_id).where(
+                                gmail_account_tags.c.account_id == row.id
+                            )
+                        ).all()
+                    )
+                    if body.mode == "remove":
+                        remove_set = set(body.tag_ids)
+                        next_tags = [tid for tid in existing if tid not in remove_set]
+                        op = "batch-tags-remove"
+                    elif body.mode == "replace":
+                        next_tags = list(dict.fromkeys(body.tag_ids))
+                        op = "batch-tags-replace"
+                    else:
+                        next_tags = list(dict.fromkeys([*existing, *body.tag_ids]))
+                        op = "batch-tags"
+                    self.set_tags(row.id, next_tags, verified=True)
+                    self.audit("account_updated", row.id, operation=op)
             except AccountError as exc:
                 exc.details = {
                     "account_id": str(item.id),
@@ -305,6 +327,140 @@ class AccountDetailService:
                 }
                 raise
         return BatchResult(updated_ids=[item.id for item in body.accounts])
+
+    def batch_delete(self, body: BatchInput) -> BatchResult:
+        for item in sorted(body.accounts, key=lambda entry: entry.id):
+            try:
+                row = self.record(item.id)
+                if row.deleted_at is not None:
+                    raise AccountError(409, "ACCOUNT_DELETED", "该账号已在回收站中")
+                self.cas(row, item.row_version, {"deleted_at": self.auth.now})
+                self.audit("account_deleted", row.id, operation="batch-delete")
+            except AccountError as exc:
+                exc.details = {
+                    "account_id": str(item.id),
+                    "expected_row_version": str(item.row_version),
+                }
+                raise
+        return BatchResult(updated_ids=[item.id for item in body.accounts])
+
+    def batch_verify(self, body: BatchVerifyInput) -> BatchResult:
+        for item in sorted(body.accounts, key=lambda entry: entry.id):
+            try:
+                row = self.record(item.id)
+                if row.deleted_at is not None:
+                    raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再操作")
+                values: dict[str, object] = {"last_verified_at": self.auth.now}
+                if body.promote_pending and row.status == "pending_verification":
+                    values["status"] = "normal"
+                self.cas(row, item.row_version, values)
+                self.audit("account_updated", row.id, operation="batch-verify")
+            except AccountError as exc:
+                exc.details = {
+                    "account_id": str(item.id),
+                    "expected_row_version": str(item.row_version),
+                }
+                raise
+        return BatchResult(updated_ids=[item.id for item in body.accounts])
+
+    def assign_app(self, account_id: UUID, body: AccountAppAssignInput) -> AccountDetail:
+        row = self.record(account_id)
+        if row.deleted_at is not None:
+            raise AccountError(409, "ACCOUNT_DELETED", "请先恢复账号再登记应用")
+        app = self.db.get(RegisteredApp, body.app_id)
+        if app is None:
+            raise AccountError(422, "APP_INVALID", "所选应用已不存在，请刷新后重试")
+        self.cas(row, body.row_version, {})
+        existing = self.db.scalar(
+            select(GmailAccountApp).where(
+                GmailAccountApp.account_id == account_id,
+                GmailAccountApp.app_id == body.app_id,
+            )
+        )
+        if existing is None:
+            self.db.add(
+                GmailAccountApp(
+                    account_id=account_id,
+                    app_id=body.app_id,
+                    status=body.status,
+                    note=body.note,
+                    banned_at=self.auth.now if body.status == "banned" else None,
+                    created_at=self.auth.now,
+                    updated_at=self.auth.now,
+                )
+            )
+        else:
+            existing.status = body.status
+            existing.note = body.note
+            if body.status == "banned":
+                if existing.banned_at is None:
+                    existing.banned_at = self.auth.now
+            else:
+                existing.banned_at = None
+            existing.updated_at = self.auth.now
+        self.db.flush()
+        self.audit("account_updated", account_id, operation="assign-app")
+        return self.detail(account_id)
+
+    def link_internal_recovery(self, body: LinkInternalRecoveryInput) -> LinkInternalRecoveryResult:
+        target_norm: str | None = None
+        if body.email is not None and body.email.strip():
+            try:
+                email_value(body.email)
+                target_norm = normalize_email(body.email)
+            except ValueError:
+                raise AccountError(422, "RECOVERY_INVALID", "辅助邮箱格式不正确") from None
+
+        candidates = list(
+            self.db.scalars(
+                select(GmailAccount)
+                .where(
+                    GmailAccount.deleted_at.is_(None),
+                    GmailAccount.recovery_account_id.is_(None),
+                    GmailAccount.recovery_email_external.is_not(None),
+                )
+                .order_by(GmailAccount.id.asc())
+            ).all()
+        )
+        norm_by_row: list[tuple[GmailAccount, str]] = []
+        for row in candidates:
+            ext = (row.recovery_email_external or "").strip()
+            if not ext:
+                continue
+            try:
+                norm = normalize_email(ext)
+            except ValueError:
+                continue
+            if target_norm is not None and norm != target_norm:
+                continue
+            norm_by_row.append((row, norm))
+
+        if not norm_by_row:
+            return LinkInternalRecoveryResult(linked_count=0, updated_ids=[])
+
+        norms = list({norm for _, norm in norm_by_row})
+        internal_rows = self.db.execute(
+            select(GmailAccount.id, GmailAccount.gmail_email_normalized).where(
+                GmailAccount.deleted_at.is_(None),
+                GmailAccount.gmail_email_normalized.in_(norms),
+            )
+        ).all()
+        target_by_norm = {norm_email: acc_id for acc_id, norm_email in internal_rows}
+
+        updated_ids: list[UUID] = []
+        for row, norm in norm_by_row:
+            matched_id = target_by_norm.get(norm)
+            if matched_id is None or matched_id == row.id:
+                continue
+            self.cas(
+                row,
+                row.row_version,
+                {"recovery_account_id": matched_id, "recovery_email_external": None},
+            )
+            self.audit("account_updated", row.id, operation="link-internal-recovery")
+            updated_ids.append(row.id)
+
+        return LinkInternalRecoveryResult(linked_count=len(updated_ids), updated_ids=updated_ids)
 
     def batch_restore(self, body: BatchInput) -> BatchResult:
         # 回收站批量恢复：每条 CAS 与审计共用请求事务，任一冲突/未删除整批回滚。

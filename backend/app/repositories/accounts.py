@@ -188,6 +188,25 @@ class AccountRepository:
                     )
                 ),
             )
+        if params.upstream_recovery_risk is True:
+            query = query.where(
+                GmailAccount.status != "archived",
+                GmailAccount.recovery_account_id.is_not(None),
+                or_(
+                    recovery.deleted_at.is_not(None),
+                    recovery.status.in_(["restricted", "login_failed", "disabled"]),
+                ),
+            )
+        elif params.upstream_recovery_risk is False:
+            query = query.where(
+                or_(
+                    GmailAccount.recovery_account_id.is_(None),
+                    and_(
+                        recovery.deleted_at.is_(None),
+                        recovery.status.not_in(["restricted", "login_failed", "disabled"]),
+                    ),
+                )
+            )
         return query
 
     def page(self, params: AccountQuery, *, now: datetime | None = None):

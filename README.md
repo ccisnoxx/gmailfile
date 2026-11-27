@@ -216,12 +216,12 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 - `GET /api/v1/auth/webauthn/credentials`、`POST /api/v1/auth/webauthn/(register|login|step-up)/(options|verify)`、`PATCH/DELETE /api/v1/auth/webauthn/credentials/{id}`：WebAuthn/Passkey 全链路管理与认证。
 - `GET/POST /api/v1/accounts`、`GET/PATCH/DELETE /api/v1/accounts/{id}`：服务端查询/分页/新增/详情/编辑/软删除。
 - `DELETE /api/v1/accounts/{id}/permanent`、`POST /api/v1/accounts/batch-permanent-delete`：回收站单条/批量不可逆永久删除，强制最近 5 分钟内 MFA Step-Up。
-- `POST /api/v1/accounts/{id}/archive|unarchive|restore|mark-verified|mark-logged-in`：携带 `row_version` 的账号操作。
+- `POST /api/v1/accounts/{id}/archive|unarchive|restore|mark-verified|mark-logged-in`、`POST /api/v1/accounts/{id}/apps`：携带 `row_version` 的单账号生命周期操作与第三方应用快速领号登记。
 - `POST /api/v1/accounts/{id}/reveal-password|copy-password-event|reveal-sensitive`：独立敏感访问（密码与手机号/敏感备注按需 Step-Up）与复制审计。
-- `GET /api/v1/dashboard/summary|registration-trend|status-distribution|recovery-email-usage`：全局 KPI 与图表安全聚合统计。
-- `POST /api/v1/accounts/batch-status|batch-tags|batch-restore`：整批事务，输入所选账号 ID/版本与目标状态/标签或回收站批量恢复。
-- `GET /api/v1/accounts/options`：非删除辅助账号搜索/分页，只返回 ID、编号和邮箱。
-- `GET /api/v1/recovery-emails`、`GET /api/v1/recovery-email-accounts`：分页使用量统计与按查询参数 `email` 关联账号预览（不将邮箱放入 URL 路径，避免进入访问日志）。
+- `GET /api/v1/dashboard/summary|insights|registration-trend|status-distribution|recovery-email-usage`：全局 KPI、风险待办洞察（含上游辅助账号连带风险）与图表安全聚合统计。
+- `POST /api/v1/accounts/batch-status|batch-tags|batch-verify|batch-delete|batch-restore`：整批事务，支持批量修改状态、标签追加/移除/替换、批量标记已核验、批量软删除移入回收站及回收站批量恢复。
+- `GET /api/v1/accounts/options`：非删除辅助账号搜索/分页，返回 ID、编号、邮箱、健康状态与已绑定负载计数。
+- `GET /api/v1/recovery-emails`、`GET /api/v1/recovery-email-accounts`、`POST /api/v1/recovery-emails/link-internal`：分页使用量统计、按查询参数 `email` 关联账号预览（不将邮箱放入 URL 路径，避免进入访问日志）及同库外部文本辅助邮箱一键转站内强关联。
 - `GET/POST /api/v1/apps`、`GET /api/v1/apps/usage`、`PATCH/DELETE /api/v1/apps/{id}`、`POST /api/v1/apps/fetch-icon`：第三方已注册应用目录、用量统计及带 SSRF/总时限/并发/限流保护的图标抓取。
 - `POST /api/v1/auth/activity`：仅用户交互触发、CSRF 保护、不轮换 Token 的会话活动确认。
 - `GET/POST /api/v1/tags`、`PATCH/DELETE /api/v1/tags/{id}`：标签管理。

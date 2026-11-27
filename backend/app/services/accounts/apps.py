@@ -70,7 +70,7 @@ class AppService:
                 func.coalesce(counts.c.banned_count, 0).label("banned_count"),
             )
             .outerjoin(counts, counts.c.app_id == RegisteredApp.id)
-            .order_by(total_col.desc(), RegisteredApp.sort_order.asc(), RegisteredApp.name.asc())
+            .order_by(RegisteredApp.sort_order.asc(), total_col.desc(), RegisteredApp.name.asc())
         ).all()
         return [
             RegisteredAppUsage(
@@ -101,6 +101,8 @@ class AppService:
             row.domain = normalize_domain(body.domain)
         if app_id is None or "icon_data" in body.model_fields_set:
             row.icon_data = validate_icon_data(body.icon_data)
+        if body.sort_order is not None:
+            row.sort_order = body.sort_order
         self.db.add(row)
         flush_unique(self.db, app=True)
         self.auth.audit("app_updated" if app_id else "app_created", self.session)

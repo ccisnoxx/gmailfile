@@ -103,6 +103,12 @@ def test_repository_filtered_generates_expected_sql_for_smart_view_predicates():
     assert "gmail_accounts.status IN" in sql_conflict
     assert "gmail_account_apps.status =" in sql_conflict
 
+    sql_upstream = compile_sql(
+        repo.filtered(AccountQuery(upstream_recovery_risk=True), now=fixed_now)
+    )
+    assert "gmail_accounts.recovery_account_id IS NOT NULL" in sql_upstream
+    assert "gmail_accounts_1.deleted_at IS NOT NULL" in sql_upstream
+
 
 def test_read_backup_status_handles_valid_stale_and_corrupt_files(tmp_path):
     now = datetime(2026, 11, 27, 12, 0, tzinfo=UTC)
@@ -155,7 +161,7 @@ def test_dashboard_insights_aggregates_risks_duplicates_and_backup_honestly(tmp_
     )
 
     execute_results = [
-        SimpleNamespace(one=lambda: (4, 1, 2, 3, 5, 6, 7, 8, 2, 9, 10, 1)),
+        SimpleNamespace(one=lambda: (4, 1, 2, 3, 5, 6, 7, 8, 2, 9, 10, 1, 2)),
         SimpleNamespace(
             all=lambda: [
                 ("Alice.Backup+1@gmail.com", 2),
@@ -211,6 +217,7 @@ def test_dashboard_insights_aggregates_risks_duplicates_and_backup_honestly(tmp_
     assert result.password_stale_over_180_days == 7
     assert result.no_recovery_email_count == 8
     assert result.app_risk_account_count == 2
+    assert result.upstream_recovery_risk_count == 2
     assert result.no_purpose_count == 9
     assert result.no_tags_count == 10
     assert result.inactive_with_active_apps_count == 1

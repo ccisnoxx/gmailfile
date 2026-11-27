@@ -2839,6 +2839,22 @@
             }
           },
           {
+            "name": "upstream_recovery_risk",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Upstream Recovery Risk"
+            }
+          },
+          {
             "name": "sort",
             "in": "query",
             "required": false,
@@ -3789,6 +3805,97 @@
         }
       }
     },
+    "/api/v1/recovery-emails/link-internal": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Recovery Emails Link Internal",
+        "operationId": "recoveryEmailsLinkInternal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkInternalRecoveryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkInternalRecoveryResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/options": {
       "get": {
         "tags": [
@@ -4026,6 +4133,188 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BatchTags"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/batch-delete": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Batch Delete",
+        "operationId": "accountsBatchDelete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/batch-verify": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Batch Verify",
+        "operationId": "accountsBatchVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchVerifyInput"
               }
             }
           },
@@ -4504,6 +4793,109 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VersionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts/{account_id}/apps": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Assign App",
+        "operationId": "accountsAssignApp",
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountAppAssignInput"
               }
             }
           }
@@ -6434,6 +6826,49 @@
   },
   "components": {
     "schemas": {
+      "AccountAppAssignInput": {
+        "properties": {
+          "row_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Row Version"
+          },
+          "app_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "App Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "restricted",
+              "banned"
+            ],
+            "title": "Status",
+            "default": "active"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row_version",
+          "app_id"
+        ],
+        "title": "AccountAppAssignInput"
+      },
       "AccountAppInput": {
         "properties": {
           "app_id": {
@@ -6967,6 +7402,29 @@
           "account_no": {
             "type": "string",
             "title": "Account No"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "pending_verification",
+              "restricted",
+              "login_failed",
+              "disabled",
+              "archived"
+            ],
+            "title": "Status",
+            "default": "normal"
+          },
+          "linked_recovery_count": {
+            "type": "integer",
+            "title": "Linked Recovery Count",
+            "default": 0
+          },
+          "abnormal_linked_count": {
+            "type": "integer",
+            "title": "Abnormal Linked Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -7513,6 +7971,17 @@
               }
             ],
             "title": "Conflict Check"
+          },
+          "upstream_recovery_risk": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upstream Recovery Risk"
           },
           "sort": {
             "type": "string",
@@ -8172,6 +8641,16 @@
             "minItems": 1,
             "title": "Accounts"
           },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "append",
+              "remove",
+              "replace"
+            ],
+            "title": "Mode",
+            "default": "append"
+          },
           "tag_ids": {
             "items": {
               "type": "string",
@@ -8179,17 +8658,39 @@
             },
             "type": "array",
             "maxItems": 100,
-            "minItems": 1,
             "title": "Tag Ids"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "accounts",
-          "tag_ids"
+          "accounts"
         ],
         "title": "BatchTags"
+      },
+      "BatchVerifyInput": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/BatchItem"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Accounts"
+          },
+          "promote_pending": {
+            "type": "boolean",
+            "title": "Promote Pending",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "accounts"
+        ],
+        "title": "BatchVerifyInput"
       },
       "ChangePasswordInput": {
         "properties": {
@@ -8620,6 +9121,11 @@
             "type": "integer",
             "title": "App Risk Account Count"
           },
+          "upstream_recovery_risk_count": {
+            "type": "integer",
+            "title": "Upstream Recovery Risk Count",
+            "default": 0
+          },
           "concentrated_recovery_emails": {
             "items": {
               "$ref": "#/components/schemas/RecoveryUsage"
@@ -9011,6 +9517,47 @@
         "type": "object",
         "title": "Input"
       },
+      "LinkInternalRecoveryInput": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 254
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LinkInternalRecoveryInput"
+      },
+      "LinkInternalRecoveryResult": {
+        "properties": {
+          "linked_count": {
+            "type": "integer",
+            "title": "Linked Count"
+          },
+          "updated_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Updated Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "linked_count",
+          "updated_ids"
+        ],
+        "title": "LinkInternalRecoveryResult"
+      },
       "OptionPage": {
         "properties": {
           "items": {
@@ -9182,6 +9729,19 @@
               }
             ],
             "title": "Icon Data"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 9999.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
           }
         },
         "additionalProperties": false,

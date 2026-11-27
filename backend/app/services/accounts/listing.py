@@ -5,6 +5,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import exists, func, or_, select
+from sqlalchemy.orm import aliased
 
 from app.models import AuditEvent, GmailAccount, GmailAccountApp, Tag, gmail_account_tags
 from app.repositories.accounts import AccountRepository
@@ -119,10 +120,37 @@ class AccountQueryService:
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()
+        linked_stats: dict[UUID, tuple[int, int]] = {}
+        if records:
+            option_ids = [row.id for row, _ in records]
+            stat_rows = self.db.execute(
+                select(
+                    GmailAccount.recovery_account_id,
+                    func.count(),
+                    func.count().filter(
+                        GmailAccount.status.in_(["restricted", "login_failed", "disabled"])
+                    ),
+                )
+                .where(
+                    GmailAccount.deleted_at.is_(None),
+                    GmailAccount.recovery_account_id.in_(option_ids),
+                )
+                .group_by(GmailAccount.recovery_account_id)
+            ).all()
+            linked_stats = {
+                rec_id: (int(total_cnt), int(abn_cnt))
+                for rec_id, total_cnt, abn_cnt in stat_rows
+                if rec_id is not None
+            }
         return OptionPage(
             items=[
                 AccountOption(
-                    id=row.id, gmail_email=row.gmail_email, account_no=f"GM-{row.account_no:06d}"
+                    id=row.id,
+                    gmail_email=row.gmail_email,
+                    account_no=f"GM-{row.account_no:06d}",
+                    status=row.status,
+                    linked_recovery_count=linked_stats.get(row.id, (0, 0))[0],
+                    abnormal_linked_count=linked_stats.get(row.id, (0, 0))[1],
                 )
                 for row, _ in records
             ],
@@ -367,6 +395,16 @@ class AccountQueryService:
             func.btrim(GmailAccount.purpose) == "",
         )
         no_tags = ~exists(select(1).where(gmail_account_tags.c.account_id == GmailAccount.id))
+        upstream_acc = aliased(GmailAccount)
+        has_upstream_risk = exists(
+            select(1).where(
+                upstream_acc.id == GmailAccount.recovery_account_id,
+                or_(
+                    upstream_acc.deleted_at.is_not(None),
+                    upstream_acc.status.in_(["restricted", "login_failed", "disabled"]),
+                ),
+            )
+        )
 
         counts = self.db.execute(
             select(
@@ -406,6 +444,12 @@ class AccountQueryService:
                     active,
                     GmailAccount.status.in_(["restricted", "login_failed", "disabled", "archived"]),
                     has_active_app,
+                ),
+                func.count().filter(
+                    active,
+                    unarchived,
+                    GmailAccount.recovery_account_id.is_not(None),
+                    has_upstream_risk,
                 ),
             )
         ).one()
@@ -491,6 +535,7 @@ class AccountQueryService:
             password_stale_over_180_days=int(counts[6]),
             no_recovery_email_count=int(counts[7]),
             app_risk_account_count=int(counts[8]),
+            upstream_recovery_risk_count=int(counts[12]),
             concentrated_recovery_emails=concentrated,
             no_purpose_count=int(counts[9]),
             no_tags_count=int(counts[10]),

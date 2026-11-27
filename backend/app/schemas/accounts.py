@@ -24,6 +24,7 @@ TwoFactor = Literal["unknown", "disabled", "enabled"]
 AppStatus = Literal["active", "restricted", "banned"]
 MissingMetadataFilter = Literal["no_purpose", "no_tags", "no_purpose_or_tags"]
 ConflictCheckFilter = Literal["inactive_with_active_apps"]
+BatchTagMode = Literal["append", "remove", "replace"]
 
 
 def email_value(value: str) -> str:
@@ -115,6 +116,20 @@ class VersionInput(Input):
     row_version: int = Field(ge=1)
 
 
+class AccountAppAssignInput(VersionInput):
+    app_id: UUID
+    status: AppStatus = "active"
+    note: str | None = Field(default=None, max_length=200)
+
+    @field_validator("note")
+    @classmethod
+    def clean_note(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
 class AccountPatch(VersionInput):
     gmail_email: Email | None = None
     password: Password | None = None
@@ -164,6 +179,7 @@ class RegisteredAppInput(Input):
     name: str = Field(min_length=1, max_length=64, pattern=r"\S")
     domain: str | None = Field(default=None, max_length=255)
     icon_data: str | None = Field(default=None, max_length=98304)
+    sort_order: int | None = Field(default=None, ge=0, le=9999)
 
 
 class AppIconFetchInput(Input):
@@ -285,6 +301,7 @@ class AccountQuery(Input):
     password_stale_over_days: int | None = Field(default=None, ge=1, le=3650)
     missing_metadata: MissingMetadataFilter | None = None
     conflict_check: ConflictCheckFilter | None = None
+    upstream_recovery_risk: bool | None = None
     sort: Sort = "-account_no"
     page: int = Field(default=1, ge=1, le=1000000)
     page_size: int = Field(default=30, ge=1, le=100)
@@ -332,6 +349,9 @@ class AccountOption(BaseModel):
     id: UUID
     gmail_email: str
     account_no: str
+    status: Status = "normal"
+    linked_recovery_count: int = 0
+    abnormal_linked_count: int = 0
 
 
 class OptionPage(BaseModel):
@@ -431,7 +451,27 @@ class BatchStatus(BatchInput):
 
 
 class BatchTags(BatchInput):
-    tag_ids: Annotated[list[UUID], Field(min_length=1, max_length=100)]
+    mode: BatchTagMode = "append"
+    tag_ids: Annotated[list[UUID], Field(default_factory=list, max_length=100)]
+
+    @model_validator(mode="after")
+    def check_tag_ids(self) -> Self:
+        if self.mode in ("append", "remove") and not self.tag_ids:
+            raise ValueError("追加或移除标签时至少需要选择一个标签")
+        return self
+
+
+class BatchVerifyInput(BatchInput):
+    promote_pending: bool = False
+
+
+class LinkInternalRecoveryInput(Input):
+    email: str | None = Field(default=None, max_length=254)
+
+
+class LinkInternalRecoveryResult(BaseModel):
+    linked_count: int
+    updated_ids: list[UUID]
 
 
 class BatchPermanentDeleteInput(BatchInput):
@@ -497,6 +537,7 @@ class DashboardInsightsResponse(BaseModel):
     password_stale_over_180_days: int
     no_recovery_email_count: int
     app_risk_account_count: int
+    upstream_recovery_risk_count: int = 0
     concentrated_recovery_emails: list[RecoveryUsage] = Field(default_factory=list)
     no_purpose_count: int
     no_tags_count: int

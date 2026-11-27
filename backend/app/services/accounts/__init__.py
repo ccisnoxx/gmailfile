@@ -5,6 +5,7 @@ from uuid import UUID
 from app.models import GmailAccount, Tag
 from app.repositories.accounts import AccountRepository
 from app.schemas.accounts import (
+    AccountAppAssignInput,
     AccountCreate,
     AccountDetail,
     AccountPage,
@@ -17,9 +18,12 @@ from app.schemas.accounts import (
     BatchResult,
     BatchStatus,
     BatchTags,
+    BatchVerifyInput,
     DashboardInsightsResponse,
     DashboardRecoveryUsageResponse,
     DashboardSummary,
+    LinkInternalRecoveryInput,
+    LinkInternalRecoveryResult,
     OptionPage,
     PasswordResponse,
     RecoveryPage,
@@ -123,11 +127,23 @@ class AccountService:
     def batch(self, body: BatchStatus | BatchTags) -> BatchResult:
         return self.details.batch(body)
 
+    def batch_delete(self, body: BatchInput) -> BatchResult:
+        return self.details.batch_delete(body)
+
+    def batch_verify(self, body: BatchVerifyInput) -> BatchResult:
+        return self.details.batch_verify(body)
+
     def batch_restore(self, body: BatchInput) -> BatchResult:
         return self.details.batch_restore(body)
 
     def batch_permanent_delete(self, body: BatchPermanentDeleteInput) -> BatchResult:
         return self.details.batch_permanent_delete(body)
+
+    def assign_app(self, account_id: UUID, body: AccountAppAssignInput) -> AccountDetail:
+        return self.details.assign_app(account_id, body)
+
+    def link_internal_recovery(self, body: LinkInternalRecoveryInput) -> LinkInternalRecoveryResult:
+        return self.details.link_internal_recovery(body)
 
     def status_values(self, row: GmailAccount, status: str) -> dict:
         return self.details.status_values(row, status)

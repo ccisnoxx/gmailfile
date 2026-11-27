@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.dependencies import account_write_auth, auth_service
 from app.schemas.accounts import (
+    AccountAppAssignInput,
     AccountCreate,
     AccountDetail,
     AccountPage,
@@ -17,10 +18,13 @@ from app.schemas.accounts import (
     BatchResult,
     BatchStatus,
     BatchTags,
+    BatchVerifyInput,
     DashboardInsightsResponse,
     DashboardRecoveryUsageResponse,
     DashboardSummary,
     Input,
+    LinkInternalRecoveryInput,
+    LinkInternalRecoveryResult,
     OptionPage,
     PasswordResponse,
     RecoveryPage,
@@ -139,6 +143,15 @@ def recovery_email_accounts(
     return service.recovery_email_accounts(email, page=page, page_size=page_size, sort=sort)
 
 
+@router.post(
+    "/recovery-emails/link-internal",
+    response_model=LinkInternalRecoveryResult,
+    operation_id="recoveryEmailsLinkInternal",
+)
+def recovery_emails_link_internal(body: LinkInternalRecoveryInput, service: WriteService):
+    return service.link_internal_recovery(body)
+
+
 @router.get("/accounts/options", response_model=OptionPage, operation_id="accountsOptions")
 def options(
     service: Service,
@@ -160,6 +173,20 @@ def batch_status(body: BatchStatus, service: WriteService):
 @router.post("/accounts/batch-tags", response_model=BatchResult, operation_id="accountsBatchTags")
 def batch_tags(body: BatchTags, service: WriteService):
     return service.batch(body)
+
+
+@router.post(
+    "/accounts/batch-delete", response_model=BatchResult, operation_id="accountsBatchDelete"
+)
+def batch_delete(body: BatchInput, service: WriteService):
+    return service.batch_delete(body)
+
+
+@router.post(
+    "/accounts/batch-verify", response_model=BatchResult, operation_id="accountsBatchVerify"
+)
+def batch_verify(body: BatchVerifyInput, service: WriteService):
+    return service.batch_verify(body)
 
 
 @router.post(
@@ -193,6 +220,15 @@ def detail(account_id: UUID, service: Service):
 @router.patch("/accounts/{account_id}", response_model=AccountDetail, operation_id="accountsPatch")
 def patch(account_id: UUID, body: AccountPatch, service: WriteService):
     return service.patch(account_id, body)
+
+
+@router.post(
+    "/accounts/{account_id}/apps",
+    response_model=AccountDetail,
+    operation_id="accountsAssignApp",
+)
+def assign_app(account_id: UUID, body: AccountAppAssignInput, service: WriteService):
+    return service.assign_app(account_id, body)
 
 
 @router.delete(

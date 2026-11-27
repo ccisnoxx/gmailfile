@@ -12,6 +12,12 @@ import type {
   AccountsArchiveData,
   AccountsArchiveErrors,
   AccountsArchiveResponses,
+  AccountsAssignAppData,
+  AccountsAssignAppErrors,
+  AccountsAssignAppResponses,
+  AccountsBatchDeleteData,
+  AccountsBatchDeleteErrors,
+  AccountsBatchDeleteResponses,
   AccountsBatchPermanentDeleteData,
   AccountsBatchPermanentDeleteErrors,
   AccountsBatchPermanentDeleteResponses,
@@ -24,6 +30,9 @@ import type {
   AccountsBatchTagsData,
   AccountsBatchTagsErrors,
   AccountsBatchTagsResponses,
+  AccountsBatchVerifyData,
+  AccountsBatchVerifyErrors,
+  AccountsBatchVerifyResponses,
   AccountsCopyPasswordEventData,
   AccountsCopyPasswordEventErrors,
   AccountsCopyPasswordEventResponses,
@@ -186,6 +195,9 @@ import type {
   RecoveryEmailAccountsData,
   RecoveryEmailAccountsErrors,
   RecoveryEmailAccountsResponses,
+  RecoveryEmailsLinkInternalData,
+  RecoveryEmailsLinkInternalErrors,
+  RecoveryEmailsLinkInternalResponses,
   RecoveryEmailsListData,
   RecoveryEmailsListErrors,
   RecoveryEmailsListResponses,
@@ -980,6 +992,31 @@ export const recoveryEmailAccounts = <ThrowOnError extends boolean = false>(
   >({ url: '/api/v1/recovery-email-accounts', ...options });
 
 /**
+ * Recovery Emails Link Internal
+ */
+export const recoveryEmailsLinkInternal = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<RecoveryEmailsLinkInternalData, ThrowOnError>,
+): RequestResult<
+  RecoveryEmailsLinkInternalResponses,
+  RecoveryEmailsLinkInternalErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    RecoveryEmailsLinkInternalResponses,
+    RecoveryEmailsLinkInternalErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/recovery-emails/link-internal',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
  * Options
  */
 export const accountsOptions = <ThrowOnError extends boolean = false>(
@@ -1034,6 +1071,52 @@ export const accountsBatchTags = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/accounts/batch-tags',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Batch Delete
+ */
+export const accountsBatchDelete = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsBatchDeleteData, ThrowOnError>,
+): RequestResult<
+  AccountsBatchDeleteResponses,
+  AccountsBatchDeleteErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsBatchDeleteResponses,
+    AccountsBatchDeleteErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/batch-delete',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Batch Verify
+ */
+export const accountsBatchVerify = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsBatchVerifyData, ThrowOnError>,
+): RequestResult<
+  AccountsBatchVerifyResponses,
+  AccountsBatchVerifyErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsBatchVerifyResponses,
+    AccountsBatchVerifyErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/batch-verify',
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -1132,6 +1215,29 @@ export const accountsPatch = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/api/v1/accounts/{account_id}',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+/**
+ * Assign App
+ */
+export const accountsAssignApp = <ThrowOnError extends boolean = false>(
+  options: Options<AccountsAssignAppData, ThrowOnError>,
+): RequestResult<
+  AccountsAssignAppResponses,
+  AccountsAssignAppErrors,
+  ThrowOnError
+> =>
+  (options.client ?? client).post<
+    AccountsAssignAppResponses,
+    AccountsAssignAppErrors,
+    ThrowOnError
+  >({
+    url: '/api/v1/accounts/{account_id}/apps',
     ...options,
     headers: {
       'Content-Type': 'application/json',

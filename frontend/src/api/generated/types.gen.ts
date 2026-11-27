@@ -5,6 +5,28 @@ export type ClientOptions = {
 };
 
 /**
+ * AccountAppAssignInput
+ */
+export type AccountAppAssignInput = {
+  /**
+   * Row Version
+   */
+  row_version: number;
+  /**
+   * App Id
+   */
+  app_id: string;
+  /**
+   * Status
+   */
+  status?: 'active' | 'restricted' | 'banned';
+  /**
+   * Note
+   */
+  note?: string | null;
+};
+
+/**
  * AccountAppInput
  */
 export type AccountAppInput = {
@@ -252,6 +274,24 @@ export type AccountOption = {
    * Account No
    */
   account_no: string;
+  /**
+   * Status
+   */
+  status?:
+    | 'normal'
+    | 'pending_verification'
+    | 'restricted'
+    | 'login_failed'
+    | 'disabled'
+    | 'archived';
+  /**
+   * Linked Recovery Count
+   */
+  linked_recovery_count?: number;
+  /**
+   * Abnormal Linked Count
+   */
+  abnormal_linked_count?: number;
 };
 
 /**
@@ -459,6 +499,10 @@ export type AccountQuery = {
    * Conflict Check
    */
   conflict_check?: 'inactive_with_active_apps' | null;
+  /**
+   * Upstream Recovery Risk
+   */
+  upstream_recovery_risk?: boolean | null;
   /**
    * Sort
    */
@@ -813,9 +857,27 @@ export type BatchTags = {
    */
   accounts: Array<BatchItem>;
   /**
+   * Mode
+   */
+  mode?: 'append' | 'remove' | 'replace';
+  /**
    * Tag Ids
    */
-  tag_ids: Array<string>;
+  tag_ids?: Array<string>;
+};
+
+/**
+ * BatchVerifyInput
+ */
+export type BatchVerifyInput = {
+  /**
+   * Accounts
+   */
+  accounts: Array<BatchItem>;
+  /**
+   * Promote Pending
+   */
+  promote_pending?: boolean;
 };
 
 /**
@@ -1067,6 +1129,10 @@ export type DashboardInsightsResponse = {
    */
   app_risk_account_count: number;
   /**
+   * Upstream Recovery Risk Count
+   */
+  upstream_recovery_risk_count?: number;
+  /**
    * Concentrated Recovery Emails
    */
   concentrated_recovery_emails?: Array<RecoveryUsage>;
@@ -1305,6 +1371,30 @@ export type Input = {
 };
 
 /**
+ * LinkInternalRecoveryInput
+ */
+export type LinkInternalRecoveryInput = {
+  /**
+   * Email
+   */
+  email?: string | null;
+};
+
+/**
+ * LinkInternalRecoveryResult
+ */
+export type LinkInternalRecoveryResult = {
+  /**
+   * Linked Count
+   */
+  linked_count: number;
+  /**
+   * Updated Ids
+   */
+  updated_ids: Array<string>;
+};
+
+/**
  * OptionPage
  */
 export type OptionPage = {
@@ -1419,6 +1509,10 @@ export type RegisteredAppInput = {
    * Icon Data
    */
   icon_data?: string | null;
+  /**
+   * Sort Order
+   */
+  sort_order?: number | null;
 };
 
 /**
@@ -3651,6 +3745,10 @@ export type AccountsListData = {
      */
     conflict_check?: 'inactive_with_active_apps' | null;
     /**
+     * Upstream Recovery Risk
+     */
+    upstream_recovery_risk?: boolean | null;
+    /**
      * Sort
      */
     sort?:
@@ -4168,6 +4266,53 @@ export type RecoveryEmailAccountsResponses = {
 export type RecoveryEmailAccountsResponse =
   RecoveryEmailAccountsResponses[keyof RecoveryEmailAccountsResponses];
 
+export type RecoveryEmailsLinkInternalData = {
+  body: LinkInternalRecoveryInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/recovery-emails/link-internal';
+};
+
+export type RecoveryEmailsLinkInternalErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type RecoveryEmailsLinkInternalError =
+  RecoveryEmailsLinkInternalErrors[keyof RecoveryEmailsLinkInternalErrors];
+
+export type RecoveryEmailsLinkInternalResponses = {
+  /**
+   * Successful Response
+   */
+  200: LinkInternalRecoveryResult;
+};
+
+export type RecoveryEmailsLinkInternalResponse =
+  RecoveryEmailsLinkInternalResponses[keyof RecoveryEmailsLinkInternalResponses];
+
 export type AccountsOptionsData = {
   body?: never;
   path?: never;
@@ -4325,6 +4470,100 @@ export type AccountsBatchTagsResponses = {
 
 export type AccountsBatchTagsResponse =
   AccountsBatchTagsResponses[keyof AccountsBatchTagsResponses];
+
+export type AccountsBatchDeleteData = {
+  body: BatchInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/accounts/batch-delete';
+};
+
+export type AccountsBatchDeleteErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsBatchDeleteError =
+  AccountsBatchDeleteErrors[keyof AccountsBatchDeleteErrors];
+
+export type AccountsBatchDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  200: BatchResult;
+};
+
+export type AccountsBatchDeleteResponse =
+  AccountsBatchDeleteResponses[keyof AccountsBatchDeleteResponses];
+
+export type AccountsBatchVerifyData = {
+  body: BatchVerifyInput;
+  path?: never;
+  query?: never;
+  url: '/api/v1/accounts/batch-verify';
+};
+
+export type AccountsBatchVerifyErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsBatchVerifyError =
+  AccountsBatchVerifyErrors[keyof AccountsBatchVerifyErrors];
+
+export type AccountsBatchVerifyResponses = {
+  /**
+   * Successful Response
+   */
+  200: BatchResult;
+};
+
+export type AccountsBatchVerifyResponse =
+  AccountsBatchVerifyResponses[keyof AccountsBatchVerifyResponses];
 
 export type AccountsBatchRestoreData = {
   body: BatchInput;
@@ -4574,6 +4813,58 @@ export type AccountsPatchResponses = {
 
 export type AccountsPatchResponse =
   AccountsPatchResponses[keyof AccountsPatchResponses];
+
+export type AccountsAssignAppData = {
+  body: AccountAppAssignInput;
+  path: {
+    /**
+     * Account Id
+     */
+    account_id: string;
+  };
+  query?: never;
+  url: '/api/v1/accounts/{account_id}/apps';
+};
+
+export type AccountsAssignAppErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type AccountsAssignAppError =
+  AccountsAssignAppErrors[keyof AccountsAssignAppErrors];
+
+export type AccountsAssignAppResponses = {
+  /**
+   * Successful Response
+   */
+  200: AccountDetail;
+};
+
+export type AccountsAssignAppResponse =
+  AccountsAssignAppResponses[keyof AccountsAssignAppResponses];
 
 export type AccountsPermanentDeleteData = {
   body: VersionInput;
