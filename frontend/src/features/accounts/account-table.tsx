@@ -1,10 +1,15 @@
-import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
+import { useEffect, useState } from 'react';
+import {
+  DropdownMenu as DropdownMenuPrimitive,
+  Popover as PopoverPrimitive,
+} from 'radix-ui';
 import {
   Archive,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
   CheckCircle2,
+  Columns3,
   Copy,
   Eye,
   HelpCircle,
@@ -79,27 +84,65 @@ export function ColumnToggle({
   columns: Record<AccountColumnKey, boolean>;
   onToggle: (key: AccountColumnKey, checked: boolean) => void;
 }) {
+  const visibleCount = (
+    Object.keys(accountColumnLabels) as AccountColumnKey[]
+  ).filter((key) => columns[key]).length;
+  const totalCount = Object.keys(accountColumnLabels).length;
+
   return (
-    <details className="rounded-xl border border-white/75 bg-white/55 px-3 py-2 text-xs text-[var(--text-primary)]">
-      <summary className="cursor-pointer font-medium select-none">
-        显示列
-      </summary>
-      <div className="mt-2.5 flex flex-wrap gap-3">
-        {(
-          Object.entries(accountColumnLabels) as [AccountColumnKey, string][]
-        ).map(([key, label]) => (
-          <label key={key} className="flex items-center gap-1.5 text-xs">
-            <input
-              type="checkbox"
-              className="accent-[var(--accent)]"
-              checked={columns[key]}
-              onChange={(e) => onToggle(key, e.target.checked)}
+    <div className="flex items-center">
+      <PopoverPrimitive.Root>
+        <PopoverPrimitive.Trigger asChild>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            className="inline-flex min-h-8 items-center gap-1.5 rounded-xl border border-white/80 bg-white/65 px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-white/90 focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:outline-none"
+          >
+            <Columns3
+              className="size-3.5 text-[var(--text-secondary)]"
+              aria-hidden="true"
             />
-            <span>{label}</span>
-          </label>
-        ))}
-      </div>
-    </details>
+            <span>显示列</span>
+            <span className="rounded-full bg-[var(--surface-control)] px-1.5 py-0.5 text-[10.5px] tabular-nums text-[var(--text-secondary)]">
+              {visibleCount}/{totalCount}
+            </span>
+          </button>
+        </PopoverPrimitive.Trigger>
+        <PopoverPrimitive.Portal>
+          <PopoverPrimitive.Content
+            align="start"
+            sideOffset={6}
+            aria-label="表格列显示设置"
+            className="macos-glass-modal z-50 w-64 rounded-2xl p-3 text-xs text-[var(--text-primary)] outline-none"
+          >
+            <p className="mb-2 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
+              选择表格显示列（自动本地保存）
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(
+                Object.entries(accountColumnLabels) as [
+                  AccountColumnKey,
+                  string,
+                ][]
+              ).map(([key, label]) => (
+                <label
+                  key={key}
+                  className="flex min-h-7 cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs transition-colors hover:bg-[var(--accent-soft)]"
+                >
+                  <input
+                    type="checkbox"
+                    className="size-3.5 rounded accent-[var(--accent)]"
+                    checked={columns[key]}
+                    onChange={(e) => onToggle(key, e.target.checked)}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </PopoverPrimitive.Content>
+        </PopoverPrimitive.Portal>
+      </PopoverPrimitive.Root>
+    </div>
   );
 }
 
@@ -301,6 +344,261 @@ function RowActionsMenu({
   );
 }
 
+const MOBILE_MEDIA_QUERY = '(max-width: 767px)';
+
+function useIsMobileViewport(): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return false;
+    }
+    return window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+  });
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return;
+    }
+    const media = window.matchMedia(MOBILE_MEDIA_QUERY);
+    setIsMobile(media.matches);
+    const onChange = (event: MediaQueryListEvent) => setIsMobile(event.matches);
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', onChange);
+      return () => media.removeEventListener('change', onChange);
+    }
+    media.addListener(onChange);
+    return () => media.removeListener(onChange);
+  }, []);
+
+  return isMobile;
+}
+
+function AccountMobileCardList({
+  items,
+  deleted,
+  busy,
+  selected,
+  onToggleAll,
+  onToggleOne,
+  onOpen,
+  onCopy,
+  onMarkVerified,
+  footer,
+}: {
+  items: AccountSummary[];
+  deleted: boolean;
+  busy: boolean;
+  selected: Record<string, boolean>;
+  onToggleAll: (checked: boolean) => void;
+  onToggleOne: (id: string, checked: boolean) => void;
+  onOpen: (
+    account: AccountSummary,
+    edit?: boolean,
+    action?: AccountAction,
+  ) => void;
+  onCopy: (value: string) => void;
+  onMarkVerified: (account: AccountSummary) => void;
+  footer?: React.ReactNode;
+}) {
+  const selectedCount = items.filter((item) => selected[item.id]).length;
+  const [selectionMode, setSelectionMode] = useState(false);
+  const showSelection = selectionMode || selectedCount > 0;
+  const allChecked = items.length > 0 && selectedCount === items.length;
+
+  return (
+    <div
+      data-slot="account-mobile-card-list"
+      className="macos-glass-panel macos-glass-panel-strong overflow-hidden"
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--table-divider)] bg-[var(--surface-table-head)] px-3.5 py-2.5">
+        {showSelection ? (
+          <label className="inline-flex min-h-8 items-center gap-2 text-xs font-medium text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              aria-label="选择当前页全部账号"
+              checked={allChecked}
+              onChange={(e) => onToggleAll(e.target.checked)}
+              className="size-4 rounded border-[#b8cce4] accent-[var(--accent)]"
+            />
+            <span>
+              全选当前页{selectedCount > 0 ? `（已选 ${selectedCount}）` : ''}
+            </span>
+          </label>
+        ) : (
+          <span className="text-xs font-medium text-[var(--text-secondary)]">
+            共 {items.length} 条当前页账号
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            if (showSelection) {
+              onToggleAll(false);
+              setSelectionMode(false);
+            } else {
+              setSelectionMode(true);
+            }
+          }}
+          className="inline-flex min-h-8 items-center rounded-lg border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-2.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-control-hover)]"
+        >
+          {showSelection ? '取消选择' : '选择'}
+        </button>
+      </div>
+
+      <ul
+        aria-label={deleted ? '已删除账号列表' : '账号列表'}
+        className="divide-y divide-[var(--table-divider)]"
+      >
+        {items.map((account) => {
+          const isSelected = Boolean(selected[account.id]);
+          return (
+            <li
+              key={account.id}
+              data-slot="account-mobile-card"
+              data-state={isSelected ? 'selected' : undefined}
+              className={cn(
+                'flex flex-col gap-2.5 px-3.5 py-3 transition-colors',
+                isSelected
+                  ? 'bg-[var(--table-row-selected)]'
+                  : 'bg-transparent',
+              )}
+            >
+              {/* 第一行：多选（可选） + 邮箱 + 复制 + 状态 + 固定更多操作 */}
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  {showSelection && (
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${account.account_no}`}
+                      checked={isSelected}
+                      onChange={(e) =>
+                        onToggleOne(account.id, e.target.checked)
+                      }
+                      className="size-4 shrink-0 rounded border-[#b8cce4] accent-[var(--accent)]"
+                    />
+                  )}
+                  <GmailMark size="sm" />
+                  <button
+                    type="button"
+                    onClick={() => onOpen(account)}
+                    className="min-h-8 min-w-0 flex-1 truncate text-left text-[13.5px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent)]"
+                  >
+                    {account.gmail_email}
+                  </button>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={`复制邮箱 ${account.gmail_email}`}
+                    onClick={() => onCopy(account.gmail_email)}
+                    className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--accent)]"
+                  >
+                    <Copy className="size-3.5" aria-hidden="true" />
+                  </button>
+                  <RowActionsMenu
+                    account={account}
+                    deleted={deleted}
+                    busy={busy}
+                    onOpen={onOpen}
+                    onCopy={onCopy}
+                    onMarkVerified={onMarkVerified}
+                  />
+                </div>
+              </div>
+
+              {/* 第二行：状态、2FA、用途与标签 */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <StatusPill status={account.status} />
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">
+                  {account.two_factor_status === 'enabled' ? (
+                    <>
+                      <CheckCircle2
+                        className="size-3 text-[var(--success)]"
+                        aria-hidden="true"
+                      />
+                      <span className="text-[var(--text-primary)]">
+                        2FA 已启用
+                      </span>
+                    </>
+                  ) : account.two_factor_status === 'disabled' ? (
+                    <>
+                      <MinusCircle className="size-3" aria-hidden="true" />
+                      <span>2FA 未启用</span>
+                    </>
+                  ) : (
+                    <>
+                      <HelpCircle className="size-3" aria-hidden="true" />
+                      <span>2FA 未知</span>
+                    </>
+                  )}
+                </span>
+                {account.purpose && (
+                  <span className="max-w-[160px] truncate rounded-full border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]">
+                    {account.purpose}
+                  </span>
+                )}
+                {account.tags.slice(0, 2).map((tag) => (
+                  <TagPill key={tag.id} name={tag.name} />
+                ))}
+                {account.tags.length > 2 && (
+                  <span className="text-[11px] text-[var(--text-secondary)]">
+                    +{account.tags.length - 2}
+                  </span>
+                )}
+              </div>
+
+              {/* 第三行：辅助邮箱（常显复制） + 最后验证 */}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
+                <div className="flex min-w-0 items-center gap-1">
+                  <span className="shrink-0">辅助：</span>
+                  {account.recovery_email ? (
+                    <>
+                      <span className="max-w-[170px] truncate text-[var(--text-primary)]/90">
+                        {account.recovery_email}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`复制辅助邮箱 ${account.recovery_email}`}
+                        onClick={() =>
+                          account.recovery_email &&
+                          onCopy(account.recovery_email)
+                        }
+                        className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--accent)]"
+                      >
+                        <Copy className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </>
+                  ) : (
+                    <span>—</span>
+                  )}
+                </div>
+                <span
+                  data-dynamic="timestamp"
+                  className="shrink-0 tabular-nums"
+                  title={localDate(account.last_verified_at)}
+                >
+                  验证：{formatActivityDate(account.last_verified_at)}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {footer && (
+        <div className="border-t border-[var(--table-divider)] bg-[var(--surface-table-head)] px-3.5 py-3">
+          {footer}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AccountTable({
   items,
   total,
@@ -346,6 +644,8 @@ export function AccountTable({
   onRetry?: () => void;
   footer?: React.ReactNode;
 }) {
+  const isMobile = useIsMobileViewport();
+
   if (isPending) {
     return <LoadingState />;
   }
@@ -403,6 +703,23 @@ export function AccountTable({
       );
     }
     return emptyNode;
+  }
+
+  if (isMobile) {
+    return (
+      <AccountMobileCardList
+        items={items}
+        deleted={deleted}
+        busy={busy}
+        selected={selected}
+        onToggleAll={onToggleAll}
+        onToggleOne={onToggleOne}
+        onOpen={onOpen}
+        onCopy={onCopy}
+        onMarkVerified={onMarkVerified}
+        footer={footer}
+      />
+    );
   }
 
   const allChecked = items.length > 0 && items.every((a) => selected[a.id]);
@@ -559,7 +876,7 @@ export function AccountTable({
                         type="button"
                         aria-label={`复制邮箱 ${account.gmail_email}`}
                         onClick={() => onCopy(account.gmail_email)}
-                        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
+                        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-100 transition-opacity focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)] [@media(hover:hover)]:md:opacity-0 [@media(hover:hover)]:md:group-hover:opacity-100 [@media(hover:hover)]:md:focus-visible:opacity-100"
                       >
                         <Copy className="size-3.5" aria-hidden="true" />
                       </button>
@@ -617,7 +934,7 @@ export function AccountTable({
                                 onCopy(account.recovery_email);
                               }
                             }}
-                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)]"
+                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] opacity-100 transition-opacity focus-visible:opacity-100 hover:bg-white/80 hover:text-[var(--accent)] [@media(hover:hover)]:md:opacity-0 [@media(hover:hover)]:md:group-hover:opacity-100 [@media(hover:hover)]:md:focus-visible:opacity-100"
                           >
                             <Copy className="size-3.5" aria-hidden="true" />
                           </button>

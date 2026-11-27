@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useInRouterContext, useNavigate, useParams } from 'react-router-dom';
+import { resolveAppHref } from '@/app/navigation';
 import type { ErrorResponse, SessionResponse } from '@/api/generated';
 import {
   accountsDetail,
@@ -21,6 +22,7 @@ import {
   type SidebarTagItem,
   type WorkspaceNavKey,
 } from '@/components/macos';
+import { purgeProtectedAccountDetailQueries } from '@/lib/query-cache-policy';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -102,33 +104,36 @@ function RoutedAccountDetailPage(props: AccountDetailPageProps) {
   const params = useParams<{ accountId?: string }>();
   const goAccount = useCallback(
     (id: string) => {
-      void navigate({
-        pathname: `/accounts/${id}`,
-        search: window.location.search,
-      });
+      void navigate(
+        resolveAppHref({
+          kind: 'account-detail',
+          accountId: id,
+          search: window.location.search,
+        }),
+      );
     },
     [navigate],
   );
   const goList = useCallback(() => {
     void navigate({
-      pathname: '/accounts',
+      pathname: resolveAppHref({ kind: 'accounts' }),
       search: window.location.search,
     });
   }, [navigate]);
   const goListWithQuery = useCallback(
     (queryString: string) => {
       void navigate({
-        pathname: '/accounts',
+        pathname: resolveAppHref({ kind: 'accounts' }),
         search: queryString ? `?${queryString}` : '',
       });
     },
     [navigate],
   );
   const goRecovery = useCallback(() => {
-    void navigate('/recovery-emails');
+    void navigate(resolveAppHref({ kind: 'recovery-emails' }));
   }, [navigate]);
   const goApps = useCallback(() => {
-    void navigate('/apps');
+    void navigate(resolveAppHref({ kind: 'apps' }));
   }, [navigate]);
 
   return (
@@ -193,6 +198,7 @@ function AccountDetailLiveBody({
     accountIdOverride ?? accountIdParam ?? '',
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<AccountListFilterTab>('all');
   const [activeTab, setActiveTab] = useState<AccountDetailTabKey>('basic');
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
@@ -208,13 +214,24 @@ function AccountDetailLiveBody({
   >({});
 
   useEffect(() => {
+    if (searchQuery === '') {
+      setDebouncedSearchQuery('');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
     const incoming = accountIdOverride ?? accountIdParam;
     if (incoming) setSelectedId(incoming);
   }, [accountIdOverride, accountIdParam]);
 
   const listQueryParams = useMemo(() => {
     return {
-      search: searchQuery.trim() || undefined,
+      search: debouncedSearchQuery.trim() || undefined,
       status:
         filterTab === 'normal'
           ? ('normal' as const)
@@ -228,7 +245,7 @@ function AccountDetailLiveBody({
       page: 1,
       page_size: 50,
     };
-  }, [filterTab, searchQuery]);
+  }, [debouncedSearchQuery, filterTab]);
 
   const accountsQuery = useQuery({
     queryKey: ['detail-accounts-list', listQueryParams],
@@ -331,11 +348,10 @@ function AccountDetailLiveBody({
     );
   }, [auditsQuery.data, auditsQuery.dataUpdatedAt, effectiveAccountId]);
 
+  // 安全缓存策略：离开账号详情工作区时先取消在途请求再移除元数据缓存。
   useEffect(
     () => () => {
-      queryClient.removeQueries({ queryKey: ['detail-accounts-list'] });
-      queryClient.removeQueries({ queryKey: ['account-detail'] });
-      queryClient.removeQueries({ queryKey: ['account-audits'] });
+      purgeProtectedAccountDetailQueries(queryClient);
     },
     [queryClient],
   );

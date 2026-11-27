@@ -395,11 +395,11 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
         model.className,
       )}
     >
-      <div className="flex flex-col gap-4">
-        {/* 分区 1：账号与资产（核心平级导航 + 全部账号可展开状态树） */}
-        <section aria-label="账号与资产">
+      <div className="flex flex-col gap-3.5">
+        {/* 1. 概览与账号 */}
+        <section aria-label="概览与账号">
           <p className="mb-1.5 px-2.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
-            账号与资产
+            概览与账号
           </p>
           <nav aria-label="核心资产导航" className="flex flex-col gap-1">
             {model.onSelectDashboard && (
@@ -522,40 +522,6 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
               )}
             </div>
 
-            {model.onSelectApps && (
-              <button
-                type="button"
-                aria-current={isAppsActive ? 'page' : undefined}
-                onClick={model.onSelectApps}
-                className={navItemClass(isAppsActive)}
-              >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <AppWindow
-                    className={iconClass(isAppsActive)}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">已注册应用</span>
-                </span>
-              </button>
-            )}
-
-            {model.onSelectRecovery && (
-              <button
-                type="button"
-                aria-current={isRecoveryActive ? 'page' : undefined}
-                onClick={model.onSelectRecovery}
-                className={navItemClass(isRecoveryActive)}
-              >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <MailCheck
-                    className={iconClass(isRecoveryActive)}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">辅助邮箱统计</span>
-                </span>
-              </button>
-            )}
-
             <button
               type="button"
               aria-pressed={isTrashActive}
@@ -587,159 +553,224 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
           </nav>
         </section>
 
-        {/* 分区 2：标签筛选（可折叠 + 右上角管理/新增标签） */}
-        {model.showTagSection && (
+        {/* 2. 关系：统一归拢已注册应用、辅助邮箱与标签 */}
+        {(model.onSelectApps ||
+          model.onSelectRecovery ||
+          model.showTagSection) && (
           <section
-            aria-label="标签筛选"
-            className="border-t border-[var(--nav-divider)] pt-3.5"
+            aria-label="关系"
+            className="border-t border-[var(--nav-divider)] pt-3"
           >
-            <div className="mb-1.5 flex items-center justify-between px-1.5">
-              <button
-                type="button"
-                aria-expanded={tagsExpanded}
-                onClick={toggleTagsExpanded}
-                className="inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-              >
-                {tagsExpanded ? (
-                  <ChevronDown className="size-3" aria-hidden="true" />
-                ) : (
-                  <ChevronRight className="size-3" aria-hidden="true" />
-                )}
-                <span>标签</span>
-              </button>
-              {model.onAddTag && (
-                <IconTooltip label="管理 / 新增标签" align="end">
+            <p className="mb-1.5 px-2.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
+              关系
+            </p>
+            <nav aria-label="关系导航" className="flex flex-col gap-1">
+              {model.onSelectApps && (
+                <button
+                  type="button"
+                  aria-current={isAppsActive ? 'page' : undefined}
+                  onClick={model.onSelectApps}
+                  className={navItemClass(isAppsActive)}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <AppWindow
+                      className={iconClass(isAppsActive)}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">已注册应用</span>
+                  </span>
+                </button>
+              )}
+
+              {model.onSelectRecovery && (
+                <button
+                  type="button"
+                  aria-current={isRecoveryActive ? 'page' : undefined}
+                  onClick={model.onSelectRecovery}
+                  className={navItemClass(isRecoveryActive)}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <MailCheck
+                      className={iconClass(isRecoveryActive)}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">辅助邮箱统计</span>
+                  </span>
+                </button>
+              )}
+            </nav>
+
+            {model.showTagSection && (
+              <div className="mt-2">
+                <div className="mb-1 flex items-center justify-between px-1.5">
                   <button
                     type="button"
-                    aria-label="新增标签"
-                    onClick={model.onAddTag}
-                    className="inline-flex size-6 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
+                    aria-expanded={tagsExpanded}
+                    onClick={toggleTagsExpanded}
+                    className="inline-flex min-h-6 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                   >
-                    <Plus className="size-3.5" aria-hidden="true" />
+                    {tagsExpanded ? (
+                      <ChevronDown className="size-3" aria-hidden="true" />
+                    ) : (
+                      <ChevronRight className="size-3" aria-hidden="true" />
+                    )}
+                    <span>标签</span>
                   </button>
-                </IconTooltip>
-              )}
-            </div>
-            {tagsExpanded && (
-              <div className="flex flex-col gap-0.5">
-                {model.tags.length > 0 && model.onSelectTag ? (
-                  model.tags.map((tag, idx) => {
-                    const active = model.activeTagId === tag.id;
-                    return (
+                  {model.onAddTag && (
+                    <IconTooltip label="管理 / 新增标签" align="end">
                       <button
-                        key={tag.id}
                         type="button"
-                        aria-pressed={active}
-                        onClick={() => model.onSelectTag?.(tag.id)}
-                        className={cn(
-                          'flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[12.5px] transition-all duration-[160ms] ease-out',
-                          active
-                            ? 'border border-[var(--accent)]/24 bg-[var(--accent-soft)] font-semibold text-[var(--accent-text)]'
-                            : 'font-medium text-[var(--text-primary)]/90 hover:bg-[var(--surface-control-hover)]',
-                        )}
+                        aria-label="新增标签"
+                        onClick={model.onAddTag}
+                        className="inline-flex size-6 items-center justify-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
                       >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <TagIcon
+                        <Plus className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </IconTooltip>
+                  )}
+                </div>
+                {tagsExpanded && (
+                  <div className="flex flex-col gap-0.5">
+                    {model.tags.length > 0 && model.onSelectTag ? (
+                      model.tags.map((tag, idx) => {
+                        const active = model.activeTagId === tag.id;
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => model.onSelectTag?.(tag.id)}
                             className={cn(
-                              'size-3.5 shrink-0',
-                              tagColorClass(tag.name, idx),
+                              'flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[12.5px] transition-all duration-[160ms] ease-out',
+                              active
+                                ? 'border border-[var(--accent)]/24 bg-[var(--accent-soft)] font-semibold text-[var(--accent-text)]'
+                                : 'font-medium text-[var(--text-primary)]/90 hover:bg-[var(--surface-control-hover)]',
                             )}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <TagIcon
+                                className={cn(
+                                  'size-3.5 shrink-0',
+                                  tagColorClass(tag.name, idx),
+                                )}
+                                aria-hidden="true"
+                              />
+                              <span className="truncate">{tag.name}</span>
+                            </span>
+                            {tag.count !== undefined && (
+                              <span className={countBadgeClass(active)}>
+                                {tag.count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    ) : model.onAddTag ? (
+                      <button
+                        type="button"
+                        onClick={model.onAddTag}
+                        className={navItemClass(model.activeNav === 'tags')}
+                      >
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          <TagIcon
+                            className={iconClass(model.activeNav === 'tags')}
                             aria-hidden="true"
                           />
-                          <span className="truncate">{tag.name}</span>
+                          <span className="truncate">标签管理</span>
                         </span>
-                        {tag.count !== undefined && (
-                          <span className={countBadgeClass(active)}>
-                            {tag.count}
-                          </span>
-                        )}
                       </button>
-                    );
-                  })
-                ) : model.onAddTag ? (
-                  <button
-                    type="button"
-                    onClick={model.onAddTag}
-                    className={navItemClass(model.activeNav === 'tags')}
-                  >
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <TagIcon
-                        className={iconClass(model.activeNav === 'tags')}
-                        aria-hidden="true"
-                      />
-                      <span className="truncate">标签管理</span>
-                    </span>
-                  </button>
-                ) : (
-                  <p className="px-2.5 py-1.5 text-xs text-[var(--text-secondary)]">
-                    暂无标签
-                  </p>
+                    ) : (
+                      <p className="px-2.5 py-1.5 text-xs text-[var(--text-secondary)]">
+                        暂无标签
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
           </section>
         )}
 
-        {/* 分区 3：数据与系统 */}
-        <section
-          aria-label="数据与系统"
-          className="border-t border-[var(--nav-divider)] pt-3.5"
-        >
-          <p className="mb-1.5 px-2.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
-            数据与系统
-          </p>
-          <nav aria-label="数据与系统导航" className="flex flex-col gap-1">
-            {model.onSelectTransfer && (
-              <button
-                type="button"
-                aria-current={
-                  model.activeNav === 'transfer' ? 'page' : undefined
-                }
-                onClick={model.onSelectTransfer}
-                className={navItemClass(model.activeNav === 'transfer')}
-              >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <ArrowUpDown
-                    className={iconClass(model.activeNav === 'transfer')}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">导入 / 导出（CSV）</span>
-                </span>
-              </button>
-            )}
-            {model.onSelectAudit && (
-              <button
-                type="button"
-                aria-current={model.activeNav === 'audit' ? 'page' : undefined}
-                onClick={model.onSelectAudit}
-                className={navItemClass(model.activeNav === 'audit')}
-              >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <FileText
-                    className={iconClass(model.activeNav === 'audit')}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">审计日志</span>
-                </span>
-              </button>
-            )}
-            {model.onSelectBackup && (
-              <button
-                type="button"
-                aria-current={model.activeNav === 'backup' ? 'page' : undefined}
-                onClick={model.onSelectBackup}
-                className={navItemClass(model.activeNav === 'backup')}
-              >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <Database
-                    className={iconClass(model.activeNav === 'backup')}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">备份与恢复</span>
-                </span>
-              </button>
-            )}
-            {model.onSelectSettings && (
+        {/* 3. 数据操作：导入导出、审计、备份 */}
+        {(model.onSelectTransfer ||
+          model.onSelectAudit ||
+          model.onSelectBackup) && (
+          <section
+            aria-label="数据操作"
+            className="border-t border-[var(--nav-divider)] pt-3"
+          >
+            <p className="mb-1.5 px-2.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
+              数据操作
+            </p>
+            <nav aria-label="数据操作导航" className="flex flex-col gap-1">
+              {model.onSelectTransfer && (
+                <button
+                  type="button"
+                  aria-current={
+                    model.activeNav === 'transfer' ? 'page' : undefined
+                  }
+                  onClick={model.onSelectTransfer}
+                  className={navItemClass(model.activeNav === 'transfer')}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <ArrowUpDown
+                      className={iconClass(model.activeNav === 'transfer')}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">导入 / 导出（CSV）</span>
+                  </span>
+                </button>
+              )}
+              {model.onSelectAudit && (
+                <button
+                  type="button"
+                  aria-current={
+                    model.activeNav === 'audit' ? 'page' : undefined
+                  }
+                  onClick={model.onSelectAudit}
+                  className={navItemClass(model.activeNav === 'audit')}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <FileText
+                      className={iconClass(model.activeNav === 'audit')}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">审计日志</span>
+                  </span>
+                </button>
+              )}
+              {model.onSelectBackup && (
+                <button
+                  type="button"
+                  aria-current={
+                    model.activeNav === 'backup' ? 'page' : undefined
+                  }
+                  onClick={model.onSelectBackup}
+                  className={navItemClass(model.activeNav === 'backup')}
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <Database
+                      className={iconClass(model.activeNav === 'backup')}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">备份与恢复</span>
+                  </span>
+                </button>
+              )}
+            </nav>
+          </section>
+        )}
+
+        {/* 4. 系统设置 */}
+        {model.onSelectSettings && (
+          <section
+            aria-label="设置"
+            className="border-t border-[var(--nav-divider)] pt-3"
+          >
+            <p className="mb-1.5 px-2.5 text-[11px] font-semibold tracking-wide text-[var(--text-secondary)]">
+              设置
+            </p>
+            <nav aria-label="系统设置导航" className="flex flex-col gap-1">
               <button
                 type="button"
                 aria-current={
@@ -756,9 +787,9 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
                   <span className="truncate">系统设置</span>
                 </span>
               </button>
-            )}
-          </nav>
-        </section>
+            </nav>
+          </section>
+        )}
 
         {/* 可选二级分组导航 */}
         {model.secondaryNav && model.secondaryNav.items.length > 0 && (
@@ -814,10 +845,10 @@ export function PrimarySidebar(props: PrimarySidebarProps) {
           <button
             type="button"
             data-slot="system-status-card"
-            aria-label="系统运行状态"
             onClick={model.onSelectBackup ?? model.onSelectSettings}
             className="w-full rounded-2xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] p-2.5 text-left transition-colors hover:bg-[var(--surface-control-hover)]"
           >
+            <span className="sr-only">系统运行状态：</span>
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-2">
                 <span

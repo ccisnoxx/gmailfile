@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { BarChart3, Filter, List, Plus, Search } from 'lucide-react';
 import { useInRouterContext, useNavigate, useParams } from 'react-router-dom';
 import type {
@@ -58,7 +66,6 @@ import { AccountForm } from './account-form';
 import { Pagination } from './account-pagination';
 import { Summary, type AccountStatsData } from './account-summary';
 import { AccountTable } from './account-table';
-import { AccountsChartView } from './accounts-chart-view';
 import {
   actionLabels,
   defaultVisibleColumns,
@@ -73,6 +80,12 @@ import {
   MOCK_SIDEBAR_TAGS,
   MOCK_TAGS,
 } from './mock-fixtures';
+
+const loadAccountsChartView = () =>
+  import('./accounts-chart-view').then((m) => ({
+    default: m.AccountsChartView,
+  }));
+const AccountsChartView = lazy(loadAccountsChartView);
 
 interface PreviewRouterProps {
   accountIdParam?: string;
@@ -535,19 +548,19 @@ function AccountsPreviewBody({
               ref={searchRef}
               type="search"
               aria-label="搜索账号"
-              placeholder="搜索邮箱、辅助邮箱或备注"
+              placeholder="搜索编号、邮箱或辅助邮箱"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="h-9 w-56 rounded-xl border border-white/80 bg-white/65 pr-11 pl-9 text-[13px] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md transition-all duration-[180ms] ease-out placeholder:text-[var(--text-secondary)] focus:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-64"
+              className="h-9 w-60 rounded-xl border border-white/80 bg-white/65 pr-[76px] pl-9 text-[13px] text-[var(--text-primary)] shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-md transition-all duration-[180ms] ease-out placeholder:text-[var(--text-secondary)] focus:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] sm:w-72"
             />
             <kbd
               aria-hidden="true"
-              className="pointer-events-none absolute right-2.5 rounded-md border border-[var(--border)] bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)]"
+              className="pointer-events-none absolute right-2.5 rounded-md border border-[var(--border)] bg-white/80 px-1.5 py-0.5 text-[10.5px] font-medium whitespace-nowrap text-[var(--text-secondary)]"
             >
-              ⌘K
+              ⌘/Ctrl K
             </kbd>
           </div>
 
@@ -594,6 +607,8 @@ function AccountsPreviewBody({
                 type="button"
                 aria-label="图表视图"
                 aria-pressed={viewMode === 'chart'}
+                onMouseEnter={() => void loadAccountsChartView()}
+                onFocus={() => void loadAccountsChartView()}
                 onClick={() => setViewMode('chart')}
                 className={cn(
                   'inline-flex size-8 items-center justify-center rounded-[10px] transition-all duration-[160ms] ease-out',
@@ -714,7 +729,9 @@ function AccountsPreviewBody({
 
       {/* 列表或图表视图 */}
       {viewMode === 'chart' ? (
-        <AccountsChartView stats={stats} items={filtered} />
+        <Suspense fallback={<LoadingState title="正在加载数据图表…" />}>
+          <AccountsChartView stats={stats} items={filtered} />
+        </Suspense>
       ) : (
         <AccountTable
           items={urlState === 'empty' ? [] : pageItems}

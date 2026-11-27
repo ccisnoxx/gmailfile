@@ -81,6 +81,30 @@ export function accountQuery(
       ? rawPageSize
       : undefined;
 
+  const rawAppStatuses = params.get('app_statuses');
+  const parsedAppStatuses = rawAppStatuses
+    ? rawAppStatuses
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+  const parsePositiveDays = (key: string): number | undefined => {
+    const raw = params.get(key);
+    if (!raw) return undefined;
+    const num = Number(raw);
+    return Number.isInteger(num) && num >= 1 && num <= 3650 ? num : undefined;
+  };
+  const rawMissingMeta = params.get('missing_metadata');
+  const missingMetadata =
+    rawMissingMeta === 'no_purpose' ||
+    rawMissingMeta === 'no_tags' ||
+    rawMissingMeta === 'no_purpose_or_tags'
+      ? rawMissingMeta
+      : undefined;
+  const rawConflict = params.get('conflict_check');
+  const conflictCheck =
+    rawConflict === 'inactive_with_active_apps' ? rawConflict : undefined;
+
   return {
     search: params.get('search') || undefined,
     status: (params.get('status') || undefined) as NonNullable<
@@ -95,6 +119,11 @@ export function accountQuery(
     app_status: (params.get('app_status') || undefined) as NonNullable<
       AccountsListData['query']
     >['app_status'],
+    app_statuses: parsedAppStatuses.length
+      ? (parsedAppStatuses as NonNullable<
+          AccountsListData['query']
+        >['app_statuses'])
+      : undefined,
     exclude_app_id: params.get('exclude_app_id') || undefined,
     two_factor_status: (params.get('two_factor_status') ||
       undefined) as NonNullable<AccountsListData['query']>['two_factor_status'],
@@ -105,6 +134,14 @@ export function accountQuery(
       : undefined,
     deleted: params.get('deleted') === 'true',
     recovery_email: params.get('recovery_email') || undefined,
+    has_recovery_email: params.has('has_recovery_email')
+      ? params.get('has_recovery_email') === 'true'
+      : undefined,
+    unverified_over_days: parsePositiveDays('unverified_over_days'),
+    inactive_login_over_days: parsePositiveDays('inactive_login_over_days'),
+    password_stale_over_days: parsePositiveDays('password_stale_over_days'),
+    missing_metadata: missingMetadata,
+    conflict_check: conflictCheck,
     sort: (params.get('sort') || '-account_no') as NonNullable<
       AccountsListData['query']
     >['sort'],

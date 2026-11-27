@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AccountsListData } from '@/api/generated';
 import { accountsList, appsList, tagsList } from '@/api/generated';
-import { defaultVisibleColumns, type AccountColumnKey } from './constants';
+import { purgeProtectedAccountsQueries } from '@/lib/query-cache-policy';
+import {
+  persistVisibleColumns,
+  readVisibleColumns,
+  subscribeVisibleColumns,
+  type AccountColumnKey,
+} from './constants';
 
 export function useAccountsList({
   query,
@@ -20,14 +26,22 @@ export function useAccountsList({
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [columns, setColumns] = useState<Record<AccountColumnKey, boolean>>(
-    defaultVisibleColumns,
+    () => readVisibleColumns(),
   );
+
+  useEffect(() => subscribeVisibleColumns(setColumns), []);
 
   const list = useQuery({
     queryKey: ['accounts', query],
     queryFn: async ({ signal }) =>
       (await accountsList({ query, signal, throwOnError: true })).data,
     enabled: !recoveryView && !appsView,
+    // 同一视图（普通列表或回收站内）翻页/筛选切换时保持上一次表格内容稳定，避免整页闪烁。
+    placeholderData: (previousData, previousQuery) => {
+      const prevQuery = previousQuery?.queryKey?.[1] as
+        { deleted?: boolean } | undefined;
+      return prevQuery?.deleted === query.deleted ? previousData : undefined;
+    },
   });
 
   const tags = useQuery({
@@ -62,23 +76,10 @@ export function useAccountsList({
     }
   }, [apps.error, onFailure]);
 
+  // 安全缓存策略：卸载受保护账号工作区时先取消在途请求并清除元数据缓存，防止晚到响应回填。
   useEffect(
     () => () => {
-      queryClient.removeQueries({ queryKey: ['accounts'] });
-      queryClient.removeQueries({ queryKey: ['tags'] });
-      queryClient.removeQueries({ queryKey: ['apps'] });
-      queryClient.removeQueries({ queryKey: ['apps-usage'] });
-      queryClient.removeQueries({ queryKey: ['summary'] });
-      queryClient.removeQueries({ queryKey: ['recovery-usage'] });
-      queryClient.removeQueries({ queryKey: ['recovery-email-accounts'] });
-      queryClient.removeQueries({ queryKey: ['dashboard-registration-trend'] });
-      queryClient.removeQueries({
-        queryKey: ['dashboard-status-distribution'],
-      });
-      queryClient.removeQueries({
-        queryKey: ['dashboard-recovery-email-usage'],
-      });
-      queryClient.removeQueries({ queryKey: ['account-options'] });
+      purgeProtectedAccountsQueries(queryClient);
     },
     [queryClient],
   );
@@ -118,7 +119,20 @@ export function useAccountsList({
 
   const toggleColumn = useCallback(
     (key: AccountColumnKey, checked: boolean) => {
-      setColumns((current) => ({ ...current, [key]: checked }));
+      setColumns((current) => {
+        const next = { ...current, [key]: checked };
+        persistVisibleColumns(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const applyColumns = useCallback(
+    (nextColumns: Record<AccountColumnKey, boolean>) => {
+      const next = { ...nextColumns };
+      setColumns(next);
+      persistVisibleColumns(next);
     },
     [],
   );
@@ -135,5 +149,6 @@ export function useAccountsList({
     toggleAll,
     toggleOne,
     toggleColumn,
+    applyColumns,
   };
 }

@@ -12,7 +12,7 @@ function Sheet({
   open,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Root>) {
-  const prevOpenRef = React.useRef(Boolean(open));
+  const prevOpenRef = React.useRef(false);
   const previousFocusRef = React.useRef<HTMLElement | null>(null);
 
   if (

@@ -12,7 +12,7 @@ function Dialog({
   open,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  const prevOpenRef = React.useRef(Boolean(open));
+  const prevOpenRef = React.useRef(false);
   const previousFocusRef = React.useRef<HTMLElement | null>(null);
 
   if (

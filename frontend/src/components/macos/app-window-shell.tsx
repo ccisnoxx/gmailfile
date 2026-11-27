@@ -1,6 +1,12 @@
 import * as React from 'react';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { createContext, useContext, useMemo, useState } from 'react';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
 type AppShellContextValue = {
@@ -46,23 +52,6 @@ export function AppWindowShell({
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const hasSidebar = Boolean(sidebar || mobileDrawerHeader);
-
-  useEffect(() => {
-    if (!mobileSidebarOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        setMobileSidebarOpen(false);
-      }
-    };
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
-  }, [mobileSidebarOpen]);
 
   const shellContext = useMemo<AppShellContextValue>(
     () => ({
@@ -186,35 +175,24 @@ export function AppWindowShell({
           </div>
         </div>
 
-        {/* 移动端 / 平板竖屏侧边栏抽屉（<1024px） */}
-        {hasSidebar && mobileSidebarOpen && (
-          <div
-            data-slot="mobile-sidebar-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label="导航菜单"
-            style={windowStyle}
-            className="fixed inset-0 z-50 flex lg:hidden"
-          >
-            <div
-              aria-hidden="true"
-              onClick={() => setMobileSidebarOpen(false)}
-              className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px]"
-            />
-            <div className="macos-glass-modal relative z-10 flex h-full w-[min(300px,85vw)] flex-col overflow-y-auto border-r border-[var(--nav-divider)] bg-[var(--surface-popover)] shadow-2xl">
-              <div className="flex items-center justify-between border-b border-[var(--nav-divider)] px-4 py-3">
-                <span className="text-[13.5px] font-semibold text-[var(--text-primary)]">
+        {/* 移动端 / 平板竖屏侧边栏抽屉（<1024px）：采用 Radix Sheet 保证 Focus Trap、inert 与关闭焦点恢复 */}
+        {hasSidebar && (
+          <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+            <SheetContent
+              side="left"
+              data-slot="mobile-sidebar-drawer"
+              aria-label="导航菜单"
+              style={windowStyle}
+              className="macos-glass-modal flex h-full w-[min(300px,85vw)] max-w-none flex-col gap-0 overflow-y-auto border-r border-[var(--nav-divider)] bg-[var(--surface-popover)] p-0 shadow-2xl lg:hidden"
+            >
+              <SheetHeader className="border-b border-[var(--nav-divider)] px-4 py-3 text-left">
+                <SheetTitle className="text-[13.5px] font-semibold text-[var(--text-primary)]">
                   导航菜单
-                </span>
-                <button
-                  type="button"
-                  aria-label="关闭导航菜单"
-                  onClick={() => setMobileSidebarOpen(false)}
-                  className="inline-flex size-8 items-center justify-center rounded-xl text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary)]"
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </button>
-              </div>
+                </SheetTitle>
+                <SheetDescription className="sr-only">
+                  切换概览、账号、关系、数据操作与系统设置视图
+                </SheetDescription>
+              </SheetHeader>
               {mobileDrawerHeader && (
                 <div
                   className="border-b border-[var(--nav-divider)] p-3"
@@ -239,8 +217,8 @@ export function AppWindowShell({
                   {sidebar}
                 </div>
               )}
-            </div>
-          </div>
+            </SheetContent>
+          </Sheet>
         )}
       </div>
     </AppShellContext.Provider>

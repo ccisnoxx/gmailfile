@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useInRouterContext, useNavigate, useParams } from 'react-router-dom';
+import { resolveAppHref } from '@/app/navigation';
 import type {
   AccountCreateWritable,
   AccountDetail,
@@ -91,16 +92,22 @@ function RoutedAccountDetailPreviewPage(props: AccountDetailPreviewProps) {
   const params = useParams<{ accountId?: string }>();
   const goAccount = useCallback(
     (id: string) => {
-      void navigate({
-        pathname: `/preview/accounts/${id}`,
-        search: window.location.search,
-      });
+      void navigate(
+        resolveAppHref(
+          {
+            kind: 'account-detail',
+            accountId: id,
+            search: window.location.search,
+          },
+          { preview: true },
+        ),
+      );
     },
     [navigate],
   );
   const goList = useCallback(() => {
     void navigate({
-      pathname: '/preview/accounts',
+      pathname: resolveAppHref({ kind: 'accounts' }, { preview: true }),
       search: window.location.search,
     });
   }, [navigate]);

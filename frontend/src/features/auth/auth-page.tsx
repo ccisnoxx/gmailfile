@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { Outlet, useInRouterContext, useNavigate } from 'react-router-dom';
+import { resolveAppHref, resolveOperationsDestination } from '@/app/navigation';
 import type { ChangePasswordInput, Credentials } from '@/api/generated';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -317,35 +318,20 @@ function RoutedAuthWorkspace() {
   const handleNavigate = useCallback(
     (next: WorkspaceView, tab?: OperationsTabKey) => {
       if (next === 'accounts') {
-        void navigate('/accounts');
+        void navigate(resolveAppHref({ kind: 'accounts' }));
         return;
       }
       if (next === 'security') {
-        void navigate('/settings/security');
+        void navigate(
+          resolveAppHref({ kind: 'settings', section: 'security' }),
+        );
         return;
       }
-      if (tab === 'audit') {
-        void navigate('/settings/audit');
-        return;
-      }
-      if (tab === 'sessions') {
-        void navigate('/settings/security');
-        return;
-      }
-      if (tab === 'status') {
-        void navigate('/settings/backup');
-        return;
-      }
-      if (tab === 'export') {
-        const searchParams = new URLSearchParams(window.location.search);
-        searchParams.set('tab', 'export');
-        void navigate({
-          pathname: '/transfers/csv',
-          search: `?${searchParams.toString()}`,
-        });
-        return;
-      }
-      void navigate('/transfers/csv');
+      void navigate(
+        resolveAppHref(
+          resolveOperationsDestination(tab, window.location.search),
+        ),
+      );
     },
     [navigate],
   );

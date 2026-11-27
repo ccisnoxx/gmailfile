@@ -84,6 +84,66 @@ export function BatchBar({
   const phraseMatched = confirmPhrase.trim() === expectedPhrase;
   const canSubmitPermanentDelete = stepUpReady && phraseMatched;
 
+  const batchPreview = (() => {
+    if (!confirmation) return null;
+    if (confirmation === 'status') {
+      const willChange = selected.filter((a) => a.status !== status);
+      const unchangedCount = selected.length - willChange.length;
+      return {
+        summary: `预计变更 ${willChange.length} 条${unchangedCount > 0 ? `，另有 ${unchangedCount} 条已处于「${statusLabels[status]}」` : ''}`,
+        reversibility: '可逆操作：提交后可再次通过批量修改状态调整。',
+        rows: selected.slice(0, 5).map((a) => ({
+          id: a.id,
+          label: `${a.account_no} · ${a.gmail_email}`,
+          diff:
+            a.status === status
+              ? `保持「${statusLabels[status]}」`
+              : `${statusLabels[a.status]} → ${statusLabels[status]}`,
+        })),
+      };
+    }
+    if (confirmation === 'tags' && selectedTag) {
+      const willAppend = selected.filter(
+        (a) => !a.tags.some((t) => t.id === selectedTag.id),
+      );
+      const existingCount = selected.length - willAppend.length;
+      return {
+        summary: `预计为 ${willAppend.length} 条追加标签「${selectedTag.name}」${existingCount > 0 ? `，${existingCount} 条已含该标签` : ''}`,
+        reversibility: '可逆操作：仅追加新标签，保留各账号原有标签。',
+        rows: selected.slice(0, 5).map((a) => {
+          const alreadyHas = a.tags.some((t) => t.id === selectedTag.id);
+          return {
+            id: a.id,
+            label: `${a.account_no} · ${a.gmail_email}`,
+            diff: alreadyHas
+              ? `已含「${selectedTag.name}」`
+              : `+ ${selectedTag.name}`,
+          };
+        }),
+      };
+    }
+    if (confirmation === 'restore') {
+      return {
+        summary: `将从回收站原子恢复 ${selected.length} 条账号`,
+        reversibility: '恢复后回到主列表并保留原状态、归档与标签。',
+        rows: selected.slice(0, 5).map((a) => ({
+          id: a.id,
+          label: `${a.account_no} · ${a.gmail_email}`,
+          diff: `恢复为「${statusLabels[a.status]}」`,
+        })),
+      };
+    }
+    return {
+      summary: `将不可逆永久清除 ${selected.length} 条已删除账号（需最近 MFA 二次验证）`,
+      reversibility: '不可撤销：密文凭据与关联记录将被彻底删除。',
+      rows: selected.slice(0, 5).map((a) => ({
+        id: a.id,
+        label: `${a.account_no} · ${a.gmail_email}`,
+        diff: '永久删除',
+      })),
+    };
+  })();
+
   async function submit() {
     if (!confirmation) return;
     const actionKind = confirmation;
@@ -273,6 +333,39 @@ export function BatchBar({
               。整批成功或整批回滚，不包含其他页面的账号。
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {batchPreview && (
+            <div
+              data-slot="batch-preview-box"
+              className="space-y-2 rounded-2xl border border-[var(--surface-control-border)] bg-[var(--surface-control)] p-3 text-xs"
+            >
+              <p className="font-semibold text-[var(--text-primary)]">
+                {batchPreview.summary}
+              </p>
+              <ul className="space-y-1 text-[11.5px]">
+                {batchPreview.rows.map((row) => (
+                  <li
+                    key={row.id}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="truncate font-mono text-[var(--text-primary)]">
+                      {row.label}
+                    </span>
+                    <span className="shrink-0 font-medium text-[var(--text-secondary)]">
+                      {row.diff}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {selected.length > 5 && (
+                <p className="text-[11px] text-[var(--text-secondary)]">
+                  其余 {selected.length - 5} 条同批原子提交…
+                </p>
+              )}
+              <p className="border-t border-[var(--table-divider)] pt-1.5 text-[11px] text-[var(--text-secondary)]">
+                {batchPreview.reversibility}
+              </p>
+            </div>
+          )}
           {isPermanentDelete && (
             <div className="space-y-3">
               <StepUpVerifier

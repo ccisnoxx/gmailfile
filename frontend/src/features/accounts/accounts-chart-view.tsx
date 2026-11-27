@@ -15,17 +15,24 @@ import {
   YAxis,
 } from 'recharts';
 import {
+  dashboardInsights,
   dashboardRecoveryEmailUsage,
   dashboardRegistrationTrend,
   dashboardStatusDistribution,
   type AccountSummary,
+  type DashboardInsightsResponse,
   type DashboardRecoveryUsageResponse,
   type RegistrationTrendResponse,
   type StatusDistributionResponse,
 } from '@/api/generated';
-import { GlassPanel, TagPill } from '@/components/macos';
-import type { AccountStatsData } from './account-summary';
+import {
+  GlassPanel,
+  TagPill,
+  type SidebarSectionKey,
+} from '@/components/macos';
+import { Summary, type AccountStatsData } from './account-summary';
 import { factorLabels, statusLabels } from './constants';
+import { OverviewInsightsPanel } from './overview-insights-panel';
 
 const STATUS_COLORS: Record<string, string> = {
   normal: 'var(--success)',
@@ -42,12 +49,31 @@ const FACTOR_COLORS: Record<string, string> = {
   unknown: '#98a2b3',
 };
 
+function monthRangeQuery(fullMonth: string): Record<string, string> | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(fullMonth);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    from: `${match[1]}-${match[2]}-01`,
+    to: `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
+
 type AccountsChartViewProps = {
   stats: AccountStatsData;
   items: AccountSummary[];
+  insights?: DashboardInsightsResponse;
   liveAnalytics?: boolean;
   timezone?: string;
+  activeSection?: SidebarSectionKey | null;
+  onSelectSection?: (section: SidebarSectionKey) => void;
+  onDrillDown?: (query: Record<string, string>) => void;
   onOpenRecoveryUsage?: () => void;
+  onOpenBackup?: () => void;
+  onOpenAudit?: () => void;
 };
 
 export function AccountsChartView(props: AccountsChartViewProps) {
@@ -92,18 +118,27 @@ function LiveAccountsChartView(props: AccountsChartViewProps) {
       ).data,
   });
 
+  const insightsQuery = useQuery({
+    queryKey: ['dashboard-insights'],
+    queryFn: async ({ signal }) =>
+      (await dashboardInsights({ signal, throwOnError: true })).data,
+  });
+
   const analyticsError =
     trendQuery.isError ||
     distributionQuery.isError ||
-    recoveryChartQuery.isError;
+    recoveryChartQuery.isError ||
+    insightsQuery.isError;
   const analyticsPending =
     trendQuery.isPending ||
     distributionQuery.isPending ||
-    recoveryChartQuery.isPending;
+    recoveryChartQuery.isPending ||
+    insightsQuery.isPending;
 
   return (
     <AccountsChartBody
       {...props}
+      insights={props.insights ?? insightsQuery.data}
       trendMonths={trendMonths}
       onTrendMonthsChange={setTrendMonths}
       trendDataResp={trendQuery.data}
@@ -116,6 +151,7 @@ function LiveAccountsChartView(props: AccountsChartViewProps) {
           trendQuery.refetch(),
           distributionQuery.refetch(),
           recoveryChartQuery.refetch(),
+          insightsQuery.refetch(),
         ]);
       }}
     />
@@ -125,9 +161,15 @@ function LiveAccountsChartView(props: AccountsChartViewProps) {
 function AccountsChartBody({
   stats,
   items,
+  insights,
   liveAnalytics = false,
   timezone = 'UTC',
+  activeSection,
+  onSelectSection,
+  onDrillDown,
   onOpenRecoveryUsage,
+  onOpenBackup,
+  onOpenAudit,
   trendMonths = 12,
   onTrendMonthsChange,
   trendDataResp,
@@ -294,12 +336,46 @@ function AccountsChartBody({
       }));
   }, [recoveryResp, items]);
 
+  const recentActiveMonths = trendData
+    .filter((pt) => pt.count > 0)
+    .slice(-3)
+    .reverse();
+
+  const drillDownStatus = (statusKey: string) => {
+    if (!onDrillDown) return;
+    if (statusKey === 'archived') {
+      onDrillDown({ archived: 'true' });
+      return;
+    }
+    onDrillDown({ status: statusKey });
+  };
+
   return (
     <section
       aria-label="账号数据图表视图"
       data-slot="accounts-chart-view"
       className="grid gap-4 lg:grid-cols-3"
     >
+      <div className="lg:col-span-3">
+        <Summary
+          stats={stats}
+          activeSection={activeSection}
+          onSelectSection={onSelectSection}
+        />
+      </div>
+
+      <OverviewInsightsPanel
+        stats={stats}
+        items={items}
+        insights={insights}
+        recoveryBars={recoveryBars}
+        liveAnalytics={liveAnalytics}
+        onDrillDown={onDrillDown}
+        onOpenRecoveryUsage={onOpenRecoveryUsage}
+        onOpenBackup={onOpenBackup}
+        onOpenAudit={onOpenAudit}
+      />
+
       {analyticsError && onRetryAnalytics && (
         <div
           role="alert"
@@ -366,6 +442,16 @@ function AccountsChartBody({
               <AreaChart
                 data={trendData}
                 margin={{ top: 8, right: 12, left: -18, bottom: 0 }}
+                onClick={(state) => {
+                  const fullMonth =
+                    typeof state?.activeLabel === 'string'
+                      ? trendData.find((d) => d.month === state.activeLabel)
+                          ?.fullMonth
+                      : undefined;
+                  if (!fullMonth || !onDrillDown) return;
+                  const range = monthRangeQuery(fullMonth);
+                  if (range) onDrillDown(range);
+                }}
               >
                 <defs>
                   <linearGradient id="gmTrendFill" x1="0" y1="0" x2="0" y2="1">
@@ -419,6 +505,28 @@ function AccountsChartBody({
             </p>
           )}
         </div>
+        {onDrillDown && recentActiveMonths.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-[var(--text-secondary)]">按月下钻：</span>
+            {recentActiveMonths.map((pt) => {
+              const range = monthRangeQuery(pt.fullMonth);
+              if (!range) return null;
+              return (
+                <button
+                  key={pt.fullMonth}
+                  type="button"
+                  onClick={() => onDrillDown(range)}
+                  className="inline-flex min-h-6 items-center gap-1 rounded-full border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-2.5 py-0.5 text-[11.5px] font-medium tabular-nums text-[var(--text-primary)] transition-colors hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent-text)]"
+                >
+                  <span>{pt.fullMonth}</span>
+                  <span className="text-[var(--text-secondary)]">
+                    ({pt.count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </GlassPanel>
 
       {/* 2. 全局 2FA 覆盖率环图 + 高频标签 */}
@@ -431,7 +539,9 @@ function AccountsChartBody({
             双重验证 (2FA) 覆盖率
           </h2>
           <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-            {liveAnalytics ? '全局未删除账号安全统计' : '当前列表样本启用情况'}
+            {liveAnalytics
+              ? '点击任意分组下钻查看对应 2FA 状态账号'
+              : '当前列表样本启用情况'}
           </p>
         </div>
 
@@ -448,9 +558,19 @@ function AccountsChartBody({
                 outerRadius={68}
                 paddingAngle={2}
                 isAnimationActive={false}
+                onClick={(entry) => {
+                  const key = (entry as { key?: string })?.key;
+                  if (key && onDrillDown) {
+                    onDrillDown({ two_factor_status: key });
+                  }
+                }}
               >
                 {twoFactorData.map((entry) => (
-                  <Cell key={entry.key} fill={entry.fill} />
+                  <Cell
+                    key={entry.key}
+                    fill={entry.fill}
+                    className={onDrillDown ? 'cursor-pointer' : undefined}
+                  />
                 ))}
               </Pie>
               <Tooltip
@@ -472,21 +592,29 @@ function AccountsChartBody({
           </div>
         </div>
 
-        <dl className="mb-3 grid grid-cols-3 gap-1 text-center text-xs">
+        <div
+          role="group"
+          aria-label="按二步验证状态下钻"
+          className="mb-3 grid grid-cols-3 gap-1 text-center text-xs"
+        >
           {twoFactorData.map((item) => (
-            <div
+            <button
               key={item.key}
-              className="rounded-lg bg-[var(--muted)] px-1.5 py-1"
+              type="button"
+              disabled={!onDrillDown}
+              aria-label={`筛选 2FA ${item.label}：${item.count}`}
+              onClick={() => onDrillDown?.({ two_factor_status: item.key })}
+              className="rounded-lg bg-[var(--muted)] px-1.5 py-1.5 transition-colors hover:bg-[var(--accent-soft)] hover:text-[var(--accent-text)] disabled:cursor-default"
             >
-              <dt className="text-[10.5px] text-[var(--text-secondary)]">
+              <span className="block text-[10.5px] text-[var(--text-secondary)]">
                 {item.label}
-              </dt>
-              <dd className="font-semibold tabular-nums text-[var(--text-primary)]">
+              </span>
+              <span className="font-semibold tabular-nums text-[var(--text-primary)]">
                 {item.count}
-              </dd>
-            </div>
+              </span>
+            </button>
           ))}
-        </dl>
+        </div>
 
         <div>
           <p className="mb-2 text-xs font-medium text-[var(--text-secondary)]">
@@ -494,9 +622,21 @@ function AccountsChartBody({
           </p>
           <div className="flex flex-wrap gap-1.5">
             {topTags.length > 0 ? (
-              topTags.map((tag) => (
-                <TagPill key={tag.id} name={`${tag.name} · ${tag.count}`} />
-              ))
+              topTags.map((tag) =>
+                onDrillDown ? (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    aria-label={`筛选标签 ${tag.name}`}
+                    onClick={() => onDrillDown({ tag: tag.id })}
+                    className="inline-flex min-h-6 items-center rounded-full transition-opacity hover:opacity-85"
+                  >
+                    <TagPill name={`${tag.name} · ${tag.count}`} />
+                  </button>
+                ) : (
+                  <TagPill key={tag.id} name={`${tag.name} · ${tag.count}`} />
+                ),
+              )
             ) : (
               <span className="text-xs text-[var(--text-secondary)]">
                 暂无标签分布数据
@@ -514,7 +654,7 @@ function AccountsChartBody({
               账号状态分布
             </h2>
             <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-              按全局统计口径展示正常、待验证、受限、无法登录、停用与已归档数量
+              按全局统计口径展示各状态数量，点击柱条或下方标签可下钻至列表
             </p>
           </div>
         </div>
@@ -550,19 +690,42 @@ function AccountsChartBody({
                 name="账号数量"
                 radius={[8, 8, 0, 0]}
                 isAnimationActive={false}
+                onClick={(entry) => {
+                  const key = (entry as { key?: string })?.key;
+                  if (key) drillDownStatus(key);
+                }}
               >
                 {statusData.map((entry) => (
-                  <Cell key={entry.key} fill={entry.fill} />
+                  <Cell
+                    key={entry.key}
+                    fill={entry.fill}
+                    className={onDrillDown ? 'cursor-pointer' : undefined}
+                  />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
-        {/* 无障碍文字摘要，确保不依赖纯视觉 */}
-        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--text-secondary)]">
+        {/* 无障碍文字摘要 + 键盘下钻入口 */}
+        <ul
+          aria-label="状态分布快捷下钻"
+          className="mt-3 flex flex-wrap gap-1.5 text-xs text-[var(--text-secondary)]"
+        >
           {statusData.map((entry) => (
-            <li key={entry.key} className="tabular-nums">
-              {entry.label}：{entry.count}
+            <li key={entry.key}>
+              {onDrillDown ? (
+                <button
+                  type="button"
+                  onClick={() => drillDownStatus(entry.key)}
+                  className="inline-flex min-h-6 items-center gap-1 rounded-full border border-[var(--surface-control-border)] bg-[var(--surface-control)] px-2.5 py-0.5 tabular-nums text-[var(--text-primary)] transition-colors hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent-text)]"
+                >
+                  {entry.label}：{entry.count}
+                </button>
+              ) : (
+                <span className="tabular-nums">
+                  {entry.label}：{entry.count}
+                </span>
+              )}
             </li>
           ))}
         </ul>
@@ -576,7 +739,7 @@ function AccountsChartBody({
               辅助邮箱集中度 Top
             </h2>
             <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-              高频关联辅助邮箱排查
+              点击辅助邮箱条目直接查看关联账号
             </p>
           </div>
           {onOpenRecoveryUsage && (
@@ -590,12 +753,19 @@ function AccountsChartBody({
           )}
         </div>
         {recoveryBars.length > 0 ? (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {recoveryBars.map((row) => {
               const maxCount = Math.max(1, recoveryBars[0]?.account_count ?? 1);
               const pct = Math.round((row.account_count / maxCount) * 100);
               return (
-                <div key={row.email} className="space-y-1">
+                <button
+                  key={row.email}
+                  type="button"
+                  disabled={!onDrillDown}
+                  aria-label={`筛选辅助邮箱 ${row.email}，关联 ${row.account_count} 个账号`}
+                  onClick={() => onDrillDown?.({ recovery_email: row.email })}
+                  className="block w-full space-y-1 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-[var(--surface-control-hover)] disabled:cursor-default"
+                >
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <span
                       className="truncate font-medium text-[var(--text-primary)]"
@@ -616,7 +786,7 @@ function AccountsChartBody({
                       style={{ width: `${Math.max(6, pct)}%` }}
                     />
                   </div>
-                </div>
+                </button>
               );
             })}
             {recoveryResp && recoveryResp.others_count > 0 && (
