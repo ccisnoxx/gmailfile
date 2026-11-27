@@ -22,6 +22,8 @@ Status = Literal[
 ]
 TwoFactor = Literal["unknown", "disabled", "enabled"]
 AppStatus = Literal["active", "restricted", "banned"]
+MissingMetadataFilter = Literal["no_purpose", "no_tags", "no_purpose_or_tags"]
+ConflictCheckFilter = Literal["inactive_with_active_apps"]
 
 
 def email_value(value: str) -> str:
@@ -269,6 +271,7 @@ class AccountQuery(Input):
     tag: UUID | None = None
     app_id: UUID | None = None
     app_status: AppStatus | None = None
+    app_statuses: list[AppStatus] | None = Field(default=None, max_length=3)
     exclude_app_id: UUID | None = None
     two_factor_status: TwoFactor | None = None
     registered_from: Timestamp | None = None
@@ -276,11 +279,17 @@ class AccountQuery(Input):
     archived: bool | None = None
     deleted: bool = False
     recovery_email: str | None = Field(default=None, max_length=254)
+    has_recovery_email: bool | None = None
+    unverified_over_days: int | None = Field(default=None, ge=1, le=3650)
+    inactive_login_over_days: int | None = Field(default=None, ge=1, le=3650)
+    password_stale_over_days: int | None = Field(default=None, ge=1, le=3650)
+    missing_metadata: MissingMetadataFilter | None = None
+    conflict_check: ConflictCheckFilter | None = None
     sort: Sort = "-account_no"
     page: int = Field(default=1, ge=1, le=1000000)
     page_size: int = Field(default=30, ge=1, le=100)
 
-    @field_validator("statuses", mode="before")
+    @field_validator("statuses", "app_statuses", mode="before")
     @classmethod
     def parse_statuses(cls, value: object) -> object:
         if value is None or value == "":
@@ -469,3 +478,34 @@ class DashboardRecoveryUsageResponse(BaseModel):
     total_recovery_emails: int
     items: list[RecoveryUsage]
     others_count: int
+
+
+class DuplicateExternalRecoveryItem(BaseModel):
+    email: str
+    account_count: int
+    matched_account_id: UUID
+    matched_account_no: str
+
+
+class DashboardInsightsResponse(BaseModel):
+    disabled_2fa_count: int
+    unknown_2fa_count: int
+    pending_verification_count: int
+    risk_status_count: int
+    unverified_over_30_days: int
+    inactive_login_over_90_days: int
+    password_stale_over_180_days: int
+    no_recovery_email_count: int
+    app_risk_account_count: int
+    concentrated_recovery_emails: list[RecoveryUsage] = Field(default_factory=list)
+    no_purpose_count: int
+    no_tags_count: int
+    inactive_with_active_apps_count: int
+    external_recovery_matches_internal: list[DuplicateExternalRecoveryItem] = Field(
+        default_factory=list
+    )
+    backup_state: Literal["unconfigured", "never_run", "running", "success", "failed", "stale"]
+    backup_offsite: Literal["unconfigured", "pending", "success", "failed"] = "unconfigured"
+    backup_last_success_at: Timestamp | None = None
+    recent_auth_failures_7d: int = 0
+    generated_at: Timestamp

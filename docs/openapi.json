@@ -2591,6 +2591,31 @@
             }
           },
           {
+            "name": "app_statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "active",
+                      "restricted",
+                      "banned"
+                    ],
+                    "type": "string"
+                  },
+                  "maxItems": 3
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "App Statuses"
+            }
+          },
+          {
             "name": "exclude_app_id",
             "in": "query",
             "required": false,
@@ -2703,6 +2728,114 @@
                 }
               ],
               "title": "Recovery Email"
+            }
+          },
+          {
+            "name": "has_recovery_email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Recovery Email"
+            }
+          },
+          {
+            "name": "unverified_over_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unverified Over Days"
+            }
+          },
+          {
+            "name": "inactive_login_over_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Inactive Login Over Days"
+            }
+          },
+          {
+            "name": "password_stale_over_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Password Stale Over Days"
+            }
+          },
+          {
+            "name": "missing_metadata",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "no_purpose",
+                    "no_tags",
+                    "no_purpose_or_tags"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Missing Metadata"
+            }
+          },
+          {
+            "name": "conflict_check",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "inactive_with_active_apps",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conflict Check"
             }
           },
           {
@@ -3289,6 +3422,87 @@
               }
             },
             "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/insights": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Dashboard Insights",
+        "operationId": "dashboardInsights",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardInsightsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -7122,6 +7336,26 @@
             ],
             "title": "App Status"
           },
+          "app_statuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "restricted",
+                    "banned"
+                  ]
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Statuses"
+          },
           "exclude_app_id": {
             "anyOf": [
               {
@@ -7201,6 +7435,84 @@
               }
             ],
             "title": "Recovery Email"
+          },
+          "has_recovery_email": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Recovery Email"
+          },
+          "unverified_over_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unverified Over Days"
+          },
+          "inactive_login_over_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inactive Login Over Days"
+          },
+          "password_stale_over_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password Stale Over Days"
+          },
+          "missing_metadata": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_purpose",
+                  "no_tags",
+                  "no_purpose_or_tags"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Metadata"
+          },
+          "conflict_check": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "inactive_with_active_apps"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflict Check"
           },
           "sort": {
             "type": "string",
@@ -8270,6 +8582,135 @@
         ],
         "title": "CsvRow"
       },
+      "DashboardInsightsResponse": {
+        "properties": {
+          "disabled_2fa_count": {
+            "type": "integer",
+            "title": "Disabled 2Fa Count"
+          },
+          "unknown_2fa_count": {
+            "type": "integer",
+            "title": "Unknown 2Fa Count"
+          },
+          "pending_verification_count": {
+            "type": "integer",
+            "title": "Pending Verification Count"
+          },
+          "risk_status_count": {
+            "type": "integer",
+            "title": "Risk Status Count"
+          },
+          "unverified_over_30_days": {
+            "type": "integer",
+            "title": "Unverified Over 30 Days"
+          },
+          "inactive_login_over_90_days": {
+            "type": "integer",
+            "title": "Inactive Login Over 90 Days"
+          },
+          "password_stale_over_180_days": {
+            "type": "integer",
+            "title": "Password Stale Over 180 Days"
+          },
+          "no_recovery_email_count": {
+            "type": "integer",
+            "title": "No Recovery Email Count"
+          },
+          "app_risk_account_count": {
+            "type": "integer",
+            "title": "App Risk Account Count"
+          },
+          "concentrated_recovery_emails": {
+            "items": {
+              "$ref": "#/components/schemas/RecoveryUsage"
+            },
+            "type": "array",
+            "title": "Concentrated Recovery Emails"
+          },
+          "no_purpose_count": {
+            "type": "integer",
+            "title": "No Purpose Count"
+          },
+          "no_tags_count": {
+            "type": "integer",
+            "title": "No Tags Count"
+          },
+          "inactive_with_active_apps_count": {
+            "type": "integer",
+            "title": "Inactive With Active Apps Count"
+          },
+          "external_recovery_matches_internal": {
+            "items": {
+              "$ref": "#/components/schemas/DuplicateExternalRecoveryItem"
+            },
+            "type": "array",
+            "title": "External Recovery Matches Internal"
+          },
+          "backup_state": {
+            "type": "string",
+            "enum": [
+              "unconfigured",
+              "never_run",
+              "running",
+              "success",
+              "failed",
+              "stale"
+            ],
+            "title": "Backup State"
+          },
+          "backup_offsite": {
+            "type": "string",
+            "enum": [
+              "unconfigured",
+              "pending",
+              "success",
+              "failed"
+            ],
+            "title": "Backup Offsite",
+            "default": "unconfigured"
+          },
+          "backup_last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Last Success At"
+          },
+          "recent_auth_failures_7d": {
+            "type": "integer",
+            "title": "Recent Auth Failures 7D",
+            "default": 0
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "disabled_2fa_count",
+          "unknown_2fa_count",
+          "pending_verification_count",
+          "risk_status_count",
+          "unverified_over_30_days",
+          "inactive_login_over_90_days",
+          "password_stale_over_180_days",
+          "no_recovery_email_count",
+          "app_risk_account_count",
+          "no_purpose_count",
+          "no_tags_count",
+          "inactive_with_active_apps_count",
+          "backup_state",
+          "generated_at"
+        ],
+        "title": "DashboardInsightsResponse"
+      },
       "DashboardRecoveryUsageResponse": {
         "properties": {
           "total_accounts": {
@@ -8394,6 +8835,35 @@
           "session"
         ],
         "title": "DisableTotpResponse"
+      },
+      "DuplicateExternalRecoveryItem": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "account_count": {
+            "type": "integer",
+            "title": "Account Count"
+          },
+          "matched_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Matched Account Id"
+          },
+          "matched_account_no": {
+            "type": "string",
+            "title": "Matched Account No"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "account_count",
+          "matched_account_id",
+          "matched_account_no"
+        ],
+        "title": "DuplicateExternalRecoveryItem"
       },
       "EncryptedExportInput": {
         "properties": {

@@ -1,6 +1,7 @@
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import String, cast, exists, func, or_, select
+from sqlalchemy import String, and_, cast, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models import (
@@ -53,7 +54,8 @@ class AccountRepository:
             .order_by(RegisteredApp.sort_order.asc(), RegisteredApp.name.asc())
         ).all()
 
-    def filtered(self, params: AccountQuery):
+    def filtered(self, params: AccountQuery, *, now: datetime | None = None):
+        ref_now = now or datetime.now(UTC)
         recovery = aliased(GmailAccount)
         email = func.lower(
             func.trim(func.coalesce(GmailAccount.recovery_email_external, recovery.gmail_email))
@@ -97,12 +99,14 @@ class AccountRepository:
                     )
                 )
             )
-        if params.app_id is not None or params.app_status is not None:
+        if params.app_id is not None or params.app_status is not None or params.app_statuses:
             app_subq = select(GmailAccountApp.account_id)
             if params.app_id is not None:
                 app_subq = app_subq.where(GmailAccountApp.app_id == params.app_id)
             if params.app_status is not None:
                 app_subq = app_subq.where(GmailAccountApp.status == params.app_status)
+            if params.app_statuses:
+                app_subq = app_subq.where(GmailAccountApp.status.in_(params.app_statuses))
             query = query.where(GmailAccount.id.in_(app_subq))
         if params.exclude_app_id is not None:
             query = query.where(
@@ -125,10 +129,69 @@ class AccountRepository:
             query = query.where(GmailAccount.registered_at < params.registered_to)
         if params.recovery_email is not None:
             query = query.where(email == params.recovery_email.strip().lower())
+        if params.has_recovery_email is True:
+            query = query.where(
+                or_(
+                    GmailAccount.recovery_account_id.is_not(None),
+                    and_(
+                        GmailAccount.recovery_email_external.is_not(None),
+                        func.btrim(GmailAccount.recovery_email_external) != "",
+                    ),
+                )
+            )
+        elif params.has_recovery_email is False:
+            query = query.where(
+                GmailAccount.recovery_account_id.is_(None),
+                or_(
+                    GmailAccount.recovery_email_external.is_(None),
+                    func.btrim(GmailAccount.recovery_email_external) == "",
+                ),
+            )
+        if params.unverified_over_days is not None:
+            cutoff = ref_now - timedelta(days=params.unverified_over_days)
+            query = query.where(
+                GmailAccount.status != "archived",
+                func.coalesce(GmailAccount.last_verified_at, GmailAccount.registered_at) < cutoff,
+            )
+        if params.inactive_login_over_days is not None:
+            cutoff = ref_now - timedelta(days=params.inactive_login_over_days)
+            query = query.where(
+                GmailAccount.status != "archived",
+                func.coalesce(GmailAccount.last_login_at, GmailAccount.registered_at) < cutoff,
+            )
+        if params.password_stale_over_days is not None:
+            cutoff = ref_now - timedelta(days=params.password_stale_over_days)
+            query = query.where(
+                GmailAccount.status != "archived",
+                func.coalesce(GmailAccount.password_changed_at, GmailAccount.registered_at)
+                < cutoff,
+            )
+        if params.missing_metadata is not None:
+            no_purpose = or_(
+                GmailAccount.purpose.is_(None),
+                func.btrim(GmailAccount.purpose) == "",
+            )
+            no_tags = ~exists(select(1).where(gmail_account_tags.c.account_id == GmailAccount.id))
+            if params.missing_metadata == "no_purpose":
+                query = query.where(no_purpose)
+            elif params.missing_metadata == "no_tags":
+                query = query.where(no_tags)
+            else:
+                query = query.where(or_(no_purpose, no_tags))
+        if params.conflict_check == "inactive_with_active_apps":
+            query = query.where(
+                GmailAccount.status.in_(["restricted", "login_failed", "disabled", "archived"]),
+                exists(
+                    select(1).where(
+                        GmailAccountApp.account_id == GmailAccount.id,
+                        GmailAccountApp.status == "active",
+                    )
+                ),
+            )
         return query
 
-    def page(self, params: AccountQuery):
-        query = self.filtered(params)
+    def page(self, params: AccountQuery, *, now: datetime | None = None):
+        query = self.filtered(params, now=now)
         total = self.db.scalar(select(func.count()).select_from(query.subquery()))
         column = getattr(GmailAccount, params.sort.lstrip("-"))
         order = column.desc() if params.sort.startswith("-") else column.asc()

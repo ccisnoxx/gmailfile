@@ -17,6 +17,7 @@ from app.schemas.accounts import (
     BatchResult,
     BatchStatus,
     BatchTags,
+    DashboardInsightsResponse,
     DashboardRecoveryUsageResponse,
     DashboardSummary,
     Input,
@@ -101,6 +102,15 @@ def dashboard_recovery_usage(
     limit: Annotated[int, Query(ge=1, le=20)] = 10,
 ):
     return service.dashboard_recovery_usage(limit)
+
+
+@router.get(
+    "/dashboard/insights",
+    response_model=DashboardInsightsResponse,
+    operation_id="dashboardInsights",
+)
+def dashboard_insights(service: Service):
+    return service.dashboard_insights()
 
 
 @router.get("/recovery-emails", response_model=RecoveryPage, operation_id="recoveryEmailsList")

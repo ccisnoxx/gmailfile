@@ -17,6 +17,7 @@ from app.schemas.accounts import (
     BatchResult,
     BatchStatus,
     BatchTags,
+    DashboardInsightsResponse,
     DashboardRecoveryUsageResponse,
     DashboardSummary,
     OptionPage,
@@ -98,6 +99,9 @@ class AccountService:
 
     def dashboard_recovery_usage(self, limit: int = 10) -> DashboardRecoveryUsageResponse:
         return self.listing.dashboard_recovery_usage(limit)
+
+    def dashboard_insights(self) -> DashboardInsightsResponse:
+        return self.listing.dashboard_insights()
 
     def recovery_usage(
         self,

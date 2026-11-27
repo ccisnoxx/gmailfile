@@ -4,9 +4,9 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, or_, select
 
-from app.models import GmailAccount, Tag, gmail_account_tags
+from app.models import AuditEvent, GmailAccount, GmailAccountApp, Tag, gmail_account_tags
 from app.repositories.accounts import AccountRepository
 from app.schemas.accounts import (
     AccountAppItem,
@@ -14,8 +14,10 @@ from app.schemas.accounts import (
     AccountPage,
     AccountQuery,
     AccountSummary,
+    DashboardInsightsResponse,
     DashboardRecoveryUsageResponse,
     DashboardSummary,
+    DuplicateExternalRecoveryItem,
     OptionPage,
     RecoveryPage,
     RecoveryUsage,
@@ -25,10 +27,12 @@ from app.schemas.accounts import (
     StatusDistributionResponse,
     TopTagItem,
     TwoFactorCountItem,
+    normalize_email,
 )
 from app.services.accounts.errors import AccountError
 from app.services.accounts.tags import TagService
 from app.services.auth import AuthService
+from app.services.operations import read_backup_status
 
 
 class AccountQueryService:
@@ -93,7 +97,7 @@ class AccountQueryService:
 
     def page(self, params: AccountQuery) -> AccountPage:
         params.page_size = self.page_size(params.page_size)
-        records, total = self.repo.page(params)
+        records, total = self.repo.page(params, now=self.auth.now)
         return AccountPage(
             max_page_size=self.auth.settings.max_page_size,
             items=self.serialize(records),
@@ -336,4 +340,165 @@ class AccountQueryService:
             total_recovery_emails=total_recovery,
             items=items,
             others_count=max(0, total_accounts - shown),
+        )
+
+    def dashboard_insights(self) -> DashboardInsightsResponse:
+        now = self.auth.now
+        active = GmailAccount.deleted_at.is_(None)
+        unarchived = GmailAccount.status != "archived"
+        no_recovery = GmailAccount.recovery_account_id.is_(None) & or_(
+            GmailAccount.recovery_email_external.is_(None),
+            func.btrim(GmailAccount.recovery_email_external) == "",
+        )
+        has_risk_app = exists(
+            select(1).where(
+                GmailAccountApp.account_id == GmailAccount.id,
+                GmailAccountApp.status.in_(["restricted", "banned"]),
+            )
+        )
+        has_active_app = exists(
+            select(1).where(
+                GmailAccountApp.account_id == GmailAccount.id,
+                GmailAccountApp.status == "active",
+            )
+        )
+        no_purpose = or_(
+            GmailAccount.purpose.is_(None),
+            func.btrim(GmailAccount.purpose) == "",
+        )
+        no_tags = ~exists(select(1).where(gmail_account_tags.c.account_id == GmailAccount.id))
+
+        counts = self.db.execute(
+            select(
+                func.count().filter(
+                    active, unarchived, GmailAccount.two_factor_status == "disabled"
+                ),
+                func.count().filter(
+                    active, unarchived, GmailAccount.two_factor_status == "unknown"
+                ),
+                func.count().filter(active, GmailAccount.status == "pending_verification"),
+                func.count().filter(
+                    active, GmailAccount.status.in_(["restricted", "login_failed"])
+                ),
+                func.count().filter(
+                    active,
+                    unarchived,
+                    func.coalesce(GmailAccount.last_verified_at, GmailAccount.registered_at)
+                    < now - timedelta(days=30),
+                ),
+                func.count().filter(
+                    active,
+                    unarchived,
+                    func.coalesce(GmailAccount.last_login_at, GmailAccount.registered_at)
+                    < now - timedelta(days=90),
+                ),
+                func.count().filter(
+                    active,
+                    unarchived,
+                    func.coalesce(GmailAccount.password_changed_at, GmailAccount.registered_at)
+                    < now - timedelta(days=180),
+                ),
+                func.count().filter(active, unarchived, no_recovery),
+                func.count().filter(active, has_risk_app),
+                func.count().filter(active, unarchived, no_purpose),
+                func.count().filter(active, unarchived, no_tags),
+                func.count().filter(
+                    active,
+                    GmailAccount.status.in_(["restricted", "login_failed", "disabled", "archived"]),
+                    has_active_app,
+                ),
+            )
+        ).one()
+
+        recovery_rows, _, _, _ = self.repo.recovery_usage(1, 10, search="", sort="-account_count")
+        concentrated = [
+            RecoveryUsage(**row)
+            for row in recovery_rows
+            if int(row["account_count"]) >= 3 or int(row["abnormal_count"]) > 0
+        ][:5]
+
+        # 检查外部辅助邮箱文本是否规范化后命中站内未删除账号（提示改为站内账号关联）
+        ext_rows = self.db.execute(
+            select(
+                func.lower(func.btrim(GmailAccount.recovery_email_external)).label("ext_email"),
+                func.count().label("cnt"),
+            )
+            .where(
+                active,
+                GmailAccount.recovery_email_external.is_not(None),
+                func.btrim(GmailAccount.recovery_email_external) != "",
+            )
+            .group_by(func.lower(func.btrim(GmailAccount.recovery_email_external)))
+        ).all()
+        normalized_ext_map: dict[str, tuple[str, int]] = {}
+        for ext_email, cnt in ext_rows:
+            try:
+                norm = normalize_email(ext_email)
+            except ValueError:
+                continue
+            prev = normalized_ext_map.get(norm)
+            if prev is None:
+                normalized_ext_map[norm] = (ext_email, int(cnt))
+            elif int(cnt) > prev[1]:
+                normalized_ext_map[norm] = (ext_email, prev[1] + int(cnt))
+            else:
+                normalized_ext_map[norm] = (prev[0], prev[1] + int(cnt))
+
+        duplicate_external: list[DuplicateExternalRecoveryItem] = []
+        if normalized_ext_map:
+            matched_accounts = self.db.execute(
+                select(
+                    GmailAccount.id,
+                    GmailAccount.account_no,
+                    GmailAccount.gmail_email_normalized,
+                ).where(
+                    active,
+                    GmailAccount.gmail_email_normalized.in_(list(normalized_ext_map.keys())),
+                )
+            ).all()
+            for acc_id, acc_no, norm_email in matched_accounts:
+                raw_email, cnt = normalized_ext_map[norm_email]
+                duplicate_external.append(
+                    DuplicateExternalRecoveryItem(
+                        email=raw_email,
+                        account_count=cnt,
+                        matched_account_id=acc_id,
+                        matched_account_no=f"GM-{acc_no:06d}",
+                    )
+                )
+            duplicate_external.sort(key=lambda item: (-item.account_count, item.email))
+            duplicate_external = duplicate_external[:10]
+
+        recent_auth_failures = int(
+            self.db.scalar(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.event_type.in_(["login_failed", "mfa_failed"]),
+                    AuditEvent.created_at >= now - timedelta(days=7),
+                )
+            )
+            or 0
+        )
+
+        backup = read_backup_status(self.auth.settings.backup_status_file, now)
+
+        return DashboardInsightsResponse(
+            disabled_2fa_count=int(counts[0]),
+            unknown_2fa_count=int(counts[1]),
+            pending_verification_count=int(counts[2]),
+            risk_status_count=int(counts[3]),
+            unverified_over_30_days=int(counts[4]),
+            inactive_login_over_90_days=int(counts[5]),
+            password_stale_over_180_days=int(counts[6]),
+            no_recovery_email_count=int(counts[7]),
+            app_risk_account_count=int(counts[8]),
+            concentrated_recovery_emails=concentrated,
+            no_purpose_count=int(counts[9]),
+            no_tags_count=int(counts[10]),
+            inactive_with_active_apps_count=int(counts[11]),
+            external_recovery_matches_internal=duplicate_external,
+            backup_state=backup.state,
+            backup_offsite=backup.offsite,
+            backup_last_success_at=backup.last_success_at,
+            recent_auth_failures_7d=recent_auth_failures,
+            generated_at=now,
         )

@@ -404,6 +404,10 @@ export type AccountQuery = {
    */
   app_status?: 'active' | 'restricted' | 'banned' | null;
   /**
+   * App Statuses
+   */
+  app_statuses?: Array<'active' | 'restricted' | 'banned'> | null;
+  /**
    * Exclude App Id
    */
   exclude_app_id?: string | null;
@@ -431,6 +435,30 @@ export type AccountQuery = {
    * Recovery Email
    */
   recovery_email?: string | null;
+  /**
+   * Has Recovery Email
+   */
+  has_recovery_email?: boolean | null;
+  /**
+   * Unverified Over Days
+   */
+  unverified_over_days?: number | null;
+  /**
+   * Inactive Login Over Days
+   */
+  inactive_login_over_days?: number | null;
+  /**
+   * Password Stale Over Days
+   */
+  password_stale_over_days?: number | null;
+  /**
+   * Missing Metadata
+   */
+  missing_metadata?: 'no_purpose' | 'no_tags' | 'no_purpose_or_tags' | null;
+  /**
+   * Conflict Check
+   */
+  conflict_check?: 'inactive_with_active_apps' | null;
   /**
    * Sort
    */
@@ -999,6 +1027,89 @@ export type CsvRow = {
 };
 
 /**
+ * DashboardInsightsResponse
+ */
+export type DashboardInsightsResponse = {
+  /**
+   * Disabled 2Fa Count
+   */
+  disabled_2fa_count: number;
+  /**
+   * Unknown 2Fa Count
+   */
+  unknown_2fa_count: number;
+  /**
+   * Pending Verification Count
+   */
+  pending_verification_count: number;
+  /**
+   * Risk Status Count
+   */
+  risk_status_count: number;
+  /**
+   * Unverified Over 30 Days
+   */
+  unverified_over_30_days: number;
+  /**
+   * Inactive Login Over 90 Days
+   */
+  inactive_login_over_90_days: number;
+  /**
+   * Password Stale Over 180 Days
+   */
+  password_stale_over_180_days: number;
+  /**
+   * No Recovery Email Count
+   */
+  no_recovery_email_count: number;
+  /**
+   * App Risk Account Count
+   */
+  app_risk_account_count: number;
+  /**
+   * Concentrated Recovery Emails
+   */
+  concentrated_recovery_emails?: Array<RecoveryUsage>;
+  /**
+   * No Purpose Count
+   */
+  no_purpose_count: number;
+  /**
+   * No Tags Count
+   */
+  no_tags_count: number;
+  /**
+   * Inactive With Active Apps Count
+   */
+  inactive_with_active_apps_count: number;
+  /**
+   * External Recovery Matches Internal
+   */
+  external_recovery_matches_internal?: Array<DuplicateExternalRecoveryItem>;
+  /**
+   * Backup State
+   */
+  backup_state:
+    'unconfigured' | 'never_run' | 'running' | 'success' | 'failed' | 'stale';
+  /**
+   * Backup Offsite
+   */
+  backup_offsite?: 'unconfigured' | 'pending' | 'success' | 'failed';
+  /**
+   * Backup Last Success At
+   */
+  backup_last_success_at?: string | null;
+  /**
+   * Recent Auth Failures 7D
+   */
+  recent_auth_failures_7d?: number;
+  /**
+   * Generated At
+   */
+  generated_at: string;
+};
+
+/**
  * DashboardRecoveryUsageResponse
  */
 export type DashboardRecoveryUsageResponse = {
@@ -1089,6 +1200,28 @@ export type DashboardSummary = {
  */
 export type DisableTotpResponse = {
   session: SessionResponse;
+};
+
+/**
+ * DuplicateExternalRecoveryItem
+ */
+export type DuplicateExternalRecoveryItem = {
+  /**
+   * Email
+   */
+  email: string;
+  /**
+   * Account Count
+   */
+  account_count: number;
+  /**
+   * Matched Account Id
+   */
+  matched_account_id: string;
+  /**
+   * Matched Account No
+   */
+  matched_account_no: string;
 };
 
 /**
@@ -3462,6 +3595,10 @@ export type AccountsListData = {
      */
     app_status?: 'active' | 'restricted' | 'banned' | null;
     /**
+     * App Statuses
+     */
+    app_statuses?: Array<'active' | 'restricted' | 'banned'> | null;
+    /**
      * Exclude App Id
      */
     exclude_app_id?: string | null;
@@ -3489,6 +3626,30 @@ export type AccountsListData = {
      * Recovery Email
      */
     recovery_email?: string | null;
+    /**
+     * Has Recovery Email
+     */
+    has_recovery_email?: boolean | null;
+    /**
+     * Unverified Over Days
+     */
+    unverified_over_days?: number | null;
+    /**
+     * Inactive Login Over Days
+     */
+    inactive_login_over_days?: number | null;
+    /**
+     * Password Stale Over Days
+     */
+    password_stale_over_days?: number | null;
+    /**
+     * Missing Metadata
+     */
+    missing_metadata?: 'no_purpose' | 'no_tags' | 'no_purpose_or_tags' | null;
+    /**
+     * Conflict Check
+     */
+    conflict_check?: 'inactive_with_active_apps' | null;
     /**
      * Sort
      */
@@ -3809,6 +3970,53 @@ export type DashboardRecoveryEmailUsageResponses = {
 
 export type DashboardRecoveryEmailUsageResponse =
   DashboardRecoveryEmailUsageResponses[keyof DashboardRecoveryEmailUsageResponses];
+
+export type DashboardInsightsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/dashboard/insights';
+};
+
+export type DashboardInsightsErrors = {
+  /**
+   * Unauthorized
+   */
+  401: ErrorResponse;
+  /**
+   * Forbidden
+   */
+  403: ErrorResponse;
+  /**
+   * Not Found
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict
+   */
+  409: ErrorResponse;
+  /**
+   * Unprocessable Entity
+   */
+  422: ErrorResponse;
+  /**
+   * Internal Server Error
+   */
+  500: ErrorResponse;
+};
+
+export type DashboardInsightsError =
+  DashboardInsightsErrors[keyof DashboardInsightsErrors];
+
+export type DashboardInsightsResponses = {
+  /**
+   * Successful Response
+   */
+  200: DashboardInsightsResponse;
+};
+
+export type DashboardInsightsResponse2 =
+  DashboardInsightsResponses[keyof DashboardInsightsResponses];
 
 export type RecoveryEmailsListData = {
   body?: never;

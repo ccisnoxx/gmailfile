@@ -1,5 +1,6 @@
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import func, select, update
 
@@ -16,9 +17,32 @@ from app.schemas.operations import (
     SettingsState,
     VersionState,
 )
-from app.services.accounts import AccountError
+from app.services.accounts.errors import AccountError
 from app.services.audit_integrity import verify_audit_chain
 from app.services.auth import AUDIT_EVENTS, AUDIT_OPERATIONS
+
+
+def read_backup_status(path: Path | None, now: datetime) -> BackupStatus:
+    if path is None:
+        return BackupStatus(state="unconfigured")
+    try:
+        if not path.exists():
+            return BackupStatus(state="never_run")
+        if path.stat().st_size > 16384:
+            raise ValueError
+        data = json.loads(path.read_text())
+        result = BackupStatus.model_validate(data)
+        if (result.state == "success" and not result.last_success_at) or (
+            result.state == "running" and not result.last_attempt_at
+        ):
+            raise ValueError
+        last = result.last_attempt_at if result.state == "running" else result.last_success_at
+        if last and now - last > timedelta(hours=36) and result.state != "failed":
+            result.state = "stale"
+        return result
+    except (OSError, ValueError):
+        # An invalid operational status is a failure, never a fabricated success.
+        return BackupStatus(state="failed")
 
 
 class OperationsService:
@@ -192,24 +216,4 @@ class OperationsService:
         )
 
     def backup_status(self):
-        path = self.auth.settings.backup_status_file
-        if path is None:
-            return BackupStatus(state="unconfigured")
-        try:
-            if not path.exists():
-                return BackupStatus(state="never_run")
-            if path.stat().st_size > 16384:
-                raise ValueError
-            data = json.loads(path.read_text())
-            result = BackupStatus.model_validate(data)
-            if (result.state == "success" and not result.last_success_at) or (
-                result.state == "running" and not result.last_attempt_at
-            ):
-                raise ValueError
-            last = result.last_attempt_at if result.state == "running" else result.last_success_at
-            if last and self.auth.now - last > timedelta(hours=36) and result.state != "failed":
-                result.state = "stale"
-            return result
-        except (OSError, ValueError):
-            # An invalid operational status is a failure, never a fabricated success.
-            return BackupStatus(state="failed")
+        return read_backup_status(self.auth.settings.backup_status_file, self.auth.now)

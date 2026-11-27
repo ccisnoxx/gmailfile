@@ -159,6 +159,9 @@ import type {
   CsvPreviewData,
   CsvPreviewErrors,
   CsvPreviewResponses,
+  DashboardInsightsData,
+  DashboardInsightsErrors,
+  DashboardInsightsResponses,
   DashboardRecoveryEmailUsageData,
   DashboardRecoveryEmailUsageErrors,
   DashboardRecoveryEmailUsageResponses,
@@ -927,6 +930,22 @@ export const dashboardRecoveryEmailUsage = <
     DashboardRecoveryEmailUsageErrors,
     ThrowOnError
   >({ url: '/api/v1/dashboard/recovery-email-usage', ...options });
+
+/**
+ * Dashboard Insights
+ */
+export const dashboardInsights = <ThrowOnError extends boolean = false>(
+  options?: Options<DashboardInsightsData, ThrowOnError>,
+): RequestResult<
+  DashboardInsightsResponses,
+  DashboardInsightsErrors,
+  ThrowOnError
+> =>
+  (options?.client ?? client).get<
+    DashboardInsightsResponses,
+    DashboardInsightsErrors,
+    ThrowOnError
+  >({ url: '/api/v1/dashboard/insights', ...options });
 
 /**
  * Recovery Usage
