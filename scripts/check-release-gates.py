@@ -2,7 +2,7 @@
 
 涵盖：
 - check-openapi : 校验 docs/openapi.json 与应用实时契约逐字节一致
-- check-docs    : 校验 README 与安全决策文档中的迁移版本及关键安全声明与代码一致
+- check-docs    : 校验 README、开发/功能文档与安全决策文档中的迁移版本及关键能力声明与代码一致
 - compose-all   : 校验全部 4 组 Docker Compose overlay 语法与安全基线
 - nginx         : 校验 Nginx 安全头、限流范围与敏感路径拦截（安装 nginx 时同步运行 nginx -t）
 - scan-dist     : 扫描 frontend/dist 产物与源码，确保零预览残留、零外链 CDN、零秘密泄露
@@ -143,14 +143,18 @@ def check_docs(root: Path = ROOT) -> CheckResult:
 
     readme_path = root / "README.md"
     readme_text = ""
-    if not readme_path.is_file():
-        errors.append(f"缺少 README.md: {readme_path}")
+    if not readme_path.is_file() or readme_path.stat().st_size == 0:
+        errors.append(f"缺少或空 README.md: {readme_path}")
     else:
         readme_text = readme_path.read_text(encoding="utf-8")
-        if f"当前迁移版本为 `{expected_schema}`" not in readme_text:
-            errors.append(f"README.md 未声明当前迁移版本为 `{expected_schema}`")
-        if f"当前 head 为 `{expected_schema}`" not in readme_text:
-            errors.append(f"README.md 初始化章节未声明当前 head 为 `{expected_schema}`")
+
+    dev_doc_path = root / "docs" / "development.md"
+    if not dev_doc_path.is_file():
+        errors.append(f"缺少 docs/development.md: {dev_doc_path}")
+    else:
+        dev_doc_text = dev_doc_path.read_text(encoding="utf-8")
+        if f"当前迁移 head 为 `{expected_schema}`" not in dev_doc_text:
+            errors.append(f"docs/development.md 未声明当前迁移 head 为 `{expected_schema}`")
 
     openapi_paths: set[str] | None = None
     openapi_file = root / "docs" / "openapi.json"
@@ -219,7 +223,7 @@ def check_docs(root: Path = ROOT) -> CheckResult:
     return CheckResult(
         "check-docs",
         True,
-        f"README、功能文档与安全文档与迁移基线 {expected_schema} 及能力清单一致",
+        f"README、开发/功能文档与安全文档与迁移基线 {expected_schema} 及能力清单一致",
         notes=notes,
     )
 

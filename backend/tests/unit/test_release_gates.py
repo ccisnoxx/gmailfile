@@ -66,8 +66,11 @@ def test_release_gate_check_docs_detects_stale_schema_and_delete_claim(tmp_path)
     )
     (tmp_path / "docs").mkdir()
     (tmp_path / "README.md").write_text(
-        "当前迁移版本为 `0005`。\n当前 head 为 `0005`。\n不提供永久删除。\n"
-        "`/api/v1/recovery-emails/{encoded_email}/accounts`\n",
+        "# 项目\n不提供永久删除。\n`/api/v1/recovery-emails/{encoded_email}/accounts`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs" / "development.md").write_text(
+        "# 开发指南\n当前迁移 head 为 `0005`。\n",
         encoding="utf-8",
     )
     (tmp_path / "docs" / "csv-transfer.md").write_text(
@@ -85,10 +88,12 @@ def test_release_gate_check_docs_detects_stale_schema_and_delete_claim(tmp_path)
     res = gates.check_docs(tmp_path)
     assert res.ok is False
     joined = "\n".join(res.errors)
+    assert "docs/development.md" in joined
     assert "0008" in joined
     assert "不提供永久删除" in joined
     assert "带密码的加密导出仍属 P1" in joined
     assert "/api/v1/recovery-emails/{encoded_email}/accounts" in joined
+    assert "/api/v1/accounts/{id}/permanent" in joined
     assert "LICENSE" in joined
     assert "SECURITY.md" in joined
     assert "CHANGELOG.md" in joined
