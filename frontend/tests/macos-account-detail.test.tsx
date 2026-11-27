@@ -267,7 +267,9 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
     renderPreviewRouter();
 
     // 账号列表搜索框 + ⌘K 快捷键（弹窗开启时不抢焦点，关闭后聚焦搜索框）
-    const searchInput = screen.getByPlaceholderText('搜索账号或备注（⌘K）');
+    const searchInput = screen.getByPlaceholderText(
+      '搜索编号、邮箱或辅助邮箱（⌘/Ctrl K）',
+    );
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).not.toBe(searchInput);
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -297,7 +299,9 @@ describe('Gmail 账号详情与编辑三栏页面', () => {
     expect(within(sidebar).getByLabelText('回收站 3 项')).toHaveTextContent(
       '3',
     );
-    const statusCard = within(sidebar).getByLabelText('系统运行状态');
+    const statusCard = within(sidebar).getByRole('button', {
+      name: /系统运行状态/,
+    });
     expect(within(statusCard).getByText('系统运行正常')).toBeInTheDocument();
     expect(
       within(statusCard).getByText(/备份：2026-01-15 02:30/),

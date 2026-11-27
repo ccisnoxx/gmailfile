@@ -534,3 +534,18 @@ it('撤销自身先清空工作区；网络结果未知也不能恢复旧页面�
     ),
   ).toHaveLength(1);
 });
+
+it('登录页安全声明准确描述服务端可解密架构，不使用误导性的端到端表述', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => json({ state: 'unauthenticated' })),
+  );
+  render(<AuthPage />);
+  await screen.findByRole('heading', { name: '管理员登录' });
+  expect(
+    screen.getByText(
+      'TLS 加密传输 · 字段级加密存储 · 默认闲置 15 分钟自动锁定',
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/端到端/)).not.toBeInTheDocument();
+});

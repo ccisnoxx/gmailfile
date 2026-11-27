@@ -208,7 +208,7 @@ export function SettingsLayout({
               ref={searchInputRef}
               type="search"
               aria-label="搜索设置"
-              placeholder="搜索设置（⌘K）"
+              placeholder="搜索设置（⌘/Ctrl K）"
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
               maxLength={120}

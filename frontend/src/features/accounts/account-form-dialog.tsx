@@ -28,6 +28,7 @@ export function AccountFormDialog({
   reauthRequired = false,
   tags,
   appsCatalog = [],
+  purposeSuggestions = [],
   onCreateApp,
   onFetchAppIcon,
   busy,
@@ -46,6 +47,7 @@ export function AccountFormDialog({
   reauthRequired?: boolean;
   tags: TagResponse[];
   appsCatalog?: RegisteredAppResponse[];
+  purposeSuggestions?: string[];
   onCreateApp?: CreateAppHandler;
   onFetchAppIcon?: FetchAppIconHandler;
   busy: boolean;
@@ -67,14 +69,14 @@ export function AccountFormDialog({
     >
       <DialogContent
         onCloseAutoFocus={onRestoreFocus}
-        className="macos-glass-modal flex max-h-[90vh] min-h-0 flex-col overflow-hidden rounded-[22px] sm:max-w-2xl"
+        className="macos-glass-modal flex max-h-[90vh] min-h-0 flex-col overflow-hidden rounded-[22px] sm:max-w-3xl"
       >
         <DialogHeader>
           <DialogTitle>{form === 'edit' ? '编辑账号' : '新建账号'}</DialogTitle>
           <DialogDescription>
             {form === 'edit'
               ? `${detail?.account_no} · 版本 ${detail?.row_version}`
-              : '邮箱、密码、注册时间和辅助邮箱为必填项。'}
+              : 'Gmail 地址、密码和注册时间为必填项；其他资料可按需补充。'}
           </DialogDescription>
         </DialogHeader>
         {notice && (
@@ -105,6 +107,7 @@ export function AccountFormDialog({
             onFailure={onFailure}
             tags={tags}
             appsCatalog={appsCatalog}
+            purposeSuggestions={purposeSuggestions}
             onCreateApp={onCreateApp}
             onFetchAppIcon={onFetchAppIcon}
             busy={busy}

@@ -314,7 +314,7 @@ export function AuthShell({
 
       <footer className="relative z-10 mx-auto flex w-full max-w-5xl items-center justify-center gap-2 px-4 pb-6 text-xs text-[var(--text-secondary)] sm:px-8">
         <LockKeyhole className="size-3.5" aria-hidden="true" />
-        <span>端到端受保护连接 · 默认闲置 15 分钟自动锁定</span>
+        <span>TLS 加密传输 · 字段级加密存储 · 默认闲置 15 分钟自动锁定</span>
       </footer>
     </div>
   );

@@ -195,8 +195,8 @@ export function AccountListPane({
             <input
               ref={searchInputRef}
               type="search"
-              aria-label="全局搜索账号、标签或备注"
-              placeholder="搜索账号或备注（⌘K）"
+              aria-label="搜索账号（编号、邮箱或辅助邮箱）"
+              placeholder="搜索编号、邮箱或辅助邮箱（⌘/Ctrl K）"
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
               maxLength={254}
