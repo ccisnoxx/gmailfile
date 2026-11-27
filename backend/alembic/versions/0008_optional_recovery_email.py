@@ -17,9 +17,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("ck_gmail_accounts_recovery_xor", "gmail_accounts", type_="check")
+    op.drop_constraint(op.f("ck_gmail_accounts_recovery_xor"), "gmail_accounts", type_="check")
     op.create_check_constraint(
-        "ck_gmail_accounts_recovery_xor",
+        op.f("ck_gmail_accounts_recovery_xor"),
         "gmail_accounts",
         "NOT (recovery_account_id IS NOT NULL AND recovery_email_external IS NOT NULL)",
     )
@@ -38,9 +38,9 @@ def downgrade() -> None:
             f"无法回退迁移 0008 -> 0007：gmail_accounts 中存在 {missing_count} 条未设置辅助邮箱的账号，"
             "请先为这些账号补齐辅助邮箱，或通过加密备份执行隔离恢复回退。"
         )
-    op.drop_constraint("ck_gmail_accounts_recovery_xor", "gmail_accounts", type_="check")
+    op.drop_constraint(op.f("ck_gmail_accounts_recovery_xor"), "gmail_accounts", type_="check")
     op.create_check_constraint(
-        "ck_gmail_accounts_recovery_xor",
+        op.f("ck_gmail_accounts_recovery_xor"),
         "gmail_accounts",
         "(recovery_account_id IS NOT NULL) <> (recovery_email_external IS NOT NULL)",
     )
