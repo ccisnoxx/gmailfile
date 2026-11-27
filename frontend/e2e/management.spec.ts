@@ -157,6 +157,7 @@ test('Session 空闲续期：可信交互触发 activity 续期，后台不保�
     });
   });
   await page.route('**/api/v1/tags', (route) => route.fulfill({ json: [] }));
+  await page.route('**/api/v1/apps', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/v1/dashboard/summary**', (route) =>
     route.fulfill({
       json: {

@@ -103,7 +103,7 @@ afterEach(() => {
 });
 
 describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
-  it('导出全部 11 个必需拆分组件并完整渲染基础布局、左右导航、顶部分类与 7 张核心卡片', () => {
+  it('导出全部 11 个必需拆分组件并完整渲染基础布局、左右导航、顶部分类与 7 张核心卡片', async () => {
     expect(SettingsLayout).toBeTypeOf('function');
     expect(SettingsSegmentedTabs).toBeTypeOf('function');
     expect(AdminSecurityCard).toBeTypeOf('function');
@@ -127,7 +127,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     ).toBeInTheDocument();
 
     // 顶部搜索框 + ⌘K 快捷键聚焦 + 右上角系统正常运行、通知、管理员菜单
-    const searchInput = screen.getByPlaceholderText('搜索设置（⌘K）');
+    const searchInput = screen.getByPlaceholderText('搜索设置（⌘/Ctrl K）');
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
     expect(
@@ -181,7 +181,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
 
     // 卡片 1：管理员安全
     expect(
-      screen.getByRole('heading', { name: '管理员安全' }),
+      await screen.findByRole('heading', { name: '管理员安全' }),
     ).toBeInTheDocument();
     expect(screen.getByText('安全状态良好')).toBeInTheDocument();
     expect(screen.getByText('admin')).toBeInTheDocument();
@@ -265,7 +265,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     const tablist = screen.getByRole('tablist', { name: '系统设置分类' });
 
     // 验证 TOTP 重绑入口可用
-    await user.click(screen.getByRole('button', { name: '重绑验证器…' }));
+    await user.click(
+      await screen.findByRole('button', { name: '重绑验证器…' }),
+    );
     expect(
       await screen.findByRole('dialog', { name: '重新绑定 TOTP 验证器' }),
     ).toBeInTheDocument();
@@ -274,46 +276,45 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     // 点击“备份与恢复”分段标签 -> 切换对应内容且隐藏管理员安全卡片
     await user.click(within(tablist).getByRole('tab', { name: '备份与恢复' }));
     expect(
-      within(tablist).getByRole('tab', { name: '备份与恢复', selected: true }),
+      await screen.findByRole('heading', { name: '最近加密归档快照' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: '最近加密归档快照' }),
+      screen.getByRole('tab', { name: '备份与恢复', selected: true }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('heading', { name: '管理员安全' }),
     ).not.toBeInTheDocument();
 
     // 键盘 ArrowRight 切换到“审计与合规”
-    fireEvent.keyDown(
-      within(tablist).getByRole('tab', { name: '备份与恢复' }),
-      { key: 'ArrowRight' },
-    );
+    fireEvent.keyDown(screen.getByRole('tab', { name: '备份与恢复' }), {
+      key: 'ArrowRight',
+    });
     expect(
-      within(tablist).getByRole('tab', { name: '审计与合规', selected: true }),
+      await screen.findByRole('heading', { name: '防篡改哈希链校验' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: '防篡改哈希链校验' }),
+      screen.getByRole('tab', { name: '审计与合规', selected: true }),
     ).toBeInTheDocument();
 
     // 切到“界面与体验”和“系统与维护”
-    await user.click(within(tablist).getByRole('tab', { name: '界面与体验' }));
+    await user.click(screen.getByRole('tab', { name: '界面与体验' }));
     expect(
-      screen.getByRole('heading', { name: '交互快捷键与本地存储约束' }),
+      await screen.findByRole('heading', { name: '交互快捷键与本地存储约束' }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('switch', { name: '紧凑密度模式' }),
     ).toBeInTheDocument();
 
-    await user.click(within(tablist).getByRole('tab', { name: '系统与维护' }));
+    await user.click(screen.getByRole('tab', { name: '系统与维护' }));
     expect(
-      screen.getByRole('heading', { name: '运行环境与会话安全' }),
+      await screen.findByRole('heading', { name: '运行环境与会话安全' }),
     ).toBeInTheDocument();
 
     // 顶部搜索过滤设置与空搜索状态
-    const searchInput = screen.getByPlaceholderText('搜索设置（⌘K）');
+    const searchInput = screen.getByPlaceholderText('搜索设置（⌘/Ctrl K）');
     await user.type(searchInput, 'TOTP');
     expect(
-      screen.getByRole('heading', { name: '双因素认证（TOTP）' }),
+      await screen.findByRole('heading', { name: '双因素认证（TOTP）' }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('heading', { name: '加密备份与恢复' }),
@@ -321,7 +322,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
 
     await user.clear(searchInput);
     await user.type(searchInput, '不存在的配置关键词');
-    expect(screen.getByText('未找到匹配的设置项')).toBeInTheDocument();
+    expect(await screen.findByText('未找到匹配的设置项')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '清空搜索条件' }));
     expect(searchInput).toHaveValue('');
   });
@@ -329,6 +330,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
   it('毛玻璃透明度滑块默认 70%、支持实时预览与 localStorage 持久化，并与账号列表共享同一配置状态', async () => {
     const user = userEvent.setup();
     const first = renderPreviewSettings('/settings/security');
+    const slider = await screen.findByRole('slider', {
+      name: '导航栏毛玻璃透明度',
+    });
     const shell = first.container.querySelector(
       '[data-slot="app-window-shell"]',
     ) as HTMLElement;
@@ -340,7 +344,6 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     expect(previewSurface.style.backgroundColor).toContain('0.7');
 
     // 拖动滑块到 84% -> 立即更新窗口变量、预览块并写入共享 key
-    const slider = screen.getByRole('slider', { name: '导航栏毛玻璃透明度' });
     fireEvent.change(slider, { target: { value: '84' } });
     expect(shell.style.getPropertyValue('--nav-alpha')).toBe('0.84');
     expect(previewSurface.style.backgroundColor).toContain('0.84');
@@ -348,7 +351,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
 
     // 切换到“界面与体验”开启紧凑模式，仅保存非敏感偏好
     await user.click(screen.getByRole('tab', { name: '界面与体验' }));
-    await user.click(screen.getByRole('switch', { name: '紧凑密度模式' }));
+    await user.click(
+      await screen.findByRole('switch', { name: '紧凑密度模式' }),
+    );
     expect(window.localStorage.getItem(DISPLAY_SETTINGS_STORAGE_KEY)).toContain(
       '"compactMode":true',
     );
@@ -370,7 +375,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     ) as HTMLElement;
     expect(reloadedShell.style.getPropertyValue('--nav-alpha')).toBe('0.52');
     expect(
-      screen.getByRole('slider', { name: '导航栏毛玻璃透明度' }),
+      await screen.findByRole('slider', { name: '导航栏毛玻璃透明度' }),
     ).toHaveValue('52');
   });
 
@@ -379,7 +384,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     renderPreviewSettings('/settings/security');
 
     // 1. 修改密码 Modal
-    await user.click(screen.getByRole('button', { name: '修改密码…' }));
+    await user.click(await screen.findByRole('button', { name: '修改密码…' }));
     const pwdDialog = await screen.findByRole('dialog', {
       name: '修改管理员密码',
     });
@@ -536,7 +541,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     const loadingView = renderPreviewSettings('/settings/security', {
       uiStateOverride: 'loading',
     });
-    expect(screen.getByText('正在读取活动会话…')).toBeInTheDocument();
+    expect(await screen.findByText('正在读取活动会话…')).toBeInTheDocument();
     expect(screen.getByText('正在读取备份状态…')).toBeInTheDocument();
     expect(screen.getByText('正在读取审计日志…')).toBeInTheDocument();
     loadingView.unmount();
@@ -545,7 +550,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     const errorView = renderPreviewSettings('/settings/security', {
       uiStateOverride: 'error',
     });
-    expect(screen.getAllByRole('alert').length).toBeGreaterThanOrEqual(3);
+    expect((await screen.findAllByRole('alert')).length).toBeGreaterThanOrEqual(
+      3,
+    );
     expect(
       screen.getAllByRole('button', { name: '重试' }).length,
     ).toBeGreaterThanOrEqual(3);
@@ -555,7 +562,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     const emptyView = renderPreviewSettings('/settings/security', {
       uiStateOverride: 'empty',
     });
-    expect(screen.getByText('暂无活动会话')).toBeInTheDocument();
+    expect(await screen.findByText('暂无活动会话')).toBeInTheDocument();
     expect(screen.getByText('尚未产生可用备份')).toBeInTheDocument();
     expect(screen.getByText('暂无审计日志')).toBeInTheDocument();
     emptyView.unmount();
@@ -564,7 +571,7 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     renderPreviewSettings('/settings/security', {
       simulateActionFailure: true,
     });
-    await user.click(screen.getByRole('button', { name: '立即备份' }));
+    await user.click(await screen.findByRole('button', { name: '立即备份' }));
     expect(await screen.findByText('备份失败')).toBeInTheDocument();
     expect(
       screen.getByText(/备份执行失败：age 加密归档校验未通过/),
@@ -876,7 +883,9 @@ describe('系统设置页面（macOS 淡蓝亚克力设计系统）', () => {
     );
 
     // 1) 重新生成恢复码：先触发 reverify（不应消耗 totp_code），再用轮换后的新 CSRF 调用 regenerate
-    await user.click(screen.getByRole('button', { name: '查看 / 重新生成…' }));
+    await user.click(
+      await screen.findByRole('button', { name: '查看 / 重新生成…' }),
+    );
     const recDialog = await screen.findByRole('dialog', {
       name: '查看 / 重新生成恢复码',
     });

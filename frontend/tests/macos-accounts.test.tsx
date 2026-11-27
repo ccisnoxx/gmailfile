@@ -220,7 +220,7 @@ describe('账号管理高保真页面交互与状态展示', () => {
       expect(within(table).getByText(email)).toBeInTheDocument();
     }
 
-    const searchInput = screen.getByPlaceholderText('搜索邮箱、辅助邮箱或备注');
+    const searchInput = screen.getByPlaceholderText('搜索编号、邮箱或辅助邮箱');
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
     expect(document.activeElement).toBe(searchInput);
 
@@ -342,7 +342,9 @@ describe('账号管理高保真页面交互与状态展示', () => {
 
     // 切换列表 / 图表视图
     await user.click(screen.getByRole('button', { name: '图表视图' }));
-    expect(screen.getByLabelText('账号数据图表视图')).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText('账号数据图表视图'),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '列表视图' }));
     expect(screen.getByRole('table')).toBeInTheDocument();
 

@@ -76,6 +76,7 @@ describe('统一可展开侧边栏与第三方已注册应用交互', () => {
       />,
     );
 
+    const sidebar = screen.getByLabelText('侧边导航栏');
     const coreNav = screen.getByRole('navigation', { name: '核心资产导航' });
     const allBtn = within(coreNav).getByRole('button', { name: /全部账号/ });
     const chevronBtn = within(coreNav).getByRole('button', {
@@ -87,11 +88,12 @@ describe('统一可展开侧边栏与第三方已注册应用交互', () => {
       allBtn.compareDocumentPosition(chevronBtn) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    expect(within(sidebar).getByText('关系')).toBeInTheDocument();
     expect(
-      within(coreNav).getByRole('button', { name: '已注册应用' }),
+      within(sidebar).getByRole('button', { name: '已注册应用' }),
     ).toBeInTheDocument();
     expect(
-      within(coreNav).getByRole('button', { name: '辅助邮箱统计' }),
+      within(sidebar).getByRole('button', { name: '辅助邮箱统计' }),
     ).toBeInTheDocument();
 
     // 默认折叠，不展示状态子菜单
@@ -134,12 +136,12 @@ describe('统一可展开侧边栏与第三方已注册应用交互', () => {
     expect(onSelectSection).toHaveBeenCalledWith('pending');
 
     await user.click(
-      within(coreNav).getByRole('button', { name: '已注册应用' }),
+      within(sidebar).getByRole('button', { name: '已注册应用' }),
     );
     expect(onOpenApps).toHaveBeenCalledTimes(1);
 
     await user.click(
-      within(coreNav).getByRole('button', { name: '辅助邮箱统计' }),
+      within(sidebar).getByRole('button', { name: '辅助邮箱统计' }),
     );
     expect(onOpenRecovery).toHaveBeenCalledTimes(1);
   });

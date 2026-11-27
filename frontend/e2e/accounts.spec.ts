@@ -87,10 +87,13 @@ test('账号完整生命周期：新建、详情页查看密码与编辑关联�
     .click();
   await page.getByRole('menuitem', { name: '归档' }).click();
   await page.getByRole('button', { name: '确认归档' }).click();
-  await expect(page.getByText('归档成功。')).toBeVisible();
+  await expect(
+    page.getByRole('dialog', { name: '账号详情' }).getByText('归档成功。'),
+  ).toBeVisible();
 
   await page.keyboard.press('Escape');
   const sidebar = page.getByLabel('侧边导航栏');
+  await sidebar.getByRole('button', { name: '展开账号状态分组' }).click();
   await sidebar.getByRole('button', { name: /已归档/ }).click();
   await expect(
     page.getByRole('button', { name: 'linked.owner@gmail.com', exact: true }),
@@ -138,7 +141,9 @@ test('账号完整生命周期：新建、详情页查看密码与编辑关联�
     .click();
   await page.getByRole('menuitem', { name: '恢复' }).click();
   await page.getByRole('button', { name: '确认恢复' }).click();
-  await expect(page.getByText('恢复成功。')).toBeVisible();
+  await expect(
+    page.getByRole('dialog', { name: '账号详情' }).getByText('恢复成功。'),
+  ).toBeVisible();
   await page.keyboard.press('Escape');
   await sidebar.getByRole('button', { name: /全部账号/ }).click();
   await expect(
@@ -188,6 +193,7 @@ test('row_version 并发冲突：编辑弹窗密码留空省略、409 禁用保�
   await dialog.getByLabel('账号用途').fill('冲突尝试');
   await dialog.getByRole('button', { name: '保存账号' }).click();
 
+  await expect.poll(() => lastPatchBody).not.toBeNull();
   expect(lastPatchBody).not.toHaveProperty('password');
   await expect(dialog.getByRole('button', { name: '保存账号' })).toBeDisabled();
   const reloadBtn = dialog.getByRole('button', {

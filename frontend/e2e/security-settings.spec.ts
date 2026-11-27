@@ -92,7 +92,9 @@ test('系统设置页重新生成恢复码与退出其他会话：遵循 CSRF �
   expect(backend.stats.csrfRejected).toBe(0);
 });
 
-test('经典安全设置页 /security 修改密码并撤销所有会话', async ({ page }) => {
+test('旧路径 /security?action=reverify 重定向至系统设置并完成重验与改密', async ({
+  page,
+}) => {
   const oldPassword = 'ClassicOldPassphrase#2026';
   const newPassword = 'ClassicNewPassphrase#2026';
   const backend = await installMockBackend(page, {
@@ -102,28 +104,29 @@ test('经典安全设置页 /security 修改密码并撤销所有会话', async 
     stepUpTotpRequired: false,
   });
 
-  await page.goto('/security');
-  await expect(page.getByRole('heading', { name: '安全设置' })).toBeVisible();
-
-  // 先重新验证
-  await page.getByLabel('当前管理员密码').fill(oldPassword);
-  await page
-    .locator('form')
-    .getByRole('button', { name: '重新验证', exact: true })
-    .click();
+  await page.goto('/security?action=reverify');
+  await expect(page).toHaveURL(/\/settings\/security/);
   await expect(
-    page.getByText('重新验证成功，5 分钟内可进行敏感操作。'),
+    page.getByRole('heading', { level: 1, name: '系统设置' }),
   ).toBeVisible();
 
-  // 切换到修改密码并提交
-  await page.getByRole('button', { name: '修改密码', exact: true }).click();
-  await page.getByLabel('当前管理员密码').fill(oldPassword);
-  await page.getByLabel('新密码', { exact: true }).fill(newPassword);
-  await page.getByRole('button', { name: '修改密码并退出所有会话' }).click();
+  // action=reverify 自动打开重新验证弹窗
+  const reverifyDialog = page.getByRole('dialog', {
+    name: '管理员身份重新验证',
+  });
+  await expect(reverifyDialog).toBeVisible();
+  await reverifyDialog.getByLabel('当前管理员密码').fill(oldPassword);
+  await reverifyDialog.getByRole('button', { name: '完成重新验证' }).click();
+  await expect(reverifyDialog).toHaveCount(0);
+
+  // 打开修改密码弹窗并提交，撤销所有会话回到登录页
+  await page.getByRole('button', { name: '修改密码…' }).click();
+  const pwdDialog = page.getByRole('dialog', { name: '修改管理员密码' });
+  await pwdDialog.getByLabel('当前管理员密码').fill(oldPassword);
+  await pwdDialog.getByLabel('新密码（至少 16 位）').fill(newPassword);
+  await pwdDialog.getByLabel('确认新密码').fill(newPassword);
+  await pwdDialog.getByRole('button', { name: '确认修改密码' }).click();
 
   await expect(page.getByRole('heading', { name: '管理员登录' })).toBeVisible();
-  await expect(
-    page.getByText('密码已修改，所有会话已退出。请使用新密码登录。'),
-  ).toBeVisible();
   expect(backend.sessions.every((s) => s.revoked_at !== null)).toBe(true);
 });

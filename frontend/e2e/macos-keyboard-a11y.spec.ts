@@ -181,15 +181,15 @@ test.describe('四个 macOS 页面：WCAG 2.2 AA、键盘导航、Focus Trap 与
     await expect(alertDialog).toHaveCount(0);
   });
 
-  test('系统设置：⌘F 搜索、分组 Tablist 键盘导航、Modal/Sheet Focus Trap 与 Escape 焦点恢复', async ({
+  test('系统设置：⌘K / Ctrl+K 搜索、分组 Tablist 键盘导航、Modal/Sheet Focus Trap 与 Escape 焦点恢复', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await installDeterministicMacosApp(page, { navAlpha: 60 });
     await openMacosPage(page, 'settings');
 
-    // 1. Ctrl+F 聚焦设置搜索框
-    await page.keyboard.press('Control+f');
+    // 1. Ctrl+K 聚焦设置搜索框（不劫持浏览器原生 Ctrl+F）
+    await page.keyboard.press('Control+k');
     await expect(page.getByLabel('搜索设置')).toBeFocused();
 
     // 2. 分段标签页方向键切换
@@ -251,18 +251,14 @@ test.describe('四个 macOS 页面：WCAG 2.2 AA、键盘导航、Focus Trap 与
     await expect(notifBtn).toBeFocused();
   });
 
-  test('CSV 导入：⌘K 快捷搜索、子标签 Tablist 键盘切换、历史/导出弹窗 Focus Trap 与 Escape', async ({
+  test('CSV 导入：子标签 Tablist 键盘切换、历史/导出弹窗 Focus Trap 与 Escape', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await installDeterministicMacosApp(page, { navAlpha: 60 });
     await openMacosPage(page, 'csv-import', { populateCsv: true });
 
-    // 1. Ctrl+K 聚焦搜索框
-    await page.keyboard.press('Control+k');
-    await expect(page.getByLabel('全局搜索')).toBeFocused();
-
-    // 2. 子标签 Tablist 键盘方向键切换
+    // 1. 子标签 Tablist 键盘方向键切换
     const importTab = page.getByRole('tab', { name: 'CSV 导入' });
     const batchTab = page.getByRole('tab', { name: '批量操作' });
     await importTab.focus();

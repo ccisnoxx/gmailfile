@@ -314,6 +314,8 @@ export async function installDeterministicMacosApp(
     reauthenticated_until: reauthenticatedUntil,
     mfa_reauthenticated_until: mfaReauthenticatedUntil,
     step_up_totp_required: Boolean(options.stepUpTotpRequired),
+    totp_enabled: true,
+    webauthn_enabled: false,
   });
 
   const holdIfLoading = async () => {
@@ -416,6 +418,74 @@ export async function installDeterministicMacosApp(
 
     if (path === '/tags' && method === 'GET') {
       return fulfillJson(pageMode === 'empty' ? [] : tags);
+    }
+
+    if (path === '/apps' && method === 'GET') {
+      return fulfillJson([]);
+    }
+
+    if (path === '/apps/usage' && method === 'GET') {
+      return fulfillJson({ items: [], total_accounts: accounts.length });
+    }
+
+    if (path === '/auth/webauthn/credentials' && method === 'GET') {
+      return fulfillJson([]);
+    }
+
+    if (path === '/dashboard/registration-trend' && method === 'GET') {
+      return fulfillJson({
+        timezone: 'Asia/Shanghai',
+        months: 12,
+        items: [
+          {
+            month: '2026-11',
+            count: accounts.length,
+            cumulative: accounts.length,
+          },
+        ],
+      });
+    }
+
+    if (path === '/dashboard/status-distribution' && method === 'GET') {
+      return fulfillJson({
+        total: accounts.length,
+        statuses: [{ status: 'normal', count: accounts.length }],
+        two_factor: [{ two_factor_status: 'enabled', count: accounts.length }],
+        top_tags: [],
+      });
+    }
+
+    if (path === '/dashboard/recovery-email-usage' && method === 'GET') {
+      return fulfillJson({
+        total_accounts: accounts.length,
+        total_recovery_emails: 0,
+        items: [],
+        others_count: 0,
+      });
+    }
+
+    if (path === '/dashboard/insights' && method === 'GET') {
+      return fulfillJson({
+        disabled_2fa_count: 0,
+        unknown_2fa_count: 0,
+        pending_verification_count: 0,
+        risk_status_count: 0,
+        unverified_over_30_days: 0,
+        inactive_login_over_90_days: 0,
+        password_stale_over_180_days: 0,
+        no_recovery_email_count: 0,
+        app_risk_account_count: 0,
+        concentrated_recovery_emails: [],
+        no_purpose_count: 0,
+        no_tags_count: 0,
+        inactive_with_active_apps_count: 0,
+        external_recovery_matches_internal: [],
+        backup_state: 'success',
+        backup_offsite: 'success',
+        backup_last_success_at: nowIso,
+        recent_auth_failures_7d: 0,
+        generated_at: nowIso,
+      });
     }
 
     if (path === '/accounts/options' && method === 'GET') {

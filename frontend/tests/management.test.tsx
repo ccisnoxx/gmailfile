@@ -98,6 +98,27 @@ function stub(
         added_this_month: 35,
         unverified_over_30_days: 0,
       });
+    if (url.pathname === '/api/v1/apps') return json([]);
+    if (url.pathname === '/api/v1/dashboard/registration-trend')
+      return json({
+        timezone: 'Asia/Shanghai',
+        months: 12,
+        items: [{ month: '2026-11', count: 1, cumulative: 1 }],
+      });
+    if (url.pathname === '/api/v1/dashboard/status-distribution')
+      return json({
+        total: 35,
+        statuses: [{ status: 'normal', count: 35 }],
+        two_factor: [{ two_factor_status: 'enabled', count: 35 }],
+        top_tags: [],
+      });
+    if (url.pathname === '/api/v1/dashboard/recovery-email-usage')
+      return json({
+        total_accounts: 35,
+        total_recovery_emails: 1,
+        items: [],
+        others_count: 0,
+      });
     if (url.pathname === '/api/v1/recovery-emails')
       return json({
         items: [
@@ -127,6 +148,7 @@ function stub(
 }
 afterEach(() => {
   window.history.replaceState(null, '', '/');
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -456,7 +478,10 @@ it.each(['success', 'conflict'])(
       await screen.findByRole('button', { name: rows[0].gmail_email }),
     );
     await screen.findByRole('heading', { name: rows[0].gmail_email });
-    await userEvent.click(screen.getByRole('button', { name: '今天已验证' }));
+    await userEvent.click(screen.getByRole('button', { name: '详情更多操作' }));
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: '今天已验证' }),
+    );
     await waitFor(() => expect(resolve).toBeTypeOf('function'));
     fireEvent.keyDown(screen.getByRole('dialog', { name: '账号详情' }), {
       key: 'Escape',
@@ -594,4 +619,156 @@ it('辅助邮箱快速预览通过查询参数传值，不将邮箱放入 URL �
         u.pathname.includes('shared%40example.test'),
     ),
   ).toBe(false);
+});
+
+it('搜索输入防抖 300ms 后以 replaceState 写入 URL，清空立即触发且占位文案与后端能力一致', async () => {
+  const mock = stub([row()]);
+  const pushSpy = vi.spyOn(window.history, 'pushState');
+  const replaceSpy = vi.spyOn(window.history, 'replaceState');
+  page();
+  await screen.findByRole('table');
+
+  const input = screen.getByPlaceholderText('搜索编号、邮箱或辅助邮箱');
+  expect(screen.getByText('⌘/Ctrl K')).toBeInTheDocument();
+
+  const countAccountCalls = () =>
+    mock.mock.calls.filter(
+      ([req]) => new URL(req.url).pathname === '/api/v1/accounts',
+    ).length;
+  const initialCalls = countAccountCalls();
+
+  vi.useFakeTimers();
+  const typed = 'abcdefghij';
+  for (let i = 1; i <= typed.length; i += 1) {
+    fireEvent.change(input, { target: { value: typed.slice(0, i) } });
+    await act(async () => {
+      vi.advanceTimersByTime(50);
+    });
+  }
+  expect(location.search).toBe('');
+  expect(countAccountCalls()).toBe(initialCalls);
+
+  await act(async () => {
+    vi.advanceTimersByTime(300);
+  });
+  vi.useRealTimers();
+
+  await waitFor(() => expect(location.search).toContain(`search=${typed}`));
+  await waitFor(() => expect(countAccountCalls()).toBe(initialCalls + 1));
+  expect(pushSpy).not.toHaveBeenCalled();
+  expect(replaceSpy).toHaveBeenCalled();
+
+  fireEvent.change(input, { target: { value: '' } });
+  expect(location.search).toBe('');
+  await waitFor(() => expect(countAccountCalls()).toBe(initialCalls + 2));
+});
+
+it('列表与图表视图以 URL 为单一事实源，保留筛选与页码并支持刷新及前进后退同步', async () => {
+  stub([row()]);
+  window.history.replaceState(null, '', '/?status=normal&page=2');
+  const first = page();
+  await screen.findByText('共 35 条 · 第 2 / 2 页');
+
+  const listBtn = screen.getByRole('button', { name: '列表视图' });
+  const chartBtn = screen.getByRole('button', { name: '图表视图' });
+  expect(listBtn).toHaveAttribute('aria-pressed', 'true');
+  expect(chartBtn).toHaveAttribute('aria-pressed', 'false');
+
+  await userEvent.click(chartBtn);
+  expect(await screen.findByLabelText('账号数据图表视图')).toBeInTheDocument();
+  expect(location.search).toContain('view=chart');
+  expect(location.search).toContain('status=normal');
+  expect(location.search).toContain('page=2');
+  expect(chartBtn).toHaveAttribute('aria-pressed', 'true');
+  expect(listBtn).toHaveAttribute('aria-pressed', 'false');
+
+  await userEvent.click(listBtn);
+  await screen.findByText('共 35 条 · 第 2 / 2 页');
+  expect(location.search).not.toContain('view=chart');
+  expect(location.search).toContain('status=normal');
+  expect(location.search).toContain('page=2');
+  expect(listBtn).toHaveAttribute('aria-pressed', 'true');
+
+  await act(async () => {
+    window.history.back();
+  });
+  expect(await screen.findByLabelText('账号数据图表视图')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '图表视图' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+
+  // 模拟在 ?view=chart 下刷新重新挂载
+  first.unmount();
+  page();
+  expect(await screen.findByLabelText('账号数据图表视图')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '图表视图' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+});
+
+it('账号表格列显示偏好持久化到版本化 localStorage，并在损坏时安全回退默认值', async () => {
+  stub([row()]);
+  const first = page();
+  await screen.findByRole('table');
+  expect(
+    screen.queryByRole('columnheader', { name: '更新时间' }),
+  ).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: /筛选/ }));
+  await userEvent.click(screen.getByText('显示列'));
+  await userEvent.click(screen.getByLabelText('更新时间'));
+  expect(
+    screen.getByRole('columnheader', { name: '更新时间' }),
+  ).toBeInTheDocument();
+
+  const stored = JSON.parse(
+    window.localStorage.getItem('gm_account_columns_v1') || '{}',
+  );
+  expect(stored.version).toBe(1);
+  expect(stored.columns?.updated).toBe(true);
+
+  first.unmount();
+  const second = page();
+  await screen.findByRole('table');
+  expect(
+    screen.getByRole('columnheader', { name: '更新时间' }),
+  ).toBeInTheDocument();
+
+  second.unmount();
+  window.localStorage.setItem('gm_account_columns_v1', '{broken-json');
+  page();
+  await screen.findByRole('table');
+  expect(
+    screen.queryByRole('columnheader', { name: '更新时间' }),
+  ).not.toBeInTheDocument();
+});
+
+it('新建账号对话框准确标明可选辅助邮箱，且移动端复制按钮默认可见', async () => {
+  const sample = row();
+  stub([sample]);
+  page();
+  await screen.findByRole('table');
+
+  const copyGmail = screen.getByRole('button', {
+    name: `复制邮箱 ${sample.gmail_email}`,
+  });
+  const copyRecovery = screen.getByRole('button', {
+    name: `复制辅助邮箱 ${sample.recovery_email}`,
+  });
+  expect(copyGmail.className).toContain('opacity-100');
+  expect(copyGmail.className).toContain('[@media(hover:hover)]:md:opacity-0');
+  expect(copyRecovery.className).toContain('opacity-100');
+  expect(copyRecovery.className).toContain(
+    '[@media(hover:hover)]:md:opacity-0',
+  );
+
+  await userEvent.click(screen.getByRole('button', { name: '新建账号' }));
+  expect(
+    await screen.findByText(
+      'Gmail 地址、密码和注册时间为必填项；其他资料可按需补充。',
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/辅助邮箱为必填项/)).not.toBeInTheDocument();
 });

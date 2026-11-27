@@ -311,7 +311,7 @@ describe('Wave 4 P1 #9: WebAuthn / Passkey 前端全链路', () => {
 
     renderWithQuery(<SettingsPage mode="mock" initialSection="security" />);
 
-    const passkeyHeading = screen.getByRole('heading', {
+    const passkeyHeading = await screen.findByRole('heading', {
       name: '通行密钥（WebAuthn / Passkey）',
     });
     expect(passkeyHeading).toBeInTheDocument();

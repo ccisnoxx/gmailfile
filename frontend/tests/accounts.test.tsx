@@ -324,12 +324,18 @@ it.each(['归档', '删除'])(
       await screen.findByRole('button', { name: record.gmail_email }),
     );
     await screen.findByRole('dialog', { name: '账号详情' });
-    await userEvent.click(screen.getByRole('button', { name: action }));
+    await userEvent.click(screen.getByRole('button', { name: '详情更多操作' }));
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: action }),
+    );
     await userEvent.click(screen.getByRole('button', { name: '取消' }));
     expect(
       mock.mock.calls.filter(([req]) => req.method !== 'GET'),
     ).toHaveLength(0);
-    await userEvent.click(screen.getByRole('button', { name: action }));
+    await userEvent.click(screen.getByRole('button', { name: '详情更多操作' }));
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: action }),
+    );
     await userEvent.click(
       screen.getByRole('button', { name: `确认${action}` }),
     );

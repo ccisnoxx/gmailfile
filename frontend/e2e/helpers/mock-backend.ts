@@ -243,6 +243,7 @@ export async function installMockBackend(
       idle_expires_at: new Date(now + idleMinutes * 60_000).toISOString(),
       reauthenticated_until: reauthenticatedUntil,
       mfa_reauthenticated_until: mfaReauthenticatedUntil,
+      totp_enabled: totpEnabled,
       step_up_totp_required: stepUpTotpRequired && totpEnabled,
     };
   }
@@ -1224,6 +1225,74 @@ export async function installMockBackend(
 
     if (path === '/system/version' && method === 'GET') {
       return json({ version: '1.2.0', schema_version: '0004' });
+    }
+
+    if (path === '/apps' && method === 'GET') {
+      return json([]);
+    }
+
+    if (path === '/apps/usage' && method === 'GET') {
+      return json({ items: [], total_accounts: accounts.length });
+    }
+
+    if (path === '/auth/webauthn/credentials' && method === 'GET') {
+      return json([]);
+    }
+
+    if (path === '/dashboard/registration-trend' && method === 'GET') {
+      return json({
+        timezone: 'Asia/Shanghai',
+        months: 12,
+        items: [
+          {
+            month: '2026-11',
+            count: accounts.length,
+            cumulative: accounts.length,
+          },
+        ],
+      });
+    }
+
+    if (path === '/dashboard/status-distribution' && method === 'GET') {
+      return json({
+        total: accounts.length,
+        statuses: [{ status: 'normal', count: accounts.length }],
+        two_factor: [{ two_factor_status: 'enabled', count: accounts.length }],
+        top_tags: [],
+      });
+    }
+
+    if (path === '/dashboard/recovery-email-usage' && method === 'GET') {
+      return json({
+        total_accounts: accounts.length,
+        total_recovery_emails: 0,
+        items: [],
+        others_count: 0,
+      });
+    }
+
+    if (path === '/dashboard/insights' && method === 'GET') {
+      return json({
+        disabled_2fa_count: 0,
+        unknown_2fa_count: 0,
+        pending_verification_count: 0,
+        risk_status_count: 0,
+        unverified_over_30_days: 0,
+        inactive_login_over_90_days: 0,
+        password_stale_over_180_days: 0,
+        no_recovery_email_count: 0,
+        app_risk_account_count: 0,
+        concentrated_recovery_emails: [],
+        no_purpose_count: 0,
+        no_tags_count: 0,
+        inactive_with_active_apps_count: 0,
+        external_recovery_matches_internal: [],
+        backup_state: 'success',
+        backup_offsite: 'success',
+        backup_last_success_at: new Date().toISOString(),
+        recent_auth_failures_7d: 0,
+        generated_at: new Date().toISOString(),
+      });
     }
 
     if (path === '/system/backup-status' && method === 'GET') {
