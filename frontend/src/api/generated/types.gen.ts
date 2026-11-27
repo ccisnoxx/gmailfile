@@ -3886,13 +3886,12 @@ export type RecoveryEmailsListResponse =
 
 export type RecoveryEmailAccountsData = {
   body?: never;
-  path: {
+  path?: never;
+  query: {
     /**
-     * Encoded Email
+     * Email
      */
-    encoded_email: string;
-  };
-  query?: {
+    email: string;
     /**
      * Page
      */
@@ -3918,7 +3917,7 @@ export type RecoveryEmailAccountsData = {
       | '-created_at'
       | '-updated_at';
   };
-  url: '/api/v1/recovery-emails/{encoded_email}/accounts';
+  url: '/api/v1/recovery-email-accounts';
 };
 
 export type RecoveryEmailAccountsErrors = {

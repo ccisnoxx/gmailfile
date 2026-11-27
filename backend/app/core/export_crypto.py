@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 import struct
 from collections.abc import Iterable, Iterator
@@ -243,6 +245,56 @@ def decrypt_export_file(input_path: Path, output_path: Path, passphrase: str) ->
             dst.flush()
             os.fsync(dst.fileno())
         os.replace(tmp_path, output_path)
+    except BaseException:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    return written
+
+
+def _spreadsheet_safe_cell(value: str) -> str:
+    if value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(("\t", "\r", "\n")):
+        return "'" + value
+    return value
+
+
+def write_spreadsheet_safe_csv_copy(source_csv: Path, dest_csv: Path) -> int:
+    """将解密后的无损恢复 CSV 转为仅供表格软件查看的公式转义副本（0600，禁止重导）。"""
+    if not source_csv.is_file():
+        raise ExportDecryptionError("源解密 CSV 文件不存在")
+    if source_csv.resolve() == dest_csv.resolve():
+        raise ValueError("--spreadsheet-safe-copy 输出路径不得覆盖主恢复 CSV 文件")
+    dest_csv.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest_csv.with_name(f".{dest_csv.name}.safe.tmp")
+
+    raw_bytes = source_csv.read_bytes()
+    has_bom = raw_bytes.startswith(b"\xef\xbb\xbf")
+    try:
+        text = raw_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ExportDecryptionError("解密结果不是有效的 UTF-8 CSV，无法生成表格安全副本") from exc
+
+    reader = csv.reader(io.StringIO(text, newline=""))
+    written = 0
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as dst:
+            if has_bom:
+                dst.write(b"\xef\xbb\xbf")
+                written += 3
+            for row in reader:
+                buf = io.StringIO()
+                writer = csv.writer(buf, lineterminator="\r\n")
+                writer.writerow([_spreadsheet_safe_cell(cell) for cell in row])
+                encoded = buf.getvalue().encode("utf-8")
+                dst.write(encoded)
+                written += len(encoded)
+            dst.flush()
+            os.fsync(dst.fileno())
+        os.replace(tmp_path, dest_csv)
     except BaseException:
         try:
             tmp_path.unlink(missing_ok=True)

@@ -165,7 +165,7 @@ export function ExportPanel(props: OperationsPanelProps) {
       a.click();
       URL.revokeObjectURL(url);
       setEncMessage(
-        '加密导出包（.gmenc）已开始下载。离线解密命令：python -m app.cli decrypt-export --input <文件.gmenc> --output <输出.csv>',
+        '加密导出包（.gmenc）已开始下载。离线解密命令：python -m app.cli decrypt-export --input <文件.gmenc> --output <恢复原件.csv>（请勿直接用 Excel/LibreOffice 打开恢复原件；如需表格查看请追加 --spreadsheet-safe-copy <查看副本.csv>，且勿将转义副本用于重导）。',
       );
     } catch (error) {
       if (alive.current) {
@@ -394,7 +394,11 @@ export function ExportPanel(props: OperationsPanelProps) {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            导出口令不能与管理员登录密码相同，且服务端不会保存该口令；请务必离线妥善记录。
+            导出口令不能与管理员登录密码相同，且服务端不会保存该口令；请务必离线妥善记录。解密出的主
+            CSV 为无损灾备恢复文件，请勿直接用 Excel / LibreOffice
+            打开；如需在电子表格中查看，请在解密时使用{' '}
+            <code>--spreadsheet-safe-copy</code>{' '}
+            生成转义副本（仅查看，勿用于重新导入）。
           </p>
 
           <Button type="submit" disabled={encBusy}>

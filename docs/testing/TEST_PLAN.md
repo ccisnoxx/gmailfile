@@ -336,10 +336,13 @@ Wave 3 已在根 [Makefile](../../Makefile) 中落地以下可重复执行的本
 - `make compose-check-all`：使用临时合成环境变量依次对 `dev`、`production+offsite`、`regression`、`acceptance` 4 组 Compose overlay 运行 `docker compose config` 并校验 `@sha256` 镜像固定、非 root、只读根文件系统、能力清空、内网隔离与无明文密码环境变量。
 - `make check-nginx`：校验 `infra/nginx/{accounts.example.com.conf,proxy.conf,gmail-manager-http.conf}` 的 7 项安全头、location 不覆写 `add_header`、敏感认证路径 `gm_login` 限流与 404 隔离（本机安装 `nginx` 时自动执行 `nginx -t`）。
 - `make scan-dist`：扫描 `frontend/dist` 与 `frontend/src`，断言零 `*preview*` 产物、零外部 CDN/字体外链、零 `.map` source map、零 `dangerouslySetInnerHTML` 与零秘密标记。
-- `make audit-deps`：校验 `uv.lock`/`pnpm-lock.yaml`、精确版本固定与 Dockerfile `@sha256` 摘要（可按需传入 `--online` 执行在线漏洞库扫描）。
+- `make audit-deps-offline-integrity`（别名 `make audit-deps`）：离线校验 `uv.lock`/`pnpm-lock.yaml`、精确版本固定与 Dockerfile `@sha256` 摘要（不查询 CVE 库）。
+- `make audit-deps-online-strict`：严格在线漏洞库审计（叠加离线校验与 `pip-audit` + `pnpm audit --prod --audit-level=high`；缺工具、漏洞库不可达、异常退出或命中阈值漏洞均严格失败）。
 - `make test-cov` / `make test-cov-db`：基于 Python 3.12 `sys.monitoring` + `co_lines` 的零外部依赖覆盖率门禁（`test-cov-db` 强制 `backend/app >= 85%` 且核心安全模块 `>= 90%`，实测 `96.36%` / `95.14%`）。
-- `make test-e2e` / `make test-e2e-live`：分别执行前端 UI 冒烟与真实全栈 Playwright E2E。
-- `make gate-release`：一键串联 `check`、`check-openapi`、`compose-check-all`、`check-nginx`、`scan-dist`、`audit-deps`、`test` 与 `test-cov`。
+- `make test-e2e` / `make test-a11y` / `make test-compat` / `make test-e2e-live`：分别执行前端 UI 冒烟、键盘与 axe-core 无障碍、Chromium/Firefox/WebKit 三引擎兼容与真实全栈 Playwright E2E。
+- `make gate-release`：一键串联 `check`、`check-openapi`、`check-docs`、`compose-check-all`、`check-nginx`、`scan-dist`、`audit-deps-offline-integrity`、`test` 与 `test-cov`。
+- `make gate-release-live`：快速真实全栈门禁（`gate-release` + `test-db` + `test-cov-db` + `test-e2e-live`）。
+- `make gate-release-full`：私有发布机完整严格发布门禁（`gate-release` + `audit-deps-online-strict` + `test-db` + `test-cov-db` + `test-e2e` + `test-a11y` + `test-compat` + `test-e2e-live`）。
 
 ### 7.3 明确禁止的“伪通过”红线
 

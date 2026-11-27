@@ -2,8 +2,10 @@ COMPOSE = docker compose --env-file .env -f infra/docker-compose.yml
 DEV_COMPOSE = $(COMPOSE) -f infra/docker-compose.dev.yml
 
 .PHONY: install generate-api check test test-db dev-api dev-web compose-check up-dev \
-	check-openapi check-docs compose-check-all check-nginx scan-dist audit-deps \
-	test-cov test-cov-db test-e2e test-e2e-live test-a11y test-compat bench-csv gate-release gate-release-full
+	check-openapi check-docs compose-check-all check-nginx scan-dist \
+	audit-deps audit-deps-offline-integrity audit-deps-online-strict \
+	test-cov test-cov-db test-e2e test-e2e-live test-a11y test-compat bench-csv \
+	gate-release gate-release-live gate-release-full
 install:
 	cd backend && uv sync --locked
 	cd frontend && pnpm install --frozen-lockfile
@@ -58,13 +60,21 @@ check-nginx:
 scan-dist:
 	cd backend && uv run --locked python ../scripts/check-release-gates.py scan-dist
 
-audit-deps:
-	cd backend && uv run --locked python ../scripts/check-release-gates.py audit-deps
+audit-deps-offline-integrity:
+	cd backend && uv run --locked python ../scripts/check-release-gates.py audit-deps-offline-integrity
 
-gate-release: check check-openapi check-docs compose-check-all check-nginx scan-dist audit-deps test test-cov
+audit-deps-online-strict:
+	cd backend && uv run --locked python ../scripts/check-release-gates.py audit-deps-online-strict
 
-# 本地/私有发布前完整验证门禁（需独立 PostgreSQL TEST_DATABASE_URL 与 Playwright 环境）
-gate-release-full: gate-release test-db test-cov-db test-e2e-live
+audit-deps: audit-deps-offline-integrity
+
+gate-release: check check-openapi check-docs compose-check-all check-nginx scan-dist audit-deps-offline-integrity test test-cov
+
+# 本地快速真实全栈验证门禁（不含跨浏览器/无障碍矩阵与强制在线漏洞库审计）
+gate-release-live: gate-release test-db test-cov-db test-e2e-live
+
+# 私有发布机完整严格发布门禁（含强制在线漏洞库审计、PG18 集成与覆盖率、模拟 E2E、无障碍、三引擎兼容与实时全栈 E2E）
+gate-release-full: gate-release audit-deps-online-strict test-db test-cov-db test-e2e test-a11y test-compat test-e2e-live
 
 dev-api:
 	cd backend && uv run --locked uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log --no-proxy-headers

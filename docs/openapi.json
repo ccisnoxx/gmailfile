@@ -3433,7 +3433,7 @@
         }
       }
     },
-    "/api/v1/recovery-emails/{encoded_email}/accounts": {
+    "/api/v1/recovery-email-accounts": {
       "get": {
         "tags": [
           "accounts"
@@ -3442,12 +3442,14 @@
         "operationId": "recoveryEmailAccounts",
         "parameters": [
           {
-            "name": "encoded_email",
-            "in": "path",
+            "name": "email",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Encoded Email"
+              "minLength": 1,
+              "maxLength": 254,
+              "title": "Email"
             }
           },
           {

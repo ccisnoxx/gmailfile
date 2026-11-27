@@ -66,11 +66,20 @@ def test_release_gate_check_docs_detects_stale_schema_and_delete_claim(tmp_path)
     )
     (tmp_path / "docs").mkdir()
     (tmp_path / "README.md").write_text(
-        "当前迁移版本为 `0005`。\n当前 head 为 `0005`。\n不提供永久删除。\n",
+        "当前迁移版本为 `0005`。\n当前 head 为 `0005`。\n不提供永久删除。\n"
+        "`/api/v1/recovery-emails/{encoded_email}/accounts`\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs" / "csv-transfer.md").write_text(
+        "# CSV\n带密码的加密导出仍属 P1，没有明文敏感下载替代接口。\n",
         encoding="utf-8",
     )
     (tmp_path / "docs" / "security-decisions.md").write_text(
         "# 安全决策\n仅记录 `0005`\n", encoding="utf-8"
+    )
+    (tmp_path / "docs" / "openapi.json").write_text(
+        '{"paths":{"/api/v1/recovery-emails/{encoded_email}/accounts":{}}}',
+        encoding="utf-8",
     )
 
     res = gates.check_docs(tmp_path)
@@ -78,6 +87,8 @@ def test_release_gate_check_docs_detects_stale_schema_and_delete_claim(tmp_path)
     joined = "\n".join(res.errors)
     assert "0008" in joined
     assert "不提供永久删除" in joined
+    assert "带密码的加密导出仍属 P1" in joined
+    assert "/api/v1/recovery-emails/{encoded_email}/accounts" in joined
     assert "LICENSE" in joined
     assert "SECURITY.md" in joined
     assert "CHANGELOG.md" in joined
@@ -222,11 +233,52 @@ def test_release_gate_audit_deps_online_uses_uv_export_and_pnpm_audit(monkeypatc
 
     res = gates.audit_deps(ROOT, run_online=True)
     assert res.ok is True, res.errors
+    assert res.name == "audit-deps-online-strict"
     assert any(cmd[0].endswith("/uv") and "export" in cmd for cmd in commands)
     pip_audit_cmd = next(cmd for cmd in commands if cmd[0].endswith("/pip-audit"))
     assert "--no-deps" in pip_audit_cmd
     assert not any(arg.endswith("uv.lock") for arg in pip_audit_cmd)
     assert any(cmd[0].endswith("/pnpm") and "audit" in cmd for cmd in commands)
+
+
+def test_release_gate_audit_deps_online_strict_fails_when_tools_missing_or_unreachable(monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    # 1. 缺少 pip-audit 与 pnpm 时，严格模式必须失败，不能静默记 note 后返回通过
+    monkeypatch.setattr(gates.shutil, "which", lambda name: None)
+    missing = gates.audit_deps_online_strict(ROOT)
+    assert missing.ok is False
+    joined = "\n".join(missing.errors)
+    assert "pip-audit" in joined
+    assert "pnpm" in joined
+
+    # 2. 漏洞库不可达（超时）或退出非零时，严格模式必须失败
+    monkeypatch.setattr(
+        gates.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in {"pip-audit", "uv", "pnpm"} else None,
+    )
+
+    def fake_fail_run(cmd, **kwargs):
+        if cmd[0].endswith("/uv") and "-o" in cmd:
+            out_path = Path(cmd[cmd.index("-o") + 1])
+            out_path.write_text("fastapi==0.165.0\n", encoding="utf-8")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if cmd[0].endswith("/pip-audit"):
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=180)
+        return SimpleNamespace(returncode=1, stdout="", stderr="high vulnerability found")
+
+    monkeypatch.setattr(gates.subprocess, "run", fake_fail_run)
+    unreachable = gates.audit_deps_online_strict(ROOT)
+    assert unreachable.ok is False
+    err_text = "\n".join(unreachable.errors)
+    assert "pip-audit" in err_text
+    assert "pnpm audit" in err_text
+
+    offline = gates.audit_deps_offline_integrity(ROOT)
+    assert offline.ok is True
+    assert offline.name == "audit-deps-offline-integrity"
 
 
 def test_coverage_script_line_extraction_and_thresholds(tmp_path):

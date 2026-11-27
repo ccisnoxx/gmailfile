@@ -10,6 +10,14 @@ from pathlib import Path
 import pytest
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from app.core.release_attestation import (
+    IMAGE_ATTESTATION_KIND,
+    SOURCE_ATTESTATION_KIND,
+    build_image_attestation_payload,
+    build_source_attestation_payload,
+    generate_ed25519_keypair_pem,
+    sign_attestation,
+)
 from app.core.release_meta import (
     APP_VERSION,
     SCHEMA_VERSION,
@@ -45,14 +53,36 @@ def release(tmp_path, monkeypatch):
         "files": ["README.md"],
     }
     (target / "release.json").write_text(json.dumps(manifest))
-    (target / "images.json").write_text(
-        json.dumps(
-            {
-                name: {"tag": "synthetic:" + name, "id": name}
-                for name in ("api", "backup", "postgres", "restore", "test")
-            }
-        )
+    images = {
+        name: {
+            "tag": "synthetic:" + name,
+            "id": name,
+            "repo_digests": [f"{name}@sha256:{'1' * 64}"],
+        }
+        for name in ("api", "backup", "postgres", "restore", "test")
+    }
+    (target / "images.json").write_text(json.dumps(images))
+
+    priv_pem, pub_pem = generate_ed25519_keypair_pem()
+    (tmp_path / "release-signing.priv.pem").write_bytes(priv_pem)
+    (tmp_path / "release-signing.pub.pem").write_bytes(pub_pem)
+    source_att = sign_attestation(
+        SOURCE_ATTESTATION_KIND,
+        build_source_attestation_payload(
+            manifest,
+            gate_results=[{"name": "audit-deps-online-strict", "ok": True, "summary": "pass"}],
+            build_tools={"python": "3.12.13"},
+        ),
+        priv_pem,
     )
+    (target / "release.attestation.json").write_text(json.dumps(source_att))
+    img_att = sign_attestation(
+        IMAGE_ATTESTATION_KIND,
+        build_image_attestation_payload(manifest, images, build_tools={"python": "3.12.13"}),
+        priv_pem,
+    )
+    (target / "images.attestation.json").write_text(json.dumps(img_att))
+
     monkeypatch.setattr(deploy, "ROOT", tmp_path)
     return target
 
@@ -157,9 +187,56 @@ def test_image_tag_drift_stops_before_any_service_change(release, monkeypatch):
     value = json.loads((release / "images.json").read_text())
     value["api"]["id"] = "old-image"
     (release / "images.json").write_text(json.dumps(value))
+    # 篡改 images.json 后先被镜像签名证明拦下；重签后若本地镜像漂移仍被 docker inspect 拦下
+    with pytest.raises(ValueError, match="镜像签名证明与 images.json"):
+        deploy.deploy(["compose"], release)
+    assert not any("up" in c or "stop" in c for c in calls)
+
+    deploy.sign_release_images(release, deploy.ROOT / "release-signing.priv.pem")
     with pytest.raises(ValueError, match="漂移"):
         deploy.deploy(["compose"], release)
     assert not any("up" in c or "stop" in c for c in calls)
+
+
+def test_self_consistent_forged_release_and_key_reuse_are_rejected(release, monkeypatch):
+    calls = commands(monkeypatch, release)
+
+    # 1. 攻击者同时篡改源码并重写一致的 release.json / sbom.cdx.json 摘要，但没有受信私钥
+    (release / "README.md").write_text("backdoored source\n")
+    manifest = json.loads((release / "release.json").read_text())
+    manifest["source_archive_sha256"] = canonical_source_archive_sha256(release, ["README.md"])
+    (release / "release.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="发布签名证明字段与清单不一致"):
+        deploy.deploy(["compose"], release)
+    assert not any("up" in c or "stop" in c for c in calls)
+
+    # 2. 攻击者使用自己的伪造密钥重签 release.attestation.json，仍被受信公钥拒绝
+    attacker_priv, _ = generate_ed25519_keypair_pem()
+    forged_att = sign_attestation(
+        SOURCE_ATTESTATION_KIND,
+        build_source_attestation_payload(manifest, build_tools={"python": "3.12.13"}),
+        attacker_priv,
+    )
+    (release / "release.attestation.json").write_text(json.dumps(forged_att))
+    with pytest.raises(ValueError, match="受信发布公钥不匹配"):
+        deploy.deploy(["compose"], release)
+
+    # 3. 删除签名证明文件直接拒绝部署
+    (release / "release.attestation.json").unlink()
+    with pytest.raises(ValueError, match="缺少独立的 Ed25519 签名证明"):
+        deploy.deploy(["compose"], release)
+
+    # 4. 复用审计公钥作为发布验签公钥时拒绝通过
+    pub_path = deploy.ROOT / "release-signing.pub.pem"
+    manifest_orig = json.loads((release / "release.json").read_text())
+    valid_att = sign_attestation(
+        SOURCE_ATTESTATION_KIND,
+        build_source_attestation_payload(manifest_orig, build_tools={"python": "3.12.13"}),
+        (deploy.ROOT / "release-signing.priv.pem").read_bytes(),
+    )
+    (release / "release.attestation.json").write_text(json.dumps(valid_att))
+    with pytest.raises(ValueError, match="必须与审计检查点签名密钥分离"):
+        deploy.deploy(["compose"], release, audit_public_key=pub_path)
 
 
 def test_provenance_tampering_and_label_mismatch_stop_before_deploy(release, monkeypatch):

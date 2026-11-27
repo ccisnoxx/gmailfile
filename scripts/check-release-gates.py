@@ -112,7 +112,7 @@ def check_openapi(root: Path = ROOT) -> CheckResult:
 
 
 def check_docs(root: Path = ROOT) -> CheckResult:
-    """校验 README 与安全决策文档的迁移版本及关键不可逆语义与单一来源 release_meta 一致。"""
+    """校验 README、功能文档、安全决策文档与 OpenAPI 及 release_meta 能力清单一致。"""
     errors: list[str] = []
     notes: list[str] = []
 
@@ -122,7 +122,11 @@ def check_docs(root: Path = ROOT) -> CheckResult:
         sys.path.insert(0, backend_dir)
         inserted = True
     try:
-        from app.core.release_meta import SCHEMA_VERSION, resolve_schema_version
+        from app.core.release_meta import (
+            CAPABILITY_MANIFEST,
+            SCHEMA_VERSION,
+            resolve_schema_version,
+        )
 
         resolved_head = resolve_schema_version(root / "backend" / "alembic" / "versions")
         expected_schema = SCHEMA_VERSION
@@ -138,6 +142,7 @@ def check_docs(root: Path = ROOT) -> CheckResult:
     notes.append(f"schema baseline={expected_schema}")
 
     readme_path = root / "README.md"
+    readme_text = ""
     if not readme_path.is_file():
         errors.append(f"缺少 README.md: {readme_path}")
     else:
@@ -146,10 +151,53 @@ def check_docs(root: Path = ROOT) -> CheckResult:
             errors.append(f"README.md 未声明当前迁移版本为 `{expected_schema}`")
         if f"当前 head 为 `{expected_schema}`" not in readme_text:
             errors.append(f"README.md 初始化章节未声明当前 head 为 `{expected_schema}`")
-        if "不提供永久删除" in readme_text:
-            errors.append("README.md 仍残留过时的“不提供永久删除”声明，与当前实现冲突")
-        if "/api/v1/accounts/{id}/permanent" not in readme_text:
-            errors.append("README.md 接口列表缺少永久删除端点说明")
+
+    openapi_paths: set[str] | None = None
+    openapi_file = root / "docs" / "openapi.json"
+    if openapi_file.is_file():
+        try:
+            openapi_doc = json.loads(openapi_file.read_text(encoding="utf-8"))
+            if isinstance(openapi_doc, dict) and isinstance(openapi_doc.get("paths"), dict):
+                openapi_paths = set(openapi_doc["paths"].keys())
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"无法解析 docs/openapi.json: {exc}")
+
+    for cap_name, spec in CAPABILITY_MANIFEST.items():
+        if readme_text:
+            for token in spec.get("readme_required", ()):
+                if str(token) not in readme_text:
+                    errors.append(f"README.md 缺少已交付能力 `{cap_name}` 必需说明: {token}")
+            for token in spec.get("readme_forbidden", ()):
+                if str(token) in readme_text:
+                    errors.append(
+                        f"README.md 仍残留过时声明（能力 `{cap_name}` 与当前实现冲突）: {token}"
+                    )
+        doc_rel = spec.get("doc_file")
+        if isinstance(doc_rel, str):
+            doc_path = root / doc_rel
+            if not doc_path.is_file():
+                errors.append(f"缺少能力文档 {doc_rel}")
+            else:
+                doc_text = doc_path.read_text(encoding="utf-8")
+                for token in spec.get("doc_required", ()):
+                    if str(token) not in doc_text:
+                        errors.append(f"{doc_rel} 缺少已交付能力 `{cap_name}` 必需说明: {token}")
+                for token in spec.get("doc_forbidden", ()):
+                    if str(token) in doc_text:
+                        errors.append(
+                            f"{doc_rel} 仍残留过时声明（能力 `{cap_name}` 与当前实现冲突）: {token}"
+                        )
+        if openapi_paths is not None:
+            for api_path in spec.get("openapi_paths", ()):
+                if str(api_path) not in openapi_paths:
+                    errors.append(f"docs/openapi.json 缺少能力 `{cap_name}` 声明端点: {api_path}")
+            for forbidden_path in spec.get("forbidden_openapi_paths", ()):
+                if str(forbidden_path) in openapi_paths:
+                    errors.append(
+                        f"docs/openapi.json 仍残留已弃用/禁用的路径端点 `{cap_name}`: "
+                        f"{forbidden_path}"
+                    )
+    notes.append(f"verified {len(CAPABILITY_MANIFEST)} capability manifest entries")
 
     sec_doc_path = root / "docs" / "security-decisions.md"
     if not sec_doc_path.is_file():
@@ -171,7 +219,7 @@ def check_docs(root: Path = ROOT) -> CheckResult:
     return CheckResult(
         "check-docs",
         True,
-        f"README 与安全文档与迁移基线 {expected_schema} 一致",
+        f"README、功能文档与安全文档与迁移基线 {expected_schema} 及能力清单一致",
         notes=notes,
     )
 
@@ -743,63 +791,94 @@ def _check_dockerfile_digests(dockerfile: Path, errors: list[str]) -> None:
             stages.add(stage)
 
 
-def _run_online_python_audit(root: Path, errors: list[str], notes: list[str]) -> None:
+def _run_online_python_audit(
+    root: Path, errors: list[str], notes: list[str], *, strict: bool = True
+) -> None:
     pip_audit = shutil.which("pip-audit")
     uv_bin = shutil.which("uv")
     if pip_audit is None:
-        notes.append("pip-audit not installed (skipped online Python CVE query)")
+        msg = "未安装 pip-audit，无法执行在线 Python CVE 漏洞库审计"
+        if strict:
+            errors.append(msg)
+        else:
+            notes.append(msg)
         return
     if uv_bin is None:
-        notes.append("uv not installed (cannot export uv.lock to requirements for pip-audit)")
+        msg = "未安装 uv，无法导出 backend/uv.lock 执行在线 Python CVE 漏洞库审计"
+        if strict:
+            errors.append(msg)
+        else:
+            notes.append(msg)
         return
     with tempfile.TemporaryDirectory(prefix="gm_pip_audit_") as tmp:
         req_file = Path(tmp) / "requirements.txt"
-        export_proc = subprocess.run(
-            [
-                uv_bin,
-                "export",
-                "--locked",
-                "--no-hashes",
-                "--no-emit-project",
-                "--format",
-                "requirements-txt",
-                "-o",
-                str(req_file),
-            ],
-            cwd=root / "backend",
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            export_proc = subprocess.run(
+                [
+                    uv_bin,
+                    "export",
+                    "--locked",
+                    "--no-hashes",
+                    "--no-emit-project",
+                    "--format",
+                    "requirements-txt",
+                    "-o",
+                    str(req_file),
+                ],
+                cwd=root / "backend",
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"uv export 执行失败或超时: {exc}")
+            return
         if export_proc.returncode != 0:
             errors.append(
                 "uv export 导出锁定依赖失败: "
                 + (export_proc.stderr.strip() or export_proc.stdout.strip())
             )
             return
-        proc = subprocess.run(
-            [pip_audit, "--no-deps", "-r", str(req_file)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                [pip_audit, "--no-deps", "-r", str(req_file)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=180,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"pip-audit 漏洞库查询失败或不可达: {exc}")
+            return
         notes.append(f"pip-audit exit={proc.returncode}")
         if proc.returncode != 0:
             errors.append(f"pip-audit 报告漏洞或失败: {proc.stderr.strip() or proc.stdout.strip()}")
 
 
-def _run_online_frontend_audit(root: Path, errors: list[str], notes: list[str]) -> None:
+def _run_online_frontend_audit(
+    root: Path, errors: list[str], notes: list[str], *, strict: bool = True
+) -> None:
     pnpm_bin = shutil.which("pnpm")
     if pnpm_bin is None:
-        notes.append("pnpm not installed (skipped online frontend npm CVE query)")
+        msg = "未安装 pnpm，无法执行在线前端依赖 CVE 漏洞库审计"
+        if strict:
+            errors.append(msg)
+        else:
+            notes.append(msg)
         return
-    proc = subprocess.run(
-        [pnpm_bin, "audit", "--prod", "--audit-level=high"],
-        cwd=root / "frontend",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [pnpm_bin, "audit", "--prod", "--audit-level=high"],
+            cwd=root / "frontend",
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        errors.append(f"pnpm audit 漏洞库查询失败或不可达: {exc}")
+        return
     notes.append(f"pnpm-audit exit={proc.returncode}")
     if proc.returncode != 0:
         errors.append(
@@ -807,10 +886,7 @@ def _run_online_frontend_audit(root: Path, errors: list[str], notes: list[str]) 
         )
 
 
-def audit_deps(root: Path = ROOT, *, run_online: bool = False) -> CheckResult:
-    errors: list[str] = []
-    notes: list[str] = []
-
+def _check_offline_dep_integrity(root: Path, errors: list[str], notes: list[str]) -> None:
     uv_lock = root / "backend" / "uv.lock"
     pnpm_lock = root / "frontend" / "pnpm-lock.yaml"
     pyproject_file = root / "backend" / "pyproject.toml"
@@ -856,21 +932,56 @@ def audit_deps(root: Path = ROOT, *, run_online: bool = False) -> CheckResult:
     _check_dockerfile_digests(root / "backend" / "Dockerfile", errors)
     _check_dockerfile_digests(root / "infra" / "backup" / "Dockerfile", errors)
 
-    if run_online:
-        _run_online_python_audit(root, errors, notes)
-        _run_online_frontend_audit(root, errors, notes)
-    else:
-        notes.append(
-            "online CVE advisory scan not run (offline deterministic lockfile/digest check)"
-        )
 
+def audit_deps_offline_integrity(root: Path = ROOT) -> CheckResult:
+    """离线供应链确定性校验：锁文件、精确版本固定与 Dockerfile 基础镜像摘要（不查询 CVE 库）。"""
+    errors: list[str] = []
+    notes: list[str] = []
+    _check_offline_dep_integrity(root, errors, notes)
+    notes.append("offline deterministic integrity check only (no CVE vulnerability DB query)")
     if errors:
         return CheckResult(
-            "audit-deps", False, f"供应链与锁文件校验发现 {len(errors)} 项问题", errors, notes
+            "audit-deps-offline-integrity",
+            False,
+            f"离线供应链与锁文件校验发现 {len(errors)} 项问题",
+            errors,
+            notes,
         )
     return CheckResult(
-        "audit-deps", True, "锁文件完整性、依赖精确固定与镜像摘要校验通过", notes=notes
+        "audit-deps-offline-integrity",
+        True,
+        "锁文件完整性、依赖精确固定与镜像摘要校验通过（离线模式，未查 CVE 库）",
+        notes=notes,
     )
+
+
+def audit_deps_online_strict(root: Path = ROOT) -> CheckResult:
+    """严格在线漏洞库审计：叠加离线校验与 pip-audit/pnpm audit；缺工具、断网或命中漏洞均失败。"""
+    errors: list[str] = []
+    notes: list[str] = []
+    _check_offline_dep_integrity(root, errors, notes)
+    _run_online_python_audit(root, errors, notes, strict=True)
+    _run_online_frontend_audit(root, errors, notes, strict=True)
+    if errors:
+        return CheckResult(
+            "audit-deps-online-strict",
+            False,
+            f"严格在线依赖与漏洞库审计发现 {len(errors)} 项问题",
+            errors,
+            notes,
+        )
+    return CheckResult(
+        "audit-deps-online-strict",
+        True,
+        "离线供应链完整性与严格在线 Python/前端 CVE 漏洞库审计均通过",
+        notes=notes,
+    )
+
+
+def audit_deps(root: Path = ROOT, *, run_online: bool = False) -> CheckResult:
+    if run_online:
+        return audit_deps_online_strict(root)
+    return audit_deps_offline_integrity(root)
 
 
 def _print_result(res: CheckResult) -> None:
@@ -892,6 +1003,8 @@ def main(argv: list[str] | None = None) -> int:
             "compose-all",
             "nginx",
             "scan-dist",
+            "audit-deps-offline-integrity",
+            "audit-deps-online-strict",
             "audit-deps",
             "all",
         ),
@@ -899,7 +1012,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="仓库根目录")
     parser.add_argument("--dist-dir", type=Path, default=None, help="前端构建产物目录")
-    parser.add_argument("--online", action="store_true", help="尝试联网执行依赖漏洞库扫描")
+    parser.add_argument(
+        "--online",
+        action="store_true",
+        help="在 audit-deps / all 中启用严格在线依赖漏洞库扫描（缺工具或断网即失败）",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json", help="输出 JSON 格式结果")
     args = parser.parse_args(argv)
 
@@ -913,10 +1030,22 @@ def main(argv: list[str] | None = None) -> int:
         "compose-all": lambda: check_compose_all(root),
         "nginx": lambda: check_nginx(root),
         "scan-dist": lambda: scan_dist(dist_dir, src_dir=src_dir),
+        "audit-deps-offline-integrity": lambda: audit_deps_offline_integrity(root),
+        "audit-deps-online-strict": lambda: audit_deps_online_strict(root),
         "audit-deps": lambda: audit_deps(root, run_online=args.online),
     }
 
-    selected = list(runners.keys()) if args.command == "all" else [args.command]
+    if args.command == "all":
+        selected = [
+            "check-openapi",
+            "check-docs",
+            "compose-all",
+            "nginx",
+            "scan-dist",
+            "audit-deps-online-strict" if args.online else "audit-deps-offline-integrity",
+        ]
+    else:
+        selected = [args.command]
     results = [runners[name]() for name in selected]
 
     if args.as_json:

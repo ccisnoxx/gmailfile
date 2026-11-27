@@ -138,6 +138,102 @@ def test_release_excludes_private_data_preserves_modes_and_records_provenance(
         assert archive.getmember("sbom.cdx.json").mode == 0o644
         assert all(p.isreg() and p.uid == 0 and p.gid == 0 for p in archive.getmembers())
         assert not any(name.startswith((".local/", "secrets/")) for name in archive.getnames())
+    # 未签名 Tag 绝不误报 git_tag_signed=True
+    assert manifest["git_tag_verified"] is False
+    assert manifest["git_tag_signed"] is False
+
+
+def test_release_signed_attestation_binds_gates_tools_and_enforces_key_separation(
+    tmp_path, monkeypatch
+):
+    from app.core.release_attestation import (
+        ARCHIVE_ATTESTATION_KIND,
+        generate_ed25519_keypair_pem,
+        verify_attestation,
+        verify_release_source_attestation,
+    )
+
+    source = tmp_path / "source"
+    _populate_synthetic_source(source)
+    _init_git_repo(source, tag="v0.1.0-signed-test")
+    monkeypatch.setattr(module, "ROOT", source)
+
+    rel_priv, rel_pub = generate_ed25519_keypair_pem()
+    audit_priv, audit_pub = generate_ed25519_keypair_pem()
+    rel_priv_file = tmp_path / "release-signing.priv.pem"
+    rel_pub_file = tmp_path / "release-signing.pub.pem"
+    audit_pub_file = tmp_path / "audit-checkpoint.pub.pem"
+    rel_priv_file.write_bytes(rel_priv)
+    rel_pub_file.write_bytes(rel_pub)
+    audit_pub_file.write_bytes(audit_pub)
+
+    # 1. 禁止复用审计检查点密钥作为发布签名密钥
+    with pytest.raises(ValueError, match="必须与审计检查点签名密钥分离"):
+        module.package(
+            "reuse-key-release",
+            tmp_path / "out-reuse",
+            signing_key=rel_priv_file,
+            audit_public_key=rel_pub_file,
+        )
+
+    # 2. 含未通过门禁项的报告拒绝打包签发
+    bad_gate = tmp_path / "bad-gates.json"
+    bad_gate.write_text(
+        json.dumps([{"name": "audit-deps-online-strict", "ok": False, "summary": "fail"}]),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="门禁检查未通过"):
+        module.package(
+            "bad-gate-release",
+            tmp_path / "out-bad-gate",
+            signing_key=rel_priv_file,
+            gate_report=bad_gate,
+        )
+
+    # 3. 完整签发源码证明与归档证明，校验绑定内容及防篡改
+    good_gate = tmp_path / "good-gates.json"
+    good_gate.write_text(
+        json.dumps(
+            [
+                {"name": "check-openapi", "ok": True, "summary": "pass"},
+                {"name": "audit-deps-online-strict", "ok": True, "summary": "pass"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out-signed"
+    manifest = module.package(
+        "signed-release-1",
+        out,
+        signing_key=rel_priv_file,
+        audit_public_key=audit_pub_file,
+        gate_report=good_gate,
+    )
+    att_path = out / "signed-release-1.attestation.json"
+    archive_att_path = out / "signed-release-1.tar.gz.attestation.json"
+    assert att_path.is_file()
+    assert archive_att_path.is_file()
+
+    att = json.loads(att_path.read_text(encoding="utf-8"))
+    verified_source = verify_release_source_attestation(
+        att, manifest, rel_pub, audit_key_pem=audit_pub
+    )
+    assert verified_source["release_id"] == "signed-release-1"
+    assert len(verified_source["gate_results"]) == 2
+    assert "python" in verified_source["build_tools"]
+
+    archive_att = json.loads(archive_att_path.read_text(encoding="utf-8"))
+    verified_archive = verify_attestation(
+        archive_att, ARCHIVE_ATTESTATION_KIND, rel_pub, audit_key_pem=audit_pub
+    )
+    assert verified_archive["archive_sha256"] == module.digest(out / "signed-release-1.tar.gz")
+
+    # 归档内包含 release.attestation.json 且用其他公钥验签必败
+    with tarfile.open(out / "signed-release-1.tar.gz") as archive:
+        assert "release.attestation.json" in archive.getnames()
+    with pytest.raises(ValueError, match="不匹配"):
+        verify_release_source_attestation(att, manifest, audit_pub)
+    assert audit_priv is not None
 
 
 def test_release_rejects_dirty_working_tree_unless_explicitly_allowed(tmp_path, monkeypatch):

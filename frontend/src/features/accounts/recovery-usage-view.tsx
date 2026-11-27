@@ -80,9 +80,7 @@ export function RecoveryPage({
     queryFn: async ({ signal }) =>
       (
         await recoveryEmailAccounts({
-          // SDK 内部会按 RFC3986 对 path 参数编码，这里不能重复 encodeURIComponent。
-          path: { encoded_email: inspectEmail! },
-          query: { page: 1, page_size: 20 },
+          query: { email: inspectEmail!, page: 1, page_size: 20 },
           signal,
           throwOnError: true,
         })
@@ -319,7 +317,7 @@ export function RecoveryPage({
           </Table>
           {!usage.data?.total && <p>暂无辅助邮箱关联</p>}
 
-          {/* 快速下钻预览面板（调用 /api/v1/recovery-emails/{email}/accounts，绝不含密码） */}
+          {/* 快速下钻预览面板（调用 /api/v1/recovery-email-accounts?email=...，绝不含密码） */}
           {inspectEmail && (
             <GlassPanel
               variant="strong"

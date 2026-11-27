@@ -90,6 +90,11 @@ class Settings(BaseSettings):
         if self.app_env == "production":
             if base.scheme != "https" or base.hostname not in self.hosts:
                 raise ValueError("生产地址必须使用 HTTPS 且位于 ALLOWED_HOSTS")
+            if self.audit_syslog_address and not self.audit_syslog_address.strip().startswith("/"):
+                raise ValueError(
+                    "生产环境 AUDIT_SYSLOG_ADDRESS 仅允许本机绝对 Unix 套接字路径"
+                    "（如 /dev/log 或本机 rsyslog/syslog-ng 套接字），禁止直连远程 TCP/UDP"
+                )
             if (
                 not self.totp_required
                 or not self.step_up_totp_required

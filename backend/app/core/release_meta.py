@@ -49,6 +49,37 @@ PROVENANCE_LABEL_KEYS: dict[str, str] = {
     "sbom_sha256": "io.gmailmanager.sbom-sha256",
 }
 
+# 已交付核心能力清单：供 README、专项功能文档、OpenAPI 与 check_docs 门禁共同核验，防文档漂移。
+CAPABILITY_MANIFEST: dict[str, dict[str, object]] = {
+    "permanent_delete": {
+        "status": "implemented",
+        "openapi_paths": [
+            "/api/v1/accounts/{account_id}/permanent",
+            "/api/v1/accounts/batch-permanent-delete",
+        ],
+        "readme_required": [
+            "/api/v1/accounts/{id}/permanent",
+            "/api/v1/accounts/batch-permanent-delete",
+        ],
+        "readme_forbidden": ["不提供永久删除"],
+    },
+    "encrypted_export": {
+        "status": "implemented",
+        "openapi_paths": ["/api/v1/exports/encrypted"],
+        "readme_required": ["/api/v1/exports/encrypted", "--spreadsheet-safe-copy"],
+        "doc_file": "docs/csv-transfer.md",
+        "doc_required": ["/api/v1/exports/encrypted", "--spreadsheet-safe-copy"],
+        "doc_forbidden": ["带密码的加密导出仍属 P1"],
+    },
+    "recovery_email_accounts_query": {
+        "status": "implemented",
+        "openapi_paths": ["/api/v1/recovery-email-accounts"],
+        "forbidden_openapi_paths": ["/api/v1/recovery-emails/{encoded_email}/accounts"],
+        "readme_required": ["/api/v1/recovery-email-accounts"],
+        "readme_forbidden": ["/api/v1/recovery-emails/{encoded_email}/accounts"],
+    },
+}
+
 _REVISION_RE = re.compile(r'^\s*revision(?:\s*:\s*[^=]+)?\s*=\s*["\']([^"\']+)["\']', re.M)
 _DOWN_REVISION_RE = re.compile(
     r'^\s*down_revision(?:\s*:\s*[^=]+)?\s*=\s*(None|["\']([^"\']+)["\'])', re.M

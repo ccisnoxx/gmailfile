@@ -958,7 +958,7 @@ export const recoveryEmailAccounts = <ThrowOnError extends boolean = false>(
     RecoveryEmailAccountsResponses,
     RecoveryEmailAccountsErrors,
     ThrowOnError
-  >({ url: '/api/v1/recovery-emails/{encoded_email}/accounts', ...options });
+  >({ url: '/api/v1/recovery-email-accounts', ...options });
 
 /**
  * Options

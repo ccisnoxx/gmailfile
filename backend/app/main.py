@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
+from starlette.routing import Match
 
 from app.api.v1.accounts import router as accounts_router
 from app.api.v1.auth import router as auth_router
@@ -27,6 +28,59 @@ from app.services.accounts import AccountError
 from app.services.accounts.app_icon import DEFAULT_MAX_CONCURRENT_ICON_FETCHES
 from app.services.auth import SecurityError
 from app.services.csv_transfer import DEFAULT_MAX_CONCURRENT_EXPORTS
+
+
+def _match_route_template(routes, scope: dict[str, object], prefix: str = "") -> str | None:
+    raw_path = str(scope.get("path", ""))
+    for candidate in routes:
+        include_ctx = getattr(candidate, "include_context", None)
+        orig_router = getattr(candidate, "original_router", None)
+        if include_ctx is not None and orig_router is not None:
+            own_prefix = str(getattr(include_ctx, "prefix", "") or "")
+            if own_prefix and raw_path != own_prefix and not raw_path.startswith(own_prefix + "/"):
+                continue
+            inner_scope: dict[str, object] = {
+                "type": scope.get("type", "http"),
+                "method": scope.get("method", "GET"),
+                "path": (raw_path[len(own_prefix) :] or "/") if own_prefix else raw_path,
+                "root_path": "",
+            }
+            matched = _match_route_template(
+                getattr(orig_router, "routes", ()), inner_scope, prefix + own_prefix
+            )
+            if matched is not None:
+                return matched
+            continue
+        candidate_path = getattr(candidate, "path", None)
+        if not isinstance(candidate_path, str):
+            continue
+        try:
+            match, _ = candidate.matches(scope)
+        except Exception:
+            continue
+        if match in (Match.FULL, Match.PARTIAL):
+            return prefix + candidate_path
+    return None
+
+
+def _safe_request_path(request: Request) -> str:
+    """记录完整路由模板而非替换后的实际路径，避免路径参数（如邮箱、ID）进入常规日志。"""
+    app = request.scope.get("app")
+    if app is not None:
+        match_scope: dict[str, object] = {
+            "type": request.scope.get("type", "http"),
+            "method": request.scope.get("method", "GET"),
+            "path": request.url.path,
+            "root_path": "",
+        }
+        matched = _match_route_template(getattr(app, "routes", ()), match_scope)
+        if matched is not None:
+            return matched
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", None)
+    if isinstance(route_path, str):
+        return route_path
+    return "<unmatched>"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -71,7 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         safe_fields: dict[str, object] = {
             "request_id": getattr(request.state, "request_id", None),
             "method": request.method,
-            "path": request.url.path,
+            "path": _safe_request_path(request),
             "exception_type": type(exc).__name__,
             "traceback_frames": safe_traceback_frames(exc),
         }
@@ -107,7 +161,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             safe_fields: dict[str, object] = {
                 "request_id": request.state.request_id,
                 "method": request.method,
-                "path": request.url.path,
+                "path": _safe_request_path(request),
                 "exception_type": type(exc).__name__,
                 "traceback_frames": safe_traceback_frames(exc),
             }
@@ -124,7 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             extra={
                 "safe_fields": {
                     "request_id": request.state.request_id,
-                    "path": request.url.path,
+                    "path": _safe_request_path(request),
                     "status_code": response.status_code,
                     "duration_ms": round((perf_counter() - started) * 1000, 2),
                 }

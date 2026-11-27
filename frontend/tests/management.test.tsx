@@ -549,17 +549,14 @@ it('未知服务器错误不能宣称整批未提交', async () => {
   expect(screen.getByRole('alert')).not.toHaveTextContent('整批未提交');
 });
 
-it('辅助邮箱快速预览单次编码路径参数，不产生 %2540 双重编码', async () => {
+it('辅助邮箱快速预览通过查询参数传值，不将邮箱放入 URL 路径', async () => {
   const mock = stub([row()]);
-  const requestedPaths: string[] = [];
+  const requestedUrls: URL[] = [];
   const baseImpl = mock.getMockImplementation()!;
   mock.mockImplementation(async (req: Request) => {
     const url = new URL(req.url);
-    requestedPaths.push(url.pathname);
-    if (
-      url.pathname.startsWith('/api/v1/recovery-emails/') &&
-      url.pathname.endsWith('/accounts')
-    ) {
+    requestedUrls.push(url);
+    if (url.pathname === '/api/v1/recovery-email-accounts') {
       return json({
         items: [row()],
         total: 1,
@@ -583,10 +580,18 @@ it('辅助邮箱快速预览单次编码路径参数，不产生 %2540 双重编
   );
   await waitFor(() =>
     expect(
-      requestedPaths.some(
-        (p) => p === '/api/v1/recovery-emails/shared%40example.test/accounts',
+      requestedUrls.some(
+        (u) =>
+          u.pathname === '/api/v1/recovery-email-accounts' &&
+          u.searchParams.get('email') === 'shared@example.test',
       ),
     ).toBe(true),
   );
-  expect(requestedPaths.some((p) => p.includes('%2540'))).toBe(false);
+  expect(
+    requestedUrls.some(
+      (u) =>
+        u.pathname.includes('shared@example.test') ||
+        u.pathname.includes('shared%40example.test'),
+    ),
+  ).toBe(false);
 });

@@ -240,7 +240,7 @@ export function DataExportPanel({
         )?.[1] || 'gmail-accounts-encrypted.gmenc';
       triggerDownload(result.data, filename);
       setEncMessage(
-        `加密导出包（${filename}）已开始下载。离线解密命令：python -m app.cli decrypt-export --input <文件.gmenc> --output <输出.csv>`,
+        `加密导出包（${filename}）已开始下载。离线解密命令：python -m app.cli decrypt-export --input <文件.gmenc> --output <恢复原件.csv>（请勿直接用 Excel/LibreOffice 打开恢复原件；如需表格查看请追加 --spreadsheet-safe-copy <查看副本.csv>，且勿将转义副本用于重导）。`,
       );
       onToast?.(`流式加密导出包（${filename}）已开始下载。`);
     } catch (error) {
@@ -496,7 +496,11 @@ export function DataExportPanel({
             </div>
 
             <p className="text-[11.5px] text-[var(--text-secondary)]">
-              导出口令不能与管理员登录密码相同，且服务端不存储该口令，请离线妥善保存。
+              导出口令不能与管理员登录密码相同，且服务端不存储该口令，请离线妥善保存。解密后的主
+              CSV 保留原始凭据用于灾备恢复，请勿直接用 Excel / LibreOffice
+              打开；如需电子表格查看，请在解密时加{' '}
+              <code>--spreadsheet-safe-copy</code>{' '}
+              生成仅查看副本（勿用于重新导入）。
             </p>
 
             <button

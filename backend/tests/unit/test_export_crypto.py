@@ -116,6 +116,64 @@ def test_decrypt_export_file_permissions_and_cleanup_on_failure(tmp_path):
     assert not list(tmp_path.glob("*.decrypt.tmp"))
 
 
+def test_decrypt_export_cli_spreadsheet_safe_copy_and_warning(tmp_path, monkeypatch):
+    import csv
+    import io
+
+    from app.cli import decrypt_export_cli
+
+    passphrase = "offline spreadsheet safe copy 2026!"
+    payload = (
+        "\ufeffgmail_email,password,phone,notes\r\n"
+        "alice@gmail.com,=CMD|' /C calc'!A0,+86 13900008888,-private @note\r\n"
+        "bob@gmail.com,\t=evil,@handle,normal\r\n"
+    ).encode("utf-8")
+    enc_file = tmp_path / "vault.gmenc"
+    recovery_csv = tmp_path / "recovery.csv"
+    safe_copy_csv = tmp_path / "view-only.csv"
+    enc_file.write_bytes(
+        b"".join(encrypt_stream([payload], passphrase, chunk_size=4096, **FAST_KDF))
+    )
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True)
+
+    # 禁止覆盖主恢复 CSV
+    with pytest.raises(ValueError, match="不得与主恢复 CSV 路径相同"):
+        decrypt_export_cli(
+            enc_file,
+            recovery_csv,
+            spreadsheet_safe_copy=recovery_csv,
+            read_password=lambda _: passphrase,
+        )
+
+    res = decrypt_export_cli(
+        enc_file,
+        recovery_csv,
+        spreadsheet_safe_copy=safe_copy_csv,
+        read_password=lambda _: passphrase,
+    )
+    assert res["ok"] is True
+    assert "Excel/LibreOffice" in str(res["warning"])
+    assert res["spreadsheet_safe_copy"] == str(safe_copy_csv)
+    assert stat.S_IMODE(recovery_csv.stat().st_mode) == 0o600
+    assert stat.S_IMODE(safe_copy_csv.stat().st_mode) == 0o600
+
+    # 主恢复文件保持逐字节无损
+    assert recovery_csv.read_bytes() == payload
+
+    # 查看副本保留 BOM 且对公式前缀加单引号
+    safe_bytes = safe_copy_csv.read_bytes()
+    assert safe_bytes.startswith(b"\xef\xbb\xbf")
+    safe_rows = list(csv.DictReader(io.StringIO(safe_bytes.decode("utf-8-sig"))))
+    assert safe_rows[0]["password"] == "'=CMD|' /C calc'!A0"
+    assert safe_rows[0]["phone"] == "'+86 13900008888"
+    assert safe_rows[0]["notes"] == "'-private @note"
+    assert safe_rows[1]["password"] == "'\t=evil"
+    assert safe_rows[1]["phone"] == "'@handle"
+    assert safe_rows[1]["notes"] == "normal"
+
+
 def test_gme1_frozen_cross_version_vectors():
     fixture_path = Path(__file__).resolve().parents[1] / "fixtures" / "gme1_vectors.json"
     spec = json.loads(fixture_path.read_text(encoding="utf-8"))

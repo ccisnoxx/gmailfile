@@ -165,7 +165,10 @@ describe('Wave 1 P1 前端功能验证', () => {
           page_size: 30,
         });
       }
-      if (url.pathname.startsWith('/api/v1/recovery-emails/')) {
+      if (
+        url.pathname === '/api/v1/recovery-email-accounts' &&
+        url.searchParams.get('email') === 'hub@example.test'
+      ) {
         return json({
           max_page_size: 100,
           items: [{ ...deletedAccount(1), deleted_at: null }],

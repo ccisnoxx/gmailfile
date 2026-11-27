@@ -170,8 +170,8 @@ export DATA_KEY_DIRECTORY=/offline/project-data-keys ACTIVE_DATA_KEY_VERSION=1
 
 1. 既有数据库升级到迁移 `0004` 时，先以 `scripts/generate-secrets.sh --directory /absolute/secrets --audit-only` 生成 `db_audit_password`，再在无控制终端环境运行 `infra/postgres/upgrade-audit-role.sh` 创建仅允许 `INSERT` 的 `gm_audit_writer` 并撤销 `gm_app` 在 `audit_events` 上的修改/删除/截断权限。
 2. 迁移 `0004` 自动为存量 `audit_events` 回填单调序号与 SHA-256 哈希链，并启用 `BEFORE INSERT` 链计算触发器与 `BEFORE UPDATE OR DELETE` / `BEFORE TRUNCATE` 保护触发器。
-3. 运维可通过 `python -m app.cli verify-audit` 或前端“迁移与运维 → 审计日志 → 校验哈希链”核对完整性；配置 `AUDIT_SIGNING_KEY_FILE` 后可定期运行 `python -m app.cli sign-audit-checkpoint` 输出 HMAC-SHA256 签名检查点并保存至独立只读存储或日志平台。
-4. 配置 `AUDIT_SYSLOG_ADDRESS`（如 `tcp://syslog.internal:514` 或 `/dev/log`）可将每次已提交的哈希链审计事件实时转发到外部日志平台；即使不配 Syslog，`gmail_manager.audit` 也会输出独立结构化 JSON 流供采集器收集。
+3. 运维可通过 `python -m app.cli verify-audit` 或前端“迁移与运维 → 审计日志 → 校验哈希链”核对完整性；配置独立 Ed25519 私钥 `AUDIT_SIGNING_KEY_FILE`（与发布签名密钥严格分离）后可定期运行 `python -m app.cli sign-audit-checkpoint` 输出签名检查点，并用独立公钥通过 `verify-audit-checkpoint` 离线验签。
+4. 生产环境配置 `AUDIT_SYSLOG_ADDRESS` 时**仅允许本机绝对 Unix 套接字路径**（如 `/dev/log` 或本机 rsyslog/syslog-ng 套接字），由本机系统日志守护进程负责持久化队列、TLS/mTLS、RELP/可靠 TCP 重试与远程日志服务器转发，避免 API 进程同步连接远端 TCP 阻塞启动或请求路径；配置 `AUDIT_SYSLOG_SPOOL_FILE` 时，瞬时不可达记录通过跨进程 `flock` 互斥锁与 `fsync` 落入 `0600` 本地队列，并支持 `flush-audit-spool` 安全并发重放（损坏行自动隔离至 `.quarantine` 文件而不静默丢弃）。即使不配 Syslog，`gmail_manager.audit` 也会输出独立结构化 JSON 流供采集器收集。
 5. **保留与清理策略**：在线数据库默认至少保留 365 天（`AUDIT_RETENTION_DAYS`）审计记录，日常应用与定时任务严禁删改。达到合规清理窗口时，必须先完成全量加密备份、导出离线归档并核验 `verify-audit` 与最新签名检查点，再由 DBA 在变更授权下单独执行受控归档清理并记录新基线。
 
 ## 从阶段 3 升级

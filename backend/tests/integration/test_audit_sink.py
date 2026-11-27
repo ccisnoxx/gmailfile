@@ -321,7 +321,7 @@ def test_audit_sink_spools_failed_syslog_events_and_flushes_on_recovery(
                 up_sock.bind(str(unix_path))
                 up_sock.settimeout(2.0)
                 result = flush_audit_spool(settings)
-                assert result == {"flushed": 1, "remaining": 0}
+                assert result == {"flushed": 1, "remaining": 0, "quarantined": 0}
                 assert not spool_file.exists()
                 packet, _ = up_sock.recvfrom(4096)
                 replayed = json.loads(

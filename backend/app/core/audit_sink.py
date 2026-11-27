@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import logging.handlers
@@ -14,6 +15,8 @@ import socket
 import sys
 import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -27,6 +30,8 @@ from app.models import AuditEvent
 AUDIT_LOGGER_NAME = "gmail_manager.audit"
 _PENDING_KEY = "pending_audit_records"
 MAX_SPOOL_BYTES = 10 * 1024 * 1024
+MAX_QUARANTINE_BYTES = 10 * 1024 * 1024
+AUDIT_SYSLOG_TIMEOUT_SECONDS = 2.0
 _SPOOL_LOCK = threading.Lock()
 
 _FACILITY_MAP: dict[str, int] = {
@@ -65,10 +70,70 @@ def parse_syslog_target(address: str) -> tuple[str | tuple[str, int], socket.Soc
     return (parsed.hostname, port), socktype
 
 
+def _spool_lock_path(spool_file: Path) -> Path:
+    return spool_file.with_name(f"{spool_file.name}.lock")
+
+
+def spool_quarantine_path(spool_file: Path) -> Path:
+    return spool_file.with_name(f"{spool_file.name}.quarantine")
+
+
+@contextmanager
+def _spool_process_lock(spool_file: Path) -> Iterator[None]:
+    """进程内线程锁叠加独立锁文件的 fcntl.flock，保证 API 与 CLI 跨进程访问 spool 互斥。"""
+    spool_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = _spool_lock_path(spool_file)
+    with _SPOOL_LOCK:
+        lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            os.fchmod(lock_fd, 0o600)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+
+
+def _write_all_and_sync(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    written_total = 0
+    while written_total < len(view):
+        written = os.write(fd, view[written_total:])
+        if written <= 0:
+            raise OSError("short write to audit spool file")
+        written_total += written
+    os.fsync(fd)
+
+
+def _append_quarantine_lines_locked(spool_file: Path, corrupt_lines: list[bytes]) -> None:
+    if not corrupt_lines:
+        return
+    q_path = spool_quarantine_path(spool_file)
+    payload = b"".join(line.rstrip(b"\r\n") + b"\n" for line in corrupt_lines)
+    current_size = q_path.stat().st_size if q_path.exists() else 0
+    if current_size + len(payload) > MAX_QUARANTINE_BYTES:
+        logging.getLogger("gmail_manager").error(
+            "audit_spool_quarantine_full",
+            extra={"safe_fields": {"max_bytes": MAX_QUARANTINE_BYTES}},
+        )
+        return
+    fd = os.open(q_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        _write_all_and_sync(fd, payload)
+    finally:
+        os.close(fd)
+    logging.getLogger("gmail_manager").error(
+        "audit_spool_corrupt_quarantined",
+        extra={"safe_fields": {"count": len(corrupt_lines)}},
+    )
+
+
 def _append_spool_record(spool_file: Path, payload: dict[str, object]) -> None:
     line = (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
-    with _SPOOL_LOCK:
-        spool_file.parent.mkdir(parents=True, exist_ok=True)
+    with _spool_process_lock(spool_file):
         current_size = spool_file.stat().st_size if spool_file.exists() else 0
         if current_size + len(line) > MAX_SPOOL_BYTES:
             logging.getLogger("gmail_manager").error(
@@ -78,25 +143,25 @@ def _append_spool_record(spool_file: Path, payload: dict[str, object]) -> None:
             return
         fd = os.open(spool_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
-            os.chmod(spool_file, 0o600)
-            os.write(fd, line)
+            os.fchmod(fd, 0o600)
+            _write_all_and_sync(fd, line)
         finally:
             os.close(fd)
 
 
-def _rewrite_spool_lines(spool_file: Path, lines: list[str]) -> None:
+def _rewrite_spool_lines_locked(spool_file: Path, lines: list[bytes]) -> None:
     if not lines:
         spool_file.unlink(missing_ok=True)
         return
     spool_file.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=".audit_spool_", dir=str(spool_file.parent))
     try:
-        os.chmod(tmp_name, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            for item in lines:
-                handle.write(item.rstrip("\n") + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+        os.fchmod(fd, 0o600)
+        data = b"".join(item.rstrip(b"\r\n") + b"\n" for item in lines)
+        try:
+            _write_all_and_sync(fd, data)
+        finally:
+            os.close(fd)
         os.replace(tmp_name, spool_file)
     except OSError:
         Path(tmp_name).unlink(missing_ok=True)
@@ -104,20 +169,109 @@ def _rewrite_spool_lines(spool_file: Path, lines: list[str]) -> None:
 
 
 class _ResilientSysLogHandler(logging.handlers.SysLogHandler):
-    """远程 Syslog 写入异常时转为安全告警日志并写入可选持久化队列，不阻断事务。"""
+    """Syslog 容错处理器：有限连接/发送超时、启动不可达不阻断 API、失败自动写入磁盘队列。"""
 
-    def __init__(self, *args, spool_file: Path | None = None, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        *args,
+        spool_file: Path | None = None,
+        timeout: float = AUDIT_SYSLOG_TIMEOUT_SECONDS,
+        **kwargs,
+    ) -> None:
         self._spool_file = spool_file
+        self._timeout = timeout
         self.last_emit_failed = False
+
+        logging.Handler.__init__(self)
+        address = kwargs.get(
+            "address", args[0] if args else ("localhost", logging.handlers.SYSLOG_UDP_PORT)
+        )
+        facility = kwargs.get("facility", args[1] if len(args) > 1 else self.LOG_USER)
+        socktype = kwargs.get("socktype", args[2] if len(args) > 2 else None)
+        self.address = address
+        self.facility = facility
+        self.socktype = socktype
+        self.socket = None
+        self.unixsocket = isinstance(address, str)
+        try:
+            self.createSocket()
+        except OSError as exc:
+            self._reset_socket()
+            logging.getLogger("gmail_manager").error(
+                "audit_sink_init_failed",
+                extra={"safe_fields": {"exception_type": type(exc).__name__}},
+            )
+
+    def _reset_socket(self) -> None:
+        sock = getattr(self, "socket", None)
+        self.socket = None
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+    def _connect_unixsocket(self, address) -> None:
+        super()._connect_unixsocket(address)
+        if self.socket is not None:
+            self.socket.settimeout(self._timeout)
+
+    def createSocket(self) -> None:
+        address = self.address
+        socktype = self.socktype
+        if isinstance(address, str):
+            self.unixsocket = True
+            try:
+                self._connect_unixsocket(address)
+            except OSError:
+                self._reset_socket()
+            return
+        self.unixsocket = False
+        if socktype is None:
+            socktype = socket.SOCK_DGRAM
+        host, port = address
+        ress = socket.getaddrinfo(host, port, 0, socktype)
+        if not ress:
+            raise OSError("getaddrinfo returns an empty list")
+        err: OSError | None = None
+        sock: socket.socket | None = None
+        for af, res_socktype, proto, _, sa in ress:
+            err = None
+            sock = None
+            try:
+                sock = socket.socket(af, res_socktype, proto)
+                sock.settimeout(self._timeout)
+                if res_socktype == socket.SOCK_STREAM:
+                    sock.connect(sa)
+                socktype = res_socktype
+                break
+            except OSError as exc:
+                err = exc
+                if sock is not None:
+                    sock.close()
+                    sock = None
+        if err is not None or sock is None:
+            raise err or OSError("failed to create syslog socket")
+        self.socket = sock
+        self.socktype = socktype
 
     def emit(self, record: logging.LogRecord) -> None:
         self.last_emit_failed = False
+        try:
+            if self.socket is None:
+                self.createSocket()
+            if self.socket is None:
+                raise FileNotFoundError("syslog socket unavailable")
+        except Exception:
+            self.handleError(record)
+            return
         super().emit(record)
 
     def handleError(self, record: logging.LogRecord) -> None:
         self.last_emit_failed = True
         _, exc, _ = sys.exc_info()
+        if self.unixsocket or self.socktype == socket.SOCK_STREAM:
+            self._reset_socket()
         logging.getLogger("gmail_manager").error(
             "audit_sink_failed",
             extra={"safe_fields": {"exception_type": type(exc).__name__ if exc else "OSError"}},
@@ -134,25 +288,28 @@ class _ResilientSysLogHandler(logging.handlers.SysLogHandler):
                     )
 
 
-def _drain_spool_with_handler(handler: _ResilientSysLogHandler) -> tuple[int, int]:
+def _drain_spool_with_handler(handler: _ResilientSysLogHandler) -> tuple[int, int, int]:
     spool_file = handler._spool_file
     if spool_file is None or not spool_file.is_file():
-        return 0, 0
-    with _SPOOL_LOCK:
+        return 0, 0, 0
+    with _spool_process_lock(spool_file):
         if not spool_file.is_file():
-            return 0, 0
-        raw_lines = [
-            line for line in spool_file.read_text(encoding="utf-8").splitlines() if line.strip()
-        ]
+            return 0, 0, 0
+        raw_lines = [line for line in spool_file.read_bytes().splitlines() if line.strip()]
         if not raw_lines:
             spool_file.unlink(missing_ok=True)
-            return 0, 0
+            return 0, 0, 0
         flushed = 0
-        remaining: list[str] = []
-        for idx, line in enumerate(raw_lines):
+        remaining: list[bytes] = []
+        corrupt: list[bytes] = []
+        for idx, raw_line in enumerate(raw_lines):
             try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
+                payload = json.loads(raw_line.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                corrupt.append(raw_line)
+                continue
+            if not isinstance(payload, dict):
+                corrupt.append(raw_line)
                 continue
             rec = logging.LogRecord(
                 name=AUDIT_LOGGER_NAME,
@@ -170,14 +327,17 @@ def _drain_spool_with_handler(handler: _ResilientSysLogHandler) -> tuple[int, in
                 remaining = raw_lines[idx:]
                 break
             flushed += 1
-        _rewrite_spool_lines(spool_file, remaining)
-        return flushed, len(remaining)
+        _append_quarantine_lines_locked(spool_file, corrupt)
+        _rewrite_spool_lines_locked(spool_file, remaining)
+        return flushed, len(remaining), len(corrupt)
 
 
-def flush_audit_spool(settings: Settings) -> dict[str, int]:
-    """将持久化磁盘队列中的待发审计记录重放至远程 Syslog。"""
+def flush_audit_spool(
+    settings: Settings, *, timeout: float = AUDIT_SYSLOG_TIMEOUT_SECONDS
+) -> dict[str, int]:
+    """将持久化磁盘队列中的待发审计记录重放至 Syslog，损坏行隔离至 .quarantine 文件。"""
     if not settings.audit_syslog_address:
-        raise ValueError("未配置 AUDIT_SYSLOG_ADDRESS，无法重放远程 Syslog 队列")
+        raise ValueError("未配置 AUDIT_SYSLOG_ADDRESS，无法重放 Syslog 队列")
     if settings.audit_syslog_spool_file is None:
         raise ValueError("未配置 AUDIT_SYSLOG_SPOOL_FILE，没有可重放的持久化队列")
     target, socktype = parse_syslog_target(settings.audit_syslog_address)
@@ -186,6 +346,7 @@ def flush_audit_spool(settings: Settings) -> dict[str, int]:
         "address": target,
         "facility": facility,
         "spool_file": settings.audit_syslog_spool_file,
+        "timeout": timeout,
     }
     if socktype is not None:
         kwargs["socktype"] = socktype
@@ -193,13 +354,15 @@ def flush_audit_spool(settings: Settings) -> dict[str, int]:
     handler.ident = "gmail-manager-audit: "
     handler.setFormatter(AuditJsonFormatter())
     try:
-        flushed, remaining = _drain_spool_with_handler(handler)
-        return {"flushed": flushed, "remaining": remaining}
+        flushed, remaining, quarantined = _drain_spool_with_handler(handler)
+        return {"flushed": flushed, "remaining": remaining, "quarantined": quarantined}
     finally:
         handler.close()
 
 
-def configure_audit_sink(settings: Settings) -> logging.Logger:
+def configure_audit_sink(
+    settings: Settings, *, timeout: float = AUDIT_SYSLOG_TIMEOUT_SECONDS
+) -> logging.Logger:
     logger = logging.getLogger(AUDIT_LOGGER_NAME)
     for existing in list(logger.handlers):
         logger.removeHandler(existing)
@@ -219,6 +382,7 @@ def configure_audit_sink(settings: Settings) -> logging.Logger:
             "address": target,
             "facility": facility,
             "spool_file": settings.audit_syslog_spool_file,
+            "timeout": timeout,
         }
         if socktype is not None:
             kwargs["socktype"] = socktype

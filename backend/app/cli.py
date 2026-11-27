@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 from app.core.audit_sink import flush_audit_spool
 from app.core.config import Settings
 from app.core.encryption import DecryptionError, EncryptionService
-from app.core.export_crypto import ExportDecryptionError, decrypt_export_file
+from app.core.export_crypto import (
+    ExportDecryptionError,
+    decrypt_export_file,
+    write_spreadsheet_safe_csv_copy,
+)
 from app.core.security import (
     MIN_ADMIN_PASSWORD_LENGTH,
     passwords,
@@ -130,10 +134,19 @@ def verify_keys_cli(engine, settings: Settings, *, require_version: int | None =
 
 
 def decrypt_export_cli(
-    input_path: Path, output_path: Path, *, read_password=getpass.getpass
+    input_path: Path,
+    output_path: Path,
+    *,
+    spreadsheet_safe_copy: Path | None = None,
+    read_password=getpass.getpass,
 ) -> dict:
     if not sys.stdin.isatty() or not sys.stderr.isatty():
         raise ValueError("必须在交互式终端运行，不接受管道口令")
+    if (
+        spreadsheet_safe_copy is not None
+        and output_path.resolve() == spreadsheet_safe_copy.resolve()
+    ):
+        raise ValueError("--spreadsheet-safe-copy 输出路径不得与主恢复 CSV 路径相同")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", getpass.GetPassWarning)
@@ -141,7 +154,20 @@ def decrypt_export_cli(
     except getpass.GetPassWarning:
         raise ValueError("无法安全读取口令，请检查终端回显控制") from None
     written = decrypt_export_file(input_path, output_path, passphrase)
-    return {"ok": True, "bytes_written": written}
+    result: dict[str, object] = {
+        "ok": True,
+        "bytes_written": written,
+        "warning": (
+            "主输出 CSV 为无损凭据恢复文件，请勿直接用 Excel/LibreOffice 打开；"
+            "如需在电子表格中查看，请使用 --spreadsheet-safe-copy 生成查看副本，"
+            "且不要将转义副本用于重新导入。"
+        ),
+    }
+    if spreadsheet_safe_copy is not None:
+        safe_written = write_spreadsheet_safe_csv_copy(output_path, spreadsheet_safe_copy)
+        result["spreadsheet_safe_copy"] = str(spreadsheet_safe_copy)
+        result["spreadsheet_safe_copy_bytes"] = safe_written
+    return result
 
 
 class SafeArgumentParser(argparse.ArgumentParser):
@@ -214,7 +240,21 @@ def build_parser() -> SafeArgumentParser:
         "decrypt-export", help="离线流式校验并解密 .gmenc 加密导出文件"
     )
     decrypt_parser.add_argument("--input", required=True, type=Path, help="输入 .gmenc 路径")
-    decrypt_parser.add_argument("--output", required=True, type=Path, help="输出 CSV 路径（0600）")
+    decrypt_parser.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="输出无损恢复 CSV 路径（0600，请勿直接用电子表格程序打开）",
+    )
+    decrypt_parser.add_argument(
+        "--spreadsheet-safe-copy",
+        type=Path,
+        default=None,
+        help=(
+            "可选输出仅用于 Excel/LibreOffice 查看的公式转义副本"
+            "（0600，禁止用于重新导入或灾备恢复）"
+        ),
+    )
     return parser
 
 
@@ -223,7 +263,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "decrypt-export":
         try:
-            result = decrypt_export_cli(args.input, args.output)
+            result = decrypt_export_cli(
+                args.input,
+                args.output,
+                spreadsheet_safe_copy=args.spreadsheet_safe_copy,
+            )
             print(json.dumps(result, ensure_ascii=False))
             return 0
         except (ValueError, ExportDecryptionError, OSError) as exc:

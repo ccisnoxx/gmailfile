@@ -27,16 +27,21 @@ Docker 仅内部网络时可能没有宿主机端口发布，故示例仅让 API
 
 ```sh
 (cd frontend && pnpm install --frozen-lockfile && pnpm build)
+# 先在私有发布机导出全量门禁结果，再使用独立 Ed25519 发布私钥（与审计检查点密钥分离）签发发布包：
+(cd backend && uv run --locked python ../scripts/check-release-gates.py all --online --json > ../.local/gates.json)
 python3 scripts/package-release.py --release-id example-release-1 \
-  --directory "$PWD/.local/releases"
+  --directory "$PWD/.local/releases" \
+  --signing-key /secure/offline/release-signing.priv.pem \
+  --audit-public-key /secure/offline/audit-checkpoint.pub.pem \
+  --gate-report "$PWD/.local/gates.json"
 ```
 
 `example-release-1` 是示例 ID，不代表实际发布。白名单包不含 `.env`、`.local`、Secret、备份、node_modules 或虚拟环境。
-打包脚本自动读取真实 Git `HEAD`（`git_commit`、`git_tree`、`git_tag`、`working_tree_clean`），默认要求工作区干净，并生成 CycloneDX SBOM（`sbom.cdx.json`）与确定性源码归档摘要（`source_archive_sha256`）。
+打包脚本自动读取真实 Git `HEAD`（`git_commit`、`git_tree`、`git_tag`、`git_tag_verified`、`working_tree_clean`），默认要求工作区干净，生成 CycloneDX SBOM（`sbom.cdx.json`）、确定性源码归档摘要（`source_archive_sha256`）与独立 Ed25519 签名证明（`release.attestation.json` 及外部 `.tar.gz.attestation.json`，覆盖 `release_id`、`git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256`、归档摘要、门禁结果与构建工具版本）。
 实例版配置由私有流程单独提供；不要将它放回公开源码目录后重新公开打包。
-源/静态发布与实例配置的最终组合必须通过私有发布器的 `plan`、溯源摘要核验和精确 Compose 校验（含基础镜像 `@sha256:<digest>` 与 `STEP_UP_TOTP_REQUIRED=true`）。
-构建阶段自动将 `git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256` 写入镜像 OCI 标签，部署阶段同时校验镜像 ID 与溯源标签。
-上传时核验发布包传输校验和；发布 ID、实际镜像 ID/RepoDigest、锁文件和 schema 基线只写入私有清单。
+源/静态发布与实例配置的最终组合必须通过私有发布器的 `plan`、独立公钥验签（`RELEASE_SIGNING_PUBLIC_KEY_FILE` 或 `--signing-public-key`）、溯源摘要核验和精确 Compose 校验（含基础镜像 `@sha256:<digest>` 与 `STEP_UP_TOTP_REQUIRED=true`）。
+构建阶段自动将 `git_commit`、`git_tree`、`source_archive_sha256`、`sbom_sha256` 写入镜像 OCI 标签，并通过 `--signing-key` 或独立 `sign-images` 子命令生成镜像签名证明 `images.attestation.json`（覆盖最终镜像 ID 与 `repo_digests`）；部署前强制核验源码与镜像两份 Ed25519 签名证明及本地镜像 ID/溯源标签。
+上传时核验发布包 `.tar.gz.attestation.json` 签名与校验和；发布 ID、实际镜像 ID/RepoDigest、锁文件和 schema 基线只写入私有清单。
 新发布不覆盖旧目录/镜像标签，旧发布与镜像保留以便恢复。
 
 ## 首次部署按依赖顺序推进
@@ -46,15 +51,17 @@ python3 scripts/package-release.py --release-id example-release-1 \
 3. 安装实例版 HTTP-01 引导站点，其他请求返回 503。先 `nginx -t`，再 reload；从公网核验挑战文件。
 4. 使用独立 Certbot 配置/work/log 目录签发精确域名证书，不复用其他项目的 DNS/ACME 凭据，不重写共享 Nginx。
 5. 安装实例版正式站点、proxy 片段和续期 unit。验证主机名/证书链、HTTP 跳转、安全头、续期 dry-run 与 timer 状态。
-6. 用私有发布器构建新 ID，保存镜像记录；在独立 PG18 项目验证应用回归和漏洞，再部署。
+6. 用私有发布器构建新 ID、签发 `images.attestation.json` 并保存镜像记录；在独立 PG18 项目验证应用回归和漏洞，再部署。
 
 下面**只展示定制后的私有实例发布器用法**，不是直接执行公开模板的指令：
 
 ```sh
 R=/opt/example/gmail-manager/releases/example-release-1
-python3 "$R/scripts/deploy.py" plan --release "$R"
-python3 "$R/scripts/deploy.py" build --release "$R" --execute
-python3 "$R/scripts/deploy.py" deploy --release "$R" --execute
+PUB=/opt/example/gmail-manager/release-signing.pub.pem
+python3 "$R/scripts/deploy.py" plan --release "$R" --signing-public-key "$PUB"
+python3 "$R/scripts/deploy.py" build --release "$R" --signing-public-key "$PUB" --execute
+python3 "$R/scripts/deploy.py" sign-images --release "$R" --signing-public-key "$PUB" --signing-key /secure/offline/release-signing.priv.pem
+python3 "$R/scripts/deploy.py" deploy --release "$R" --signing-public-key "$PUB" --execute
 ```
 
 发布顺序：停止本项目 API/backup → PG 健康 → one-off Alembic → head 核对 → 本项目卷权限 → API 健康 → 宿主机回环 ready → 原子 current。

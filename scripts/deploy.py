@@ -14,6 +14,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+from app.core.release_attestation import (  # noqa: E402
+    IMAGE_ATTESTATION_KIND,
+    build_image_attestation_payload,
+    collect_build_tool_versions,
+    sign_attestation,
+    verify_release_image_attestation,
+    verify_release_source_attestation,
+)
 from app.core.release_meta import (  # noqa: E402
     APP_VERSION,
     BUILDKIT_IMAGE,
@@ -31,6 +39,24 @@ FILES = ("docker-compose.yml", "docker-compose.production.yml", "docker-compose.
 BUILT_IMAGE_NAMES = ("api", "backup", "restore", "test")
 _HEX40_RE = re.compile(r"[0-9a-f]{40}")
 _HEX64_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def resolve_signing_public_key(explicit: Path | None = None) -> Path:
+    if explicit is not None:
+        return explicit
+    env_path = os.environ.get("RELEASE_SIGNING_PUBLIC_KEY_FILE")
+    if env_path:
+        return Path(env_path)
+    return ROOT / "release-signing.pub.pem"
+
+
+def resolve_audit_public_key(explicit: Path | None = None) -> Path | None:
+    if explicit is not None:
+        return explicit
+    env_path = os.environ.get("AUDIT_SIGNING_PUBLIC_KEY_FILE")
+    if env_path:
+        return Path(env_path)
+    return None
 
 
 def require(condition, message):
@@ -61,8 +87,14 @@ def expected_image_labels(manifest: dict) -> dict[str, str]:
     }
 
 
-def verify_release_provenance(release: Path, manifest: dict) -> None:
-    """核对发布清单的 Git 溯源、工作区洁净度、SBOM 摘要及源码归档摘要。"""
+def verify_release_provenance(
+    release: Path,
+    manifest: dict,
+    *,
+    signing_public_key: Path | None = None,
+    audit_public_key: Path | None = None,
+) -> dict:
+    """核对发布清单的 Git 溯源、工作区洁净度、SBOM 摘要、源码归档摘要及独立 Ed25519 发布签名。"""
     require(
         manifest.get("release_id") == release.name
         and manifest.get("app_version") == APP_VERSION
@@ -101,6 +133,111 @@ def verify_release_provenance(release: Path, manifest: dict) -> None:
             canonical_source_archive_sha256(release, files) == manifest["source_archive_sha256"],
             "源码归档摘要校验失败，发布目录内容与清单不一致",
         )
+    attestation_file = release / "release.attestation.json"
+    require(
+        attestation_file.is_file() and not attestation_file.is_symlink(),
+        "发布目录缺少独立的 Ed25519 签名证明 release.attestation.json",
+    )
+    pub_key_path = resolve_signing_public_key(signing_public_key)
+    require(
+        pub_key_path.is_file() and not pub_key_path.is_symlink(),
+        f"缺少受信发布验签公钥文件：{pub_key_path}",
+    )
+    audit_key_path = resolve_audit_public_key(audit_public_key)
+    audit_key_bytes = (
+        audit_key_path.read_bytes()
+        if audit_key_path is not None and audit_key_path.is_file()
+        else None
+    )
+    try:
+        attestation = json.loads(attestation_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("无法解析 release.attestation.json") from exc
+    verify_release_source_attestation(
+        attestation,
+        manifest,
+        pub_key_path.read_bytes(),
+        audit_key_pem=audit_key_bytes,
+    )
+    return attestation
+
+
+def verify_images_provenance(
+    release: Path,
+    manifest: dict,
+    images: dict,
+    *,
+    signing_public_key: Path | None = None,
+    audit_public_key: Path | None = None,
+) -> dict:
+    """核对构建镜像记录 images.json 的独立 Ed25519 签名证明（绑定最终镜像 ID 与 RepoDigest）。"""
+    att_file = release / "images.attestation.json"
+    require(
+        att_file.is_file() and not att_file.is_symlink(),
+        "发布目录缺少镜像签名证明 images.attestation.json",
+    )
+    pub_key_path = resolve_signing_public_key(signing_public_key)
+    require(
+        pub_key_path.is_file() and not pub_key_path.is_symlink(),
+        f"缺少受信发布验签公钥文件：{pub_key_path}",
+    )
+    audit_key_path = resolve_audit_public_key(audit_public_key)
+    audit_key_bytes = (
+        audit_key_path.read_bytes()
+        if audit_key_path is not None and audit_key_path.is_file()
+        else None
+    )
+    try:
+        attestation = json.loads(att_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("无法解析 images.attestation.json") from exc
+    verify_release_image_attestation(
+        attestation,
+        manifest,
+        images,
+        pub_key_path.read_bytes(),
+        audit_key_pem=audit_key_bytes,
+    )
+    return attestation
+
+
+def sign_release_images(
+    release: Path,
+    signing_key: Path,
+    *,
+    signing_public_key: Path | None = None,
+    audit_public_key: Path | None = None,
+) -> dict:
+    """对已完成构建的 images.json 签发独立 Ed25519 镜像证明 images.attestation.json。"""
+    manifest = json.loads((release / "release.json").read_text(encoding="utf-8"))
+    verify_release_provenance(
+        release,
+        manifest,
+        signing_public_key=signing_public_key,
+        audit_public_key=audit_public_key,
+    )
+    images_file = release / "images.json"
+    require(
+        images_file.is_file() and not images_file.is_symlink(),
+        "缺少 images.json，请先构建镜像",
+    )
+    images = json.loads(images_file.read_text(encoding="utf-8"))
+    audit_key_path = resolve_audit_public_key(audit_public_key)
+    audit_key_bytes = (
+        audit_key_path.read_bytes()
+        if audit_key_path is not None and audit_key_path.is_file()
+        else None
+    )
+    attestation = sign_attestation(
+        IMAGE_ATTESTATION_KIND,
+        build_image_attestation_payload(
+            manifest, images, build_tools=collect_build_tool_versions(include_docker=True)
+        ),
+        signing_key.read_bytes(),
+        audit_key_pem=audit_key_bytes,
+    )
+    atomic_json(release / "images.attestation.json", attestation)
+    return attestation
 
 
 def compose(release):
@@ -240,10 +377,30 @@ def loopback_ready():
         )
 
 
-def deploy(command, release, *, rollback=False, compatible=False):
+def deploy(
+    command,
+    release,
+    *,
+    rollback=False,
+    compatible=False,
+    signing_public_key: Path | None = None,
+    audit_public_key: Path | None = None,
+):
     manifest = json.loads((release / "release.json").read_text())
-    verify_release_provenance(release, manifest)
+    source_att = verify_release_provenance(
+        release,
+        manifest,
+        signing_public_key=signing_public_key,
+        audit_public_key=audit_public_key,
+    )
     images = json.loads((release / "images.json").read_text())
+    image_att = verify_images_provenance(
+        release,
+        manifest,
+        images,
+        signing_public_key=signing_public_key,
+        audit_public_key=audit_public_key,
+    )
     expected_labels = expected_image_labels(manifest)
     for name, record in images.items():
         require(
@@ -310,6 +467,8 @@ def deploy(command, release, *, rollback=False, compatible=False):
             "git_tag": manifest.get("git_tag"),
             "source_archive_sha256": manifest["source_archive_sha256"],
             "sbom_sha256": manifest["sbom_sha256"],
+            "attestation_key_id": source_att["key_id"],
+            "image_attestation_key_id": image_att["key_id"],
             "images": images,
             "activated_at": datetime.now(UTC).isoformat(),
             "scheduler": "not_started_by_deploy",
@@ -317,9 +476,20 @@ def deploy(command, release, *, rollback=False, compatible=False):
     )
 
 
-def build(release):
+def build(
+    release,
+    *,
+    signing_key: Path | None = None,
+    signing_public_key: Path | None = None,
+    audit_public_key: Path | None = None,
+):
     manifest = json.loads((release / "release.json").read_text())
-    verify_release_provenance(release, manifest)
+    verify_release_provenance(
+        release,
+        manifest,
+        signing_public_key=signing_public_key,
+        audit_public_key=audit_public_key,
+    )
     require(not (release / "images.json").exists(), "发布镜像记录已存在，禁止覆盖或重打同名标签")
     require(
         int(Path("/proc/meminfo").read_text().split("MemAvailable:")[1].split()[0])
@@ -390,6 +560,13 @@ def build(release):
                 "labels": (info.get("Config") or {}).get("Labels") or {},
             }
         atomic_json(release / "images.json", records)
+        if signing_key is not None:
+            sign_release_images(
+                release,
+                signing_key,
+                signing_public_key=signing_public_key,
+                audit_public_key=audit_public_key,
+            )
     finally:
         run(["docker", "buildx", "stop", BUILDER])
 
@@ -397,9 +574,21 @@ def build(release):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "action", choices=["plan", "build", "deploy", "backup-once", "enable-backup", "rollback"]
+        "action",
+        choices=[
+            "plan",
+            "build",
+            "sign-images",
+            "deploy",
+            "backup-once",
+            "enable-backup",
+            "rollback",
+        ],
     )
     parser.add_argument("--release", type=Path, required=True)
+    parser.add_argument("--signing-public-key", type=Path, default=None)
+    parser.add_argument("--signing-key", type=Path, default=None)
+    parser.add_argument("--audit-public-key", type=Path, default=None)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--schema-compatible", action="store_true")
     args = parser.parse_args()
@@ -410,7 +599,29 @@ def main():
         "发布目录不合法",
     )
     manifest = json.loads((release / "release.json").read_text())
-    verify_release_provenance(release, manifest)
+    pub_key = args.signing_public_key.resolve() if args.signing_public_key else None
+    priv_key = args.signing_key.resolve() if args.signing_key else None
+    audit_pub_key = args.audit_public_key.resolve() if args.audit_public_key else None
+    source_att = verify_release_provenance(
+        release, manifest, signing_public_key=pub_key, audit_public_key=audit_pub_key
+    )
+    if args.action == "sign-images":
+        require(priv_key is not None, "sign-images 必须提供 --signing-key（独立 Ed25519 发布私钥）")
+        img_att = sign_release_images(
+            release, priv_key, signing_public_key=pub_key, audit_public_key=audit_pub_key
+        )
+        print(
+            json.dumps(
+                {
+                    "action": "sign-images",
+                    "release": str(release),
+                    "key_id": img_att["key_id"],
+                    "attestation": str(release / "images.attestation.json"),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
     os.environ.update(
         RELEASE_ID=release.name, RELEASE_DIRECTORY=str(release), DEPLOYMENT_ROOT=str(ROOT)
     )
@@ -428,6 +639,7 @@ def main():
                     "git_commit": manifest["git_commit"],
                     "source_archive_sha256": manifest["source_archive_sha256"],
                     "sbom_sha256": manifest["sbom_sha256"],
+                    "attestation_key_id": source_att["key_id"],
                     "compose": command,
                 },
                 ensure_ascii=False,
@@ -442,10 +654,20 @@ def main():
     lock = (ROOT / ".deployment.lock").open("a")
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     if args.action == "build":
-        build(release)
+        build(
+            release,
+            signing_key=priv_key,
+            signing_public_key=pub_key,
+            audit_public_key=audit_pub_key,
+        )
     elif args.action in {"deploy", "rollback"}:
         deploy(
-            command, release, rollback=args.action == "rollback", compatible=args.schema_compatible
+            command,
+            release,
+            rollback=args.action == "rollback",
+            compatible=args.schema_compatible,
+            signing_public_key=pub_key,
+            audit_public_key=audit_pub_key,
         )
     else:
         require((ROOT / "current").resolve() == release, "仅允许操作当前实际发布的备份服务")

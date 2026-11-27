@@ -156,9 +156,11 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 
 - **CSV 导入**：UTF-8/BOM、10 MiB、手工映射、规范化重复 skip/update/error、绑定内容与版本的两阶段确认；全批事务，错误不回显敏感原文。
 - **CSV 导出**：全部未删除（含归档），或当前筛选的全部结果，不受页码影响。固定非敏感字段、UTC 文件名、CSV 转义/公式防注入、审计。
-- **带密码流式加密导出（`.gmenc`）**：`POST /api/v1/exports/encrypted` 导出完整敏感字段（密码/手机号/备注），强制 MFA Step-Up 验证、复用并发导出槽位并禁止明文落盘。离线解密命令：
+- **带密码流式加密导出（`.gmenc`）**：`POST /api/v1/exports/encrypted` 导出完整敏感字段（密码/手机号/备注），强制 MFA Step-Up 验证、复用并发导出槽位并禁止明文落盘。解密出的主 CSV 为无损恢复文件，**请勿直接用 Excel/LibreOffice 打开**；如需电子表格查阅可追加 `--spreadsheet-safe-copy` 生成只读转义副本（勿用于重新导入）：
   ```bash
-  cd backend && uv run --locked python -m app.cli decrypt-export --input accounts.gmenc --output accounts.csv
+  cd backend && uv run --locked python -m app.cli decrypt-export \
+    --input accounts.gmenc --output accounts-recovery.csv \
+    --spreadsheet-safe-copy accounts-view-only.csv
   ```
 - **数据密钥离线轮换与校验**：新增新版本 `data_key_vN` 后使用 CLI 演练、轮换与校验（保留旧密钥文件供历史备份与回滚使用）：
   ```bash
@@ -189,8 +191,11 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 | `make test-db` | 真实 PostgreSQL 集成测试，必须指定独立测试库 |
 | `make dev-api` / `make dev-web` | 原生启动本机开发服务 |
 | `make compose-check` | 只验证 Compose 配置，不启动容器 |
-| `make gate-release` | 本地发布前静态/契约/文档/配置/单测/非集成覆盖率门禁 |
-| `make gate-release-full` | 本地发布前完整门禁（叠加真实 PostgreSQL 集成测试、全量覆盖率与实时 E2E） |
+| `make audit-deps-offline-integrity` | 离线校验锁文件、精确版本固定与基础镜像摘要（不查询 CVE 库） |
+| `make audit-deps-online-strict` | 严格在线 CVE 漏洞库审计（缺工具、断网或命中高危漏洞即失败） |
+| `make gate-release` | 本地发布前静态/契约/文档/配置/离线供应链/单测/非集成覆盖率门禁 |
+| `make gate-release-live` | 本地快速真实全栈门禁（`gate-release` + PG18 集成测试 + 全量覆盖率 + 实时 E2E） |
+| `make gate-release-full` | 私有发布机完整严格发布门禁（含 `audit-deps-online-strict`、PG18 集成/覆盖率、模拟 E2E、无障碍、三引擎兼容与实时全栈 E2E） |
 | `cd frontend && pnpm test:e2e` | Chromium 认证/账号 UI 冒烟测试，需已安装 Playwright Chromium；或通过 `PLAYWRIGHT_CHROME_EXECUTABLE` 指定本机 Chrome |
 
 数据库测试设置 `TEST_DATABASE_URL`，数据库名必须以 `gm_test` 开头。每个测试创建随机独立 schema，
@@ -216,7 +221,7 @@ AES-256-GCM 支持读取 `DATA_KEY_DIRECTORY/data_key_vN` 中所有已配置的 
 - `GET /api/v1/dashboard/summary|registration-trend|status-distribution|recovery-email-usage`：全局 KPI 与图表安全聚合统计。
 - `POST /api/v1/accounts/batch-status|batch-tags|batch-restore`：整批事务，输入所选账号 ID/版本与目标状态/标签或回收站批量恢复。
 - `GET /api/v1/accounts/options`：非删除辅助账号搜索/分页，只返回 ID、编号和邮箱。
-- `GET /api/v1/recovery-emails`、`GET /api/v1/recovery-emails/{encoded_email}/accounts`：分页使用量统计与按邮箱关联账号预览。
+- `GET /api/v1/recovery-emails`、`GET /api/v1/recovery-email-accounts`：分页使用量统计与按查询参数 `email` 关联账号预览（不将邮箱放入 URL 路径，避免进入访问日志）。
 - `GET/POST /api/v1/apps`、`GET /api/v1/apps/usage`、`PATCH/DELETE /api/v1/apps/{id}`、`POST /api/v1/apps/fetch-icon`：第三方已注册应用目录、用量统计及带 SSRF/总时限/并发/限流保护的图标抓取。
 - `POST /api/v1/auth/activity`：仅用户交互触发、CSRF 保护、不轮换 Token 的会话活动确认。
 - `GET/POST /api/v1/tags`、`PATCH/DELETE /api/v1/tags/{id}`：标签管理。

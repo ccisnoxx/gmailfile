@@ -115,18 +115,18 @@ def recovery_usage(
 
 
 @router.get(
-    "/recovery-emails/{encoded_email}/accounts",
+    "/recovery-email-accounts",
     response_model=AccountPage,
     operation_id="recoveryEmailAccounts",
 )
 def recovery_email_accounts(
-    encoded_email: str,
     service: Service,
+    email: Annotated[str, Query(min_length=1, max_length=254)],
     page: Annotated[int, Query(ge=1, le=1000000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 30,
     sort: Annotated[Sort, Query()] = "-account_no",
 ):
-    return service.recovery_email_accounts(encoded_email, page=page, page_size=page_size, sort=sort)
+    return service.recovery_email_accounts(email, page=page, page_size=page_size, sort=sort)
 
 
 @router.get("/accounts/options", response_model=OptionPage, operation_id="accountsOptions")

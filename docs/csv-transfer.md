@@ -63,4 +63,19 @@ API 接受 `Content-Type: text/csv` 的原始字节，而非 multipart，因此�
 导出带 UTF-8 BOM 和标准 CSV 转义。可能被电子表格识别为公式的 `= + - @` 前缀（含前置空白）及控制前缀加单引号，
 优先保证电子表格安全，不承诺无损往返导入。文件名由服务器生成 UTC 时间戳，如 `gmail-accounts-2026-11-24T160000Z.csv`；每次生成记录审计。
 导出采用 `REPEATABLE READ READ ONLY` 快照事务、数据库服务端游标分批读取非敏感列与标签，并通过 `StreamingResponse` 逐批流式输出，避免数万级以上导出一次性占用大量内存。
-带密码的加密导出仍属 P1，没有明文敏感下载替代接口。
+
+## 带密码的流式加密导出（`.gmenc`）与电子表格安全
+
+如需导出完整敏感凭据（含 Gmail 密码、绑定手机号与备注）用于离线归档或灾备恢复，请使用 `POST /api/v1/exports/encrypted`（受最近 5 分钟 MFA Step-Up 验证、CSRF 与并发槽位保护；无明文敏感下载接口）。
+
+- 服务端采用分块流式信封 `GME1`（Argon2id + 64 KiB 分块 AES-256-GCM），全程不落明文临时文件。
+- 为保证灾难恢复与重新导入无损，加密导出保留密码、手机号、备注、用途与标签的原始值，**不对 `= + - @` 等前缀做公式转义**。
+- **电子表格公式注入风险警示**：离线解密得到的主 CSV 属于**无损凭据恢复文件**，请勿直接用 Excel、LibreOffice Calc 等电子表格程序打开（以防单元格中的 `=...` / `+...` / `-...` / `@...` 被解释为公式）。
+- 如需在电子表格中人工查阅，请在离线解密时同时使用 `--spreadsheet-safe-copy` 生成只读查看副本（`0600` 权限，所有公式前缀已加单引号）；**禁止将转义后的查看副本用于重新导入或灾备恢复**：
+
+```bash
+cd backend && uv run --locked python -m app.cli decrypt-export \
+  --input accounts.gmenc \
+  --output accounts-recovery.csv \
+  --spreadsheet-safe-copy accounts-view-only.csv
+```

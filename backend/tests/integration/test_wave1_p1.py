@@ -124,17 +124,39 @@ def test_recovery_emails_search_sort_and_linked_accounts_endpoint(signed):
     assert searched["total"] == 1 and searched["items"][0]["email"] == "hub-light@example.test"
     assert client.get("/api/v1/recovery-emails", params={"search": "%"}).json()["total"] == 0
 
-    # 独立关联账号列表端点（无密码/密文）
-    encoded = quote("hub-heavy@example.test", safe="")
-    linked = client.get(f"/api/v1/recovery-emails/{encoded}/accounts")
-    assert linked.status_code == 200
-    assert linked.headers["cache-control"] == "no-store"
-    body = linked.json()
-    assert body["total"] == 3
-    for item in body["items"]:
-        assert "password" not in item and "password_ciphertext" not in item
+    # 独立关联账号列表端点改为查询参数（无密码/密文，且辅助邮箱不进入应用日志）
+    import io
+    import logging
 
-    assert client.get("/api/v1/recovery-emails/%20/accounts").status_code == 422
+    from app.core.logging import JsonFormatter
+
+    stream = io.StringIO()
+    log_handler = logging.StreamHandler(stream)
+    log_handler.setFormatter(JsonFormatter())
+    app_logger = logging.getLogger("gmail_manager")
+    app_logger.addHandler(log_handler)
+    try:
+        linked = client.get(
+            "/api/v1/recovery-email-accounts", params={"email": "hub-heavy@example.test"}
+        )
+        assert linked.status_code == 200
+        assert linked.headers["cache-control"] == "no-store"
+        body = linked.json()
+        assert body["total"] == 3
+        for item in body["items"]:
+            assert "password" not in item and "password_ciphertext" not in item
+
+        assert (
+            client.get("/api/v1/recovery-email-accounts", params={"email": " "}).status_code == 422
+        )
+        encoded = quote("hub-heavy@example.test", safe="")
+        assert client.get(f"/api/v1/recovery-emails/{encoded}/accounts").status_code == 404
+    finally:
+        app_logger.removeHandler(log_handler)
+
+    application_logs = stream.getvalue()
+    assert "hub-heavy@example.test" not in application_logs
+    assert "hub-heavy%40example.test" not in application_logs
 
 
 def test_sessions_device_label_and_active_only_filter(env):

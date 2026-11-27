@@ -17,11 +17,31 @@ from app.core.config import Settings
         {"reauth_window_minutes": 6},
         {"default_page_size": 50, "max_page_size": 30},
         {"audit_syslog_address": "http://invalid-scheme"},
+        {"audit_syslog_address": "tcp://syslog.internal:514"},
+        {"audit_syslog_address": "udp://syslog.internal:514"},
     ],
 )
 def test_production_rejects_unsafe_config(overrides):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **overrides)
+
+
+def test_production_allows_local_unix_syslog_and_dev_allows_network_syslog():
+    prod = Settings(_env_file=None, audit_syslog_address="/dev/log")
+    assert prod.audit_syslog_address == "/dev/log"
+
+    dev_tcp = Settings(
+        _env_file=None,
+        app_env="development",
+        audit_syslog_address="tcp://127.0.0.1:514",
+    )
+    assert dev_tcp.audit_syslog_address == "tcp://127.0.0.1:514"
+    dev_udp = Settings(
+        _env_file=None,
+        app_env="development",
+        audit_syslog_address="udp://127.0.0.1:514",
+    )
+    assert dev_udp.audit_syslog_address == "udp://127.0.0.1:514"
 
 
 def test_safe_production_defaults():

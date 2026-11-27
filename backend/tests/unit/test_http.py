@@ -108,6 +108,59 @@ def test_unexpected_errors_do_not_leak(client):
     assert any(frame.endswith(":fail_decrypt") for frame in decrypted["traceback_frames"])
 
 
+def test_application_logs_use_route_template_and_never_log_recovery_email(client):
+    import io
+    import json
+    import logging
+
+    from app.core.logging import JsonFormatter
+
+    @client.app.get("/test-template/{item_id}")
+    def template_route(item_id: str):
+        return {"ok": True}
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter())
+    logger = logging.getLogger("gmail_manager")
+    logger.addHandler(handler)
+    try:
+        # 1. 匹配带路径参数的路由时记录路由模板而非具体参数值
+        ok_resp = client.get("/test-template/secret-item-9999")
+        assert ok_resp.status_code == 200
+
+        # 2. 辅助邮箱通过查询参数传递，既不入路径也不入应用日志
+        query_resp = client.get("/api/v1/recovery-email-accounts?email=user@example.com")
+        assert query_resp.status_code == 401
+
+        # 3. 已挂载在 /api/v1 下的路径参数路由记录完整前缀模板而非 UUID
+        acct_resp = client.get("/api/v1/accounts/00000000-0000-0000-0000-000000000099")
+        assert acct_resp.status_code == 401
+
+        # 4. 即使客户端访问旧路径（已移除返回 404），未匹配路径记为 <unmatched>，不落邮箱
+        old_resp = client.get("/api/v1/recovery-emails/user%40example.com/accounts")
+        assert old_resp.status_code == 404
+    finally:
+        logger.removeHandler(handler)
+
+    raw_logs = stream.getvalue()
+    assert "user@example.com" not in raw_logs
+    assert "user%40example.com" not in raw_logs
+    assert "secret-item-9999" not in raw_logs
+    assert "00000000-0000-0000-0000-000000000099" not in raw_logs
+
+    records = [
+        json.loads(line)
+        for line in raw_logs.splitlines()
+        if line.strip() and json.loads(line)["event_type"] == "request_completed"
+    ]
+    logged_paths = [rec["path"] for rec in records]
+    assert "/test-template/{item_id}" in logged_paths
+    assert "/api/v1/recovery-email-accounts" in logged_paths
+    assert "/api/v1/accounts/{account_id}" in logged_paths
+    assert "<unmatched>" in logged_paths
+
+
 def test_validation_errors_do_not_echo_input(client):
     @client.app.get("/test-validation")
     def validate(code: int):
